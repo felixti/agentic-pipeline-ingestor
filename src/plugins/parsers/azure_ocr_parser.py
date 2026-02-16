@@ -113,7 +113,7 @@ class AzureOCRParser(ParserPlugin):
         except ImportError:
             logger.warning(
                 "Azure AI Vision SDK not installed. "
-                "Install with: pip install azure-ai-vision"
+                "Install with: pip install azure-ai-vision-imageanalysis"
             )
             self._azure_available = False
     

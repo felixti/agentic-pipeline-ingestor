@@ -1,0 +1,26 @@
+# Example Terraform variables file
+# Copy this to terraform.tfvars and update with your values
+
+environment = "prod"
+location    = "eastus"
+
+# AKS Configuration
+kubernetes_version = "1.28"
+aks_node_count     = 3
+aks_node_size      = "Standard_D4s_v3"
+aks_min_nodes      = 3
+aks_max_nodes      = 10
+enable_gpu_pool    = false
+
+# Azure AD group IDs for AKS cluster admin access
+# aks_admin_group_ids = ["00000000-0000-0000-0000-000000000000"]
+
+# PostgreSQL Configuration
+postgres_sku            = "GP_Standard_D4s_v3"
+postgres_storage_mb     = 524288
+postgres_admin_username = "pipelineadmin"
+postgres_admin_password = "YourSecurePassword123!"
+
+# Redis Configuration
+redis_sku       = "Standard"
+redis_capacity  = 1

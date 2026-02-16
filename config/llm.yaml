@@ -1,0 +1,116 @@
+# LLM Configuration for Agentic Data Pipeline Ingestor
+# 
+# This file configures the LLM provider abstraction using litellm.
+# It defines model groups with automatic fallback chains.
+#
+# Environment Variables Required:
+#   AZURE_OPENAI_API_BASE - Azure OpenAI endpoint
+#   AZURE_OPENAI_API_KEY  - Azure OpenAI API key
+#   OPENROUTER_API_KEY    - OpenRouter API key (for fallback)
+
+llm:
+  # ============================================================================
+  # Router Configuration
+  # ============================================================================
+  # Define model groups with fallback chains
+  router:
+    # Primary model group for agentic decisions (complex reasoning)
+    - model_name: "agentic-decisions"
+      litellm_params:
+        model: "azure/gpt-4"
+        api_base: "${AZURE_OPENAI_API_BASE}"
+        api_key: "${AZURE_OPENAI_API_KEY}"
+        api_version: "2024-02-01"
+        tpm: 10000  # Tokens per minute limit
+        rpm: 60     # Requests per minute limit
+        timeout: 30
+      
+      # Fallback chain: Azure GPT-4 → OpenRouter Claude-3 Opus → Azure GPT-3.5
+      fallback_models:
+        - model: "openrouter/anthropic/claude-3-opus"
+          api_key: "${OPENROUTER_API_KEY}"
+          api_base: "https://openrouter.ai/api/v1"
+          tpm: 5000
+          rpm: 30
+          timeout: 30
+          
+        - model: "azure/gpt-35-turbo"
+          api_base: "${AZURE_OPENAI_API_BASE}"
+          api_key: "${AZURE_OPENAI_API_KEY}"
+          api_version: "2024-02-01"
+          tpm: 20000
+          rpm: 120
+          timeout: 30
+    
+    # Secondary model group for enrichment (faster/cheaper)
+    - model_name: "enrichment"
+      litellm_params:
+        model: "azure/gpt-35-turbo"
+        api_base: "${AZURE_OPENAI_API_BASE}"
+        api_key: "${AZURE_OPENAI_API_KEY}"
+        api_version: "2024-02-01"
+        tpm: 20000
+        rpm: 120
+        timeout: 20
+      
+      fallback_models:
+        - model: "openrouter/anthropic/claude-3-haiku"
+          api_key: "${OPENROUTER_API_KEY}"
+          api_base: "https://openrouter.ai/api/v1"
+          tpm: 10000
+          rpm: 60
+          timeout: 20
+    
+    # Model group for content detection (fast classification)
+    - model_name: "classification"
+      litellm_params:
+        model: "azure/gpt-35-turbo"
+        api_base: "${AZURE_OPENAI_API_BASE}"
+        api_key: "${AZURE_OPENAI_API_KEY}"
+        api_version: "2024-02-01"
+        tpm: 20000
+        rpm: 120
+        timeout: 10
+      
+      fallback_models:
+        - model: "openrouter/anthropic/claude-3-haiku"
+          api_key: "${OPENROUTER_API_KEY}"
+          api_base: "https://openrouter.ai/api/v1"
+          tpm: 10000
+          rpm: 60
+          timeout: 10
+
+  # ============================================================================
+  # litellm Proxy Configuration
+  # ============================================================================
+  proxy:
+    host: "0.0.0.0"
+    port: 4000
+    
+  # ============================================================================
+  # Retry Configuration
+  # ============================================================================
+  retry:
+    num_retries: 3
+    timeout: 30
+    backoff_factor: 2
+    
+  # ============================================================================
+  # Default Parameters
+  # ============================================================================
+  defaults:
+    temperature: 0.3  # Lower temperature for more deterministic outputs
+    max_tokens: 2000
+    
+  # ============================================================================
+  # Provider-Specific Settings
+  # ============================================================================
+  providers:
+    azure:
+      cache_responses: true
+      cache_ttl: 3600  # 1 hour
+      
+    openrouter:
+      headers:
+        HTTP-Referer: "https://pipeline.example.com"
+        X-Title: "Agentic Pipeline Ingestor"

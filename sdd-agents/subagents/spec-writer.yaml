@@ -1,0 +1,15 @@
+version: 1
+agent:
+  name: spec-writer
+  system_prompt_path: ../system-prompts/spec-writer.md
+  tools:
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.shell:Shell"
+    - "kimi_cli.tools.web:SearchWeb"
+    - "kimi_cli.tools.web:FetchURL"
+  system_prompt_args:
+    SPEC_DIR: "../specs"
+    SPEC_TEMPLATE: "../templates/spec-template.md"

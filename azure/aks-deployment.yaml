@@ -1,0 +1,572 @@
+# Azure Kubernetes Service (AKS) Deployment Manifests
+# for the Agentic Data Pipeline Ingestor
+#
+# These manifests deploy:
+# - API Service (3 replicas)
+# - Worker Service (5-10 replicas with HPA)
+# - PostgreSQL (Azure DB for PostgreSQL)
+# - Redis (Azure Cache for Redis)
+# - ConfigMaps and Secrets
+# - Services and Ingress
+
+# =============================================================================
+# Namespace
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pipeline-ingestor
+  labels:
+    app: pipeline-ingestor
+    environment: production
+
+---
+# =============================================================================
+# ConfigMap - Application Configuration
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-config
+  namespace: pipeline-ingestor
+data:
+  ENV: "production"
+  HOST: "0.0.0.0"
+  PORT: "8000"
+  
+  # Database configuration
+  DB_ECHO: "false"
+  DB_POOL_SIZE: "20"
+  DB_MAX_OVERFLOW: "10"
+  
+  # Observability
+  OTEL_ENABLED: "true"
+  OTEL_SERVICE_NAME: "pipeline-api"
+  OTEL_ENVIRONMENT: "production"
+  OTEL_LOG_LEVEL: "INFO"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.monitoring:4317"
+  
+  # Worker configuration
+  WORKER_POLL_INTERVAL: "5.0"
+  WORKER_MAX_CONCURRENT: "5"
+  
+  # Performance
+  MAX_WORKERS: "10"
+  
+---
+# =============================================================================
+# Secret - Database and API Keys (Base64 encoded values)
+# NOTE: Use Azure Key Vault or external secrets operator in production
+# =============================================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pipeline-secrets
+  namespace: pipeline-ingestor
+type: Opaque
+stringData:
+  # Database URL - update with your Azure PostgreSQL details
+  DB_URL: "postgresql+asyncpg://username:password@pipeline-postgres.postgres.database.azure.com:5432/pipeline"
+  
+  # Redis URL - update with your Azure Redis details
+  REDIS_URL: "rediss://:password@pipeline-redis.redis.cache.windows.net:6380/0"
+  
+  # Secret key for JWT
+  SECRET_KEY: "your-production-secret-key-change-this"
+  
+  # Azure OpenAI
+  AZURE_OPENAI_API_BASE: "https://your-resource.openai.azure.com"
+  AZURE_OPENAI_API_KEY: "your-azure-openai-key"
+  
+  # Azure AI Vision
+  AZURE_AI_VISION_ENDPOINT: "https://your-vision.cognitiveservices.azure.com"
+  AZURE_AI_VISION_API_KEY: "your-vision-key"
+  
+  # Cognee
+  COGNEE_API_URL: "https://your-cognee-instance.com"
+  COGNEE_API_KEY: "your-cognee-key"
+  
+  # OpenRouter
+  OPENROUTER_API_KEY: "your-openrouter-key"
+  
+  # Azure Storage
+  AZURE_STORAGE_CONNECTION_STRING: "your-storage-connection-string"
+  
+  # Azure Monitor
+  APPLICATIONINSIGHTS_CONNECTION_STRING: "your-app-insights-connection-string"
+
+---
+# =============================================================================
+# API Deployment
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipeline-api
+  namespace: pipeline-ingestor
+  labels:
+    app: pipeline-api
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: pipeline-api
+  template:
+    metadata:
+      labels:
+        app: pipeline-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: pipeline-api
+      containers:
+      - name: api
+        image: yourregistry.azurecr.io/pipeline-ingestor:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: pipeline-config
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: "pipeline-api"
+        - name: DB_URL
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: DB_URL
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: REDIS_URL
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: SECRET_KEY
+        - name: AZURE_OPENAI_API_BASE
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: AZURE_OPENAI_API_BASE
+        - name: AZURE_OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: AZURE_OPENAI_API_KEY
+        - name: AZURE_AI_VISION_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: AZURE_AI_VISION_ENDPOINT
+        - name: AZURE_AI_VISION_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: AZURE_AI_VISION_API_KEY
+        - name: COGNEE_API_URL
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: COGNEE_API_URL
+        - name: COGNEE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: COGNEE_API_KEY
+        - name: OPENROUTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: OPENROUTER_API_KEY
+        - name: AZURE_STORAGE_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: AZURE_STORAGE_CONNECTION_STRING
+        - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: APPLICATIONINSIGHTS_CONNECTION_STRING
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp/pipeline
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+      - key: "sku"
+        operator: "Equal"
+        value: "general"
+        effect: "NoSchedule"
+
+---
+# =============================================================================
+# API Service
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: pipeline-api
+  namespace: pipeline-ingestor
+  labels:
+    app: pipeline-api
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: pipeline-api
+
+---
+# =============================================================================
+# API Horizontal Pod Autoscaler
+# =============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pipeline-api-hpa
+  namespace: pipeline-ingestor
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pipeline-api
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+
+---
+# =============================================================================
+# Worker Deployment
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipeline-worker
+  namespace: pipeline-ingestor
+  labels:
+    app: pipeline-worker
+spec:
+  replicas: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: pipeline-worker
+  template:
+    metadata:
+      labels:
+        app: pipeline-worker
+    spec:
+      serviceAccountName: pipeline-worker
+      containers:
+      - name: worker
+        image: yourregistry.azurecr.io/pipeline-ingestor:latest
+        imagePullPolicy: Always
+        command: ["python", "-m", "src.worker.main"]
+        envFrom:
+        - configMapRef:
+            name: pipeline-config
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: "pipeline-worker"
+        - name: DB_URL
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: DB_URL
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: REDIS_URL
+        - name: AZURE_OPENAI_API_BASE
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: AZURE_OPENAI_API_BASE
+        - name: AZURE_OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: AZURE_OPENAI_API_KEY
+        - name: AZURE_AI_VISION_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: AZURE_AI_VISION_ENDPOINT
+        - name: AZURE_AI_VISION_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: AZURE_AI_VISION_API_KEY
+        - name: COGNEE_API_URL
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: COGNEE_API_URL
+        - name: COGNEE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: COGNEE_API_KEY
+        - name: OPENROUTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: OPENROUTER_API_KEY
+        - name: AZURE_STORAGE_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: AZURE_STORAGE_CONNECTION_STRING
+        - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-secrets
+              key: APPLICATIONINSIGHTS_CONNECTION_STRING
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep '[p]ython -m src.worker.main' || exit 1"
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp/pipeline
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      nodeSelector:
+        kubernetes.io/os: linux
+
+---
+# =============================================================================
+# Worker Horizontal Pod Autoscaler
+# =============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pipeline-worker-hpa
+  namespace: pipeline-ingestor
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pipeline-worker
+  minReplicas: 5
+  maxReplicas: 20
+  metrics:
+  - type: External
+    external:
+      metric:
+        name: azure_queue_messages_count
+        selector:
+          matchLabels:
+            queue: pipeline-jobs
+      target:
+        type: AverageValue
+        averageValue: "10"
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+
+---
+# =============================================================================
+# Service Account for API
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pipeline-api
+  namespace: pipeline-ingestor
+  annotations:
+    # Use Azure AD Workload Identity for pod identity
+    azure.workload.identity/client-id: "your-managed-identity-client-id"
+
+---
+# =============================================================================
+# Service Account for Worker
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pipeline-worker
+  namespace: pipeline-ingestor
+  annotations:
+    # Use Azure AD Workload Identity for pod identity
+    azure.workload.identity/client-id: "your-managed-identity-client-id"
+
+---
+# =============================================================================
+# Network Policy - API
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pipeline-api-network-policy
+  namespace: pipeline-ingestor
+spec:
+  podSelector:
+    matchLabels:
+      app: pipeline-api
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: pipeline-postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: pipeline-redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+
+---
+# =============================================================================
+# Pod Disruption Budget - API
+# =============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pipeline-api-pdb
+  namespace: pipeline-ingestor
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: pipeline-api
+
+---
+# =============================================================================
+# Pod Disruption Budget - Worker
+# =============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pipeline-worker-pdb
+  namespace: pipeline-ingestor
+spec:
+  minAvailable: 3
+  selector:
+    matchLabels:
+      app: pipeline-worker

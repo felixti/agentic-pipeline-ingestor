@@ -1,0 +1,14 @@
+version: 1
+agent:
+  name: implementer
+  system_prompt_path: ../system-prompts/implementer.md
+  tools:
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.file:StrReplaceFile"
+    - "kimi_cli.tools.shell:Shell"
+    - "kimi_cli.tools.todo:SetTodoList"
+  system_prompt_args:
+    IMPLEMENTATION_DIR: "."

@@ -1,0 +1,2190 @@
+openapi: 3.1.0
+info:
+  title: Agentic Data Pipeline Ingestor API
+  version: 1.0.0
+  description: |
+    Enterprise-grade agentic data pipeline for document ingestion.
+    
+    ## Features
+    - Universal file type support (PDF, Office, images, archives)
+    - Intelligent parser selection (Docling primary, Azure OCR fallback)
+    - Destination-agnostic output (Cognee, GraphRAG, webhooks)
+    - Real-time and batch processing modes
+    - Comprehensive audit and lineage tracking
+    - LLM-agnostic with automatic provider fallback
+    
+    ## Authentication
+    - **API Key**: `X-API-Key` header for service accounts
+    - **OAuth2**: `Authorization: Bearer <token>` for user auth
+    - **Azure AD**: Enterprise SSO integration
+    
+    ## Rate Limiting
+    Default: 100 requests per minute per API key.
+    Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+  contact:
+    name: API Support
+    email: api-support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.pipeline.example.com
+    description: Production
+  - url: http://localhost:8000
+    description: Local Development
+
+tags:
+  - name: Jobs
+    description: Job management operations
+  - name: Upload
+    description: File upload and ingestion
+  - name: Pipelines
+    description: Pipeline configuration management
+  - name: Sources
+    description: Source plugin management
+  - name: Destinations
+    description: Destination plugin management
+  - name: Audit
+    description: Audit logging and compliance
+  - name: System
+    description: Health checks and system operations
+
+paths:
+  # Job Management
+  /api/v1/jobs:
+    post:
+      operationId: createJob
+      summary: Submit a new ingestion job
+      description: Create a new document ingestion job with specified configuration
+      tags:
+        - Jobs
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [jobs:write]
+      requestBody:
+        $ref: '#/components/requestBodies/JobCreate'
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    
+    get:
+      operationId: listJobs
+      summary: List jobs with filtering
+      description: Retrieve paginated list of jobs with optional filters
+      tags:
+        - Jobs
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [jobs:read]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/SourceTypeFilter'
+        - $ref: '#/components/parameters/DateFromFilter'
+        - $ref: '#/components/parameters/DateToFilter'
+      responses:
+        '200':
+          $ref: '#/components/responses/JobList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/jobs/{id}:
+    get:
+      operationId: getJob
+      summary: Get job details
+      description: Retrieve detailed information about a specific job
+      tags:
+        - Jobs
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [jobs:read]
+      parameters:
+        - $ref: '#/components/parameters/JobIdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/JobDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    delete:
+      operationId: cancelJob
+      summary: Cancel a job
+      description: Cancel a pending or running job
+      tags:
+        - Jobs
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [jobs:write]
+      parameters:
+        - $ref: '#/components/parameters/JobIdParam'
+      responses:
+        '204':
+          description: Job cancelled successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/jobs/{id}/retry:
+    post:
+      operationId: retryJob
+      summary: Retry a failed job
+      description: Retry a job that has failed or been sent to dead letter queue
+      tags:
+        - Jobs
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [jobs:write]
+      parameters:
+        - $ref: '#/components/parameters/JobIdParam'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobRetryRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/jobs/{id}/result:
+    get:
+      operationId: getJobResult
+      summary: Get job processing result
+      description: Retrieve the processed output of a completed job
+      tags:
+        - Jobs
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [jobs:read]
+      parameters:
+        - $ref: '#/components/parameters/JobIdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/JobResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/jobs/{id}/events:
+    get:
+      operationId: streamJobEvents
+      summary: Stream job events (SSE)
+      description: Server-Sent Events stream for real-time job progress updates
+      tags:
+        - Jobs
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [jobs:read]
+      parameters:
+        - $ref: '#/components/parameters/JobIdParam'
+      responses:
+        '200':
+          description: SSE stream of job events
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/JobEvent'
+
+  # File Upload
+  /api/v1/upload:
+    post:
+      operationId: uploadFiles
+      summary: Upload file(s) for processing
+      description: Upload one or more files for document ingestion
+      tags:
+        - Upload
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [jobs:write]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FileUploadRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/EntityTooLarge'
+
+  /api/v1/upload/url:
+    post:
+      operationId: ingestFromUrl
+      summary: Ingest from URL
+      description: Submit a URL for document ingestion
+      tags:
+        - Upload
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [jobs:write]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UrlIngestRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/upload/stream:
+    post:
+      operationId: streamUpload
+      summary: Stream upload for large files
+      description: Upload large files using streaming
+      tags:
+        - Upload
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [jobs:write]
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      parameters:
+        - name: X-File-Name
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-File-Size
+          in: header
+          required: true
+          schema:
+            type: integer
+        - name: X-Content-Type
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Pipeline Configuration
+  /api/v1/pipelines:
+    get:
+      operationId: listPipelines
+      summary: List pipeline configurations
+      description: Retrieve all pipeline configurations
+      tags:
+        - Pipelines
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [pipelines:read]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/PipelineList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    
+    post:
+      operationId: createPipeline
+      summary: Create pipeline configuration
+      description: Create a new pipeline configuration
+      tags:
+        - Pipelines
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [pipelines:write]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PipelineConfig'
+      responses:
+        '201':
+          $ref: '#/components/responses/PipelineCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/pipelines/{id}:
+    get:
+      operationId: getPipeline
+      summary: Get pipeline configuration
+      description: Retrieve a specific pipeline configuration
+      tags:
+        - Pipelines
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [pipelines:read]
+      parameters:
+        - $ref: '#/components/parameters/PipelineIdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/PipelineDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    put:
+      operationId: updatePipeline
+      summary: Update pipeline configuration
+      description: Update an existing pipeline configuration
+      tags:
+        - Pipelines
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [pipelines:write]
+      parameters:
+        - $ref: '#/components/parameters/PipelineIdParam'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PipelineConfig'
+      responses:
+        '200':
+          $ref: '#/components/responses/PipelineDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    delete:
+      operationId: deletePipeline
+      summary: Delete pipeline configuration
+      description: Delete a pipeline configuration
+      tags:
+        - Pipelines
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [pipelines:write]
+      parameters:
+        - $ref: '#/components/parameters/PipelineIdParam'
+      responses:
+        '204':
+          description: Pipeline deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/pipelines/{id}/validate:
+    post:
+      operationId: validatePipeline
+      summary: Validate pipeline configuration
+      description: Validate a pipeline configuration without saving
+      tags:
+        - Pipelines
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [pipelines:read]
+      parameters:
+        - $ref: '#/components/parameters/PipelineIdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/ValidationResult'
+        '400':
+          $ref: '#/components/responses/ValidationResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Sources & Destinations
+  /api/v1/sources:
+    get:
+      operationId: listSources
+      summary: List source plugins
+      description: List all available source plugins and their configurations
+      tags:
+        - Sources
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [sources:read]
+      responses:
+        '200':
+          $ref: '#/components/responses/SourceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    
+    post:
+      operationId: createSource
+      summary: Register/configure source
+      description: Register a new source configuration
+      tags:
+        - Sources
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [sources:write]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceConfig'
+      responses:
+        '201':
+          $ref: '#/components/responses/SourceCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/sources/{id}/test:
+    post:
+      operationId: testSource
+      summary: Test source connection
+      description: Test connectivity to a configured source
+      tags:
+        - Sources
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [sources:write]
+      parameters:
+        - $ref: '#/components/parameters/SourceIdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/ConnectionTest'
+        '400':
+          $ref: '#/components/responses/ConnectionTestFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/destinations:
+    get:
+      operationId: listDestinations
+      summary: List destination plugins
+      description: List all available destination plugins
+      tags:
+        - Destinations
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [destinations:read]
+      responses:
+        '200':
+          $ref: '#/components/responses/DestinationList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    
+    post:
+      operationId: createDestination
+      summary: Register/configure destination
+      description: Register a new destination configuration
+      tags:
+        - Destinations
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [destinations:write]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DestinationConfig'
+      responses:
+        '201':
+          $ref: '#/components/responses/DestinationCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/destinations/{id}/test:
+    post:
+      operationId: testDestination
+      summary: Test destination connection
+      description: Test connectivity to a configured destination
+      tags:
+        - Destinations
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [destinations:write]
+      parameters:
+        - $ref: '#/components/parameters/DestinationIdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/ConnectionTest'
+        '400':
+          $ref: '#/components/responses/ConnectionTestFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Audit & Compliance
+  /api/v1/audit/logs:
+    get:
+      operationId: queryAuditLogs
+      summary: Query audit logs
+      description: Query audit logs with filtering and pagination
+      tags:
+        - Audit
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [audit:read]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/AuditDateFromFilter'
+        - $ref: '#/components/parameters/AuditDateToFilter'
+        - $ref: '#/components/parameters/AuditEventTypeFilter'
+        - $ref: '#/components/parameters/AuditUserFilter'
+        - $ref: '#/components/parameters/AuditResourceFilter'
+      responses:
+        '200':
+          $ref: '#/components/responses/AuditLogList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/audit/lineage/{job_id}:
+    get:
+      operationId: getLineage
+      summary: Get data lineage
+      description: Retrieve data lineage for a specific job
+      tags:
+        - Audit
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [audit:read]
+      parameters:
+        - $ref: '#/components/parameters/JobIdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataLineage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/audit/export:
+    post:
+      operationId: exportAudit
+      summary: Export audit data
+      description: Export audit logs in various formats
+      tags:
+        - Audit
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [audit:read]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuditExportRequest'
+      responses:
+        '200':
+          description: Audit data export
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditExportResult'
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # System & Health
+  /api/v1/health:
+    get:
+      operationId: getHealth
+      summary: Comprehensive health status
+      description: Get detailed health status of all system components
+      tags:
+        - System
+      responses:
+        '200':
+          $ref: '#/components/responses/HealthStatus'
+
+  /api/v1/health/ready:
+    get:
+      operationId: getReadiness
+      summary: Kubernetes readiness probe
+      description: Check if the service is ready to accept traffic
+      tags:
+        - System
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthReady'
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthNotReady'
+
+  /api/v1/health/live:
+    get:
+      operationId: getLiveness
+      summary: Kubernetes liveness probe
+      description: Check if the service is alive
+      tags:
+        - System
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthAlive'
+
+  /api/v1/metrics:
+    get:
+      operationId: getMetrics
+      summary: Prometheus metrics
+      description: Get Prometheus-compatible metrics
+      tags:
+        - System
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/openapi.yaml:
+    get:
+      operationId: getOpenApiSpec
+      summary: Get OpenAPI specification
+      description: Retrieve the OpenAPI specification for this API
+      tags:
+        - System
+      responses:
+        '200':
+          description: OpenAPI specification
+          content:
+            text/yaml:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service account authentication
+    
+    OAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: /oauth/token
+          scopes:
+            jobs:read: Read job information
+            jobs:write: Create and modify jobs
+            pipelines:read: Read pipeline configurations
+            pipelines:write: Create and modify pipelines
+            sources:read: Read source configurations
+            sources:write: Create and modify sources
+            destinations:read: Read destination configurations
+            destinations:write: Create and modify destinations
+            audit:read: Read audit logs and lineage
+            admin: Full administrative access
+
+  schemas:
+    # Core Enums
+    JobStatus:
+      type: string
+      enum:
+        - created
+        - queued
+        - processing
+        - completed
+        - failed
+        - cancelled
+        - retrying
+        - dead_letter
+      example: processing
+      description: Current status of a job
+
+    ProcessingMode:
+      type: string
+      enum:
+        - sync
+        - async
+      example: async
+      description: Processing mode - sync for immediate response, async for background processing
+
+    ContentType:
+      type: string
+      enum:
+        - text_based_pdf
+        - scanned_pdf
+        - mixed_pdf
+        - office_doc
+        - office_spreadsheet
+        - office_presentation
+        - image
+        - archive
+        - csv
+        - unknown
+      example: text_based_pdf
+      description: Detected content type of the document
+
+    # Core Models
+    Job:
+      type: object
+      required:
+        - id
+        - source_type
+        - file_name
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+          description: Unique job identifier
+        external_id:
+          type: string
+          nullable: true
+          example: "user-12345"
+          description: Optional external reference ID
+        source_type:
+          type: string
+          enum: [upload, url, s3, azure_blob, sharepoint]
+          example: upload
+          description: Source of the document
+        source_uri:
+          type: string
+          example: "/uploads/document.pdf"
+          description: URI to the source file
+        file_name:
+          type: string
+          example: "quarterly_report.pdf"
+          description: Original file name
+        file_size:
+          type: integer
+          example: 1048576
+          description: File size in bytes
+        file_hash:
+          type: string
+          example: "sha256:abc123..."
+          description: SHA-256 hash of the file
+        mime_type:
+          type: string
+          example: "application/pdf"
+          description: MIME type of the file
+        mode:
+          $ref: '#/components/schemas/ProcessingMode'
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 10
+          example: 5
+          description: Job priority (1-10, higher is more urgent)
+        pipeline_config:
+          $ref: '#/components/schemas/PipelineConfig'
+        destinations:
+          type: array
+          items:
+            $ref: '#/components/schemas/DestinationConfig'
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        current_stage:
+          type: string
+          nullable: true
+          example: "parse"
+          description: Currently executing pipeline stage
+        stage_progress:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/StageProgress'
+          description: Progress information for each stage
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-02-16T12:00:00Z"
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-02-16T12:00:05Z"
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-02-16T12:01:30Z"
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-03-16T12:00:00Z"
+        result:
+          $ref: '#/components/schemas/JobResult'
+        error:
+          $ref: '#/components/schemas/JobError'
+        retry_count:
+          type: integer
+          example: 0
+          description: Number of retry attempts
+        retry_history:
+          type: array
+          items:
+            $ref: '#/components/schemas/RetryRecord'
+        created_by:
+          type: string
+          example: "user@example.com"
+        source_ip:
+          type: string
+          nullable: true
+          example: "192.168.1.1"
+
+    StageProgress:
+      type: object
+      required:
+        - stage
+        - status
+      properties:
+        stage:
+          type: string
+          example: "parse"
+        status:
+          type: string
+          enum: [pending, running, completed, failed, skipped]
+        progress_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 75
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        message:
+          type: string
+          nullable: true
+          example: "Processing page 3 of 4"
+
+    JobResult:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          example: true
+        output_uri:
+          type: string
+          nullable: true
+          example: "/results/job-123/output.json"
+        output_format:
+          type: string
+          example: "json"
+        extracted_text:
+          type: string
+          nullable: true
+          description: Extracted text content (for small documents)
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Extracted document metadata
+        quality_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.95
+          description: Overall quality score
+        processing_time_ms:
+          type: integer
+          example: 85000
+          description: Total processing time in milliseconds
+        pages_processed:
+          type: integer
+          example: 10
+
+    JobError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: "PARSING_FAILED"
+        message:
+          type: string
+          example: "Failed to parse PDF: corrupted file"
+        details:
+          type: object
+          additionalProperties: true
+          nullable: true
+        stack_trace:
+          type: string
+          nullable: true
+        failed_stage:
+          type: string
+          example: "parse"
+
+    RetryRecord:
+      type: object
+      required:
+        - attempt
+        - timestamp
+        - strategy
+      properties:
+        attempt:
+          type: integer
+          example: 1
+        timestamp:
+          type: string
+          format: date-time
+        strategy:
+          type: string
+          example: "same_parser"
+          description: Retry strategy used
+        error_code:
+          type: string
+          nullable: true
+          example: "TIMEOUT"
+        error_message:
+          type: string
+          nullable: true
+
+    PipelineConfig:
+      type: object
+      required:
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+          example: "default-pipeline"
+          description: Unique pipeline name
+        description:
+          type: string
+          nullable: true
+          example: "Default document processing pipeline"
+        content_detection:
+          $ref: '#/components/schemas/ContentDetectionConfig'
+        parser:
+          $ref: '#/components/schemas/ParserConfig'
+        enrichment:
+          $ref: '#/components/schemas/EnrichmentConfig'
+        quality:
+          $ref: '#/components/schemas/QualityConfig'
+        transformation:
+          $ref: '#/components/schemas/TransformationConfig'
+        enabled_stages:
+          type: array
+          items:
+            type: string
+          example: ["ingest", "detect", "parse", "enrich", "quality", "transform", "output"]
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ContentDetectionConfig:
+      type: object
+      properties:
+        auto_detect:
+          type: boolean
+          default: true
+          description: Automatically detect content type
+        detection_method:
+          type: string
+          enum: [heuristic, ml, hybrid]
+          default: hybrid
+        text_ratio_threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.95
+          description: Threshold for text-based vs scanned detection
+
+    ParserConfig:
+      type: object
+      properties:
+        primary_parser:
+          type: string
+          default: "docling"
+          example: "docling"
+        fallback_parser:
+          type: string
+          nullable: true
+          default: "azure_ocr"
+          example: "azure_ocr"
+        parser_options:
+          type: object
+          additionalProperties: true
+          description: Parser-specific options
+        ocr_language:
+          type: string
+          default: "eng"
+          example: "eng"
+          description: Language for OCR
+
+    EnrichmentConfig:
+      type: object
+      properties:
+        extract_entities:
+          type: boolean
+          default: false
+        entity_types:
+          type: array
+          items:
+            type: string
+          example: ["person", "organization", "location"]
+        classify_document:
+          type: boolean
+          default: false
+        classification_model:
+          type: string
+          nullable: true
+        add_metadata:
+          type: boolean
+          default: true
+
+    QualityConfig:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: true
+        min_quality_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.7
+          description: Minimum quality score to accept result
+        auto_retry:
+          type: boolean
+          default: true
+        max_retries:
+          type: integer
+          default: 3
+        retry_strategies:
+          type: array
+          items:
+            type: string
+          example: ["same_parser", "fallback_parser"]
+
+    TransformationConfig:
+      type: object
+      properties:
+        chunking:
+          $ref: '#/components/schemas/ChunkingConfig'
+        generate_embeddings:
+          type: boolean
+          default: false
+        embedding_model:
+          type: string
+          nullable: true
+          example: "text-embedding-3-small"
+        output_format:
+          type: string
+          enum: [json, markdown, text, cognee]
+          default: json
+
+    ChunkingConfig:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: true
+        strategy:
+          type: string
+          enum: [fixed, semantic, hierarchical]
+          default: semantic
+        chunk_size:
+          type: integer
+          default: 1000
+          description: Maximum chunk size in tokens/characters
+        chunk_overlap:
+          type: integer
+          default: 200
+          description: Overlap between chunks
+
+    DestinationConfig:
+      type: object
+      required:
+        - type
+      properties:
+        id:
+          type: string
+          format: uuid
+          nullable: true
+        type:
+          type: string
+          enum: [cognee, webhook, s3, azure_blob, neo4j, vector_store]
+          example: cognee
+        name:
+          type: string
+          example: "primary-cognee"
+        config:
+          type: object
+          additionalProperties: true
+          description: Destination-specific configuration
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/DestinationFilter'
+          description: Optional filters for selective routing
+        enabled:
+          type: boolean
+          default: true
+
+    DestinationFilter:
+      type: object
+      properties:
+        field:
+          type: string
+          example: "mime_type"
+        operator:
+          type: string
+          enum: [equals, not_equals, contains, starts_with, ends_with, regex]
+        value:
+          type: string
+          example: "application/pdf"
+
+    ContentDetectionResult:
+      type: object
+      required:
+        - detected_type
+        - confidence
+      properties:
+        detected_type:
+          $ref: '#/components/schemas/ContentType'
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.98
+        detection_method:
+          type: string
+          example: "hybrid"
+        page_count:
+          type: integer
+          nullable: true
+          example: 10
+        has_text_layer:
+          type: boolean
+          example: true
+        has_images:
+          type: boolean
+          example: false
+        image_count:
+          type: integer
+          example: 0
+        text_statistics:
+          $ref: '#/components/schemas/TextStatistics'
+        recommended_parser:
+          type: string
+          example: "docling"
+        alternative_parsers:
+          type: array
+          items:
+            type: string
+        preprocessing_required:
+          type: boolean
+          example: false
+
+    TextStatistics:
+      type: object
+      properties:
+        total_characters:
+          type: integer
+          example: 5000
+        total_words:
+          type: integer
+          example: 800
+        text_ratio:
+          type: number
+          example: 0.97
+        avg_chars_per_page:
+          type: integer
+          example: 500
+
+    SourceConfig:
+      type: object
+      required:
+        - type
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          nullable: true
+        type:
+          type: string
+          enum: [local, s3, azure_blob, sharepoint, url]
+          example: azure_blob
+        name:
+          type: string
+          example: "primary-storage"
+        description:
+          type: string
+          nullable: true
+        config:
+          type: object
+          additionalProperties: true
+          description: Source-specific configuration (credentials, paths, etc.)
+        enabled:
+          type: boolean
+          default: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    FileUploadRequest:
+      type: object
+      required:
+        - files
+      properties:
+        files:
+          type: array
+          items:
+            type: string
+            format: binary
+          description: Files to upload
+        pipeline_id:
+          type: string
+          nullable: true
+          description: Pipeline configuration to use
+        destination_ids:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Destination configurations to use
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 5
+        external_id:
+          type: string
+          nullable: true
+        mode:
+          $ref: '#/components/schemas/ProcessingMode'
+
+    UrlIngestRequest:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          format: uri
+          example: "https://example.com/document.pdf"
+        pipeline_id:
+          type: string
+          nullable: true
+        destination_ids:
+          type: array
+          items:
+            type: string
+          nullable: true
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 5
+        external_id:
+          type: string
+          nullable: true
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Additional HTTP headers
+        mode:
+          $ref: '#/components/schemas/ProcessingMode'
+
+    JobRetryRequest:
+      type: object
+      properties:
+        force_parser:
+          type: string
+          nullable: true
+          description: Override parser for retry
+        updated_config:
+          $ref: '#/components/schemas/PipelineConfig'
+          nullable: true
+
+    JobEvent:
+      type: object
+      required:
+        - event
+        - job_id
+        - timestamp
+      properties:
+        event:
+          type: string
+          enum: [created, queued, stage_started, stage_progress, stage_completed, completed, failed, cancelled]
+        job_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: true
+
+    AuditLogEntry:
+      type: object
+      required:
+        - id
+        - timestamp
+        - event_type
+        - user
+      properties:
+        id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        event_type:
+          type: string
+          example: "job.created"
+        user:
+          type: string
+          example: "user@example.com"
+        resource_type:
+          type: string
+          example: "job"
+        resource_id:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        action:
+          type: string
+          example: "create"
+        details:
+          type: object
+          additionalProperties: true
+        source_ip:
+          type: string
+        user_agent:
+          type: string
+
+    DataLineage:
+      type: object
+      required:
+        - job_id
+        - steps
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        input_hash:
+          type: string
+          example: "sha256:abc123..."
+        output_hash:
+          type: string
+          example: "sha256:def456..."
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineageStep'
+
+    LineageStep:
+      type: object
+      properties:
+        stage:
+          type: string
+          example: "parse"
+        input_hash:
+          type: string
+        output_hash:
+          type: string
+        transformation:
+          type: string
+          example: "docling_parse"
+        timestamp:
+          type: string
+          format: date-time
+
+    AuditExportRequest:
+      type: object
+      properties:
+        format:
+          type: string
+          enum: [json, csv]
+          default: json
+        date_from:
+          type: string
+          format: date-time
+        date_to:
+          type: string
+          format: date-time
+        event_types:
+          type: array
+          items:
+            type: string
+
+    AuditExportResult:
+      type: object
+      properties:
+        export_id:
+          type: string
+          format: uuid
+        download_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+        record_count:
+          type: integer
+
+    PluginInfo:
+      type: object
+      required:
+        - id
+        - name
+        - version
+        - type
+      properties:
+        id:
+          type: string
+          example: "docling"
+        name:
+          type: string
+          example: "Docling Parser"
+        version:
+          type: string
+          example: "1.0.0"
+        type:
+          type: string
+          enum: [source, parser, destination]
+        description:
+          type: string
+        supported_formats:
+          type: array
+          items:
+            type: string
+          example: ["pdf", "docx", "pptx"]
+        config_schema:
+          type: object
+          description: JSON Schema for plugin configuration
+
+    ConnectionTestResult:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        latency_ms:
+          type: integer
+        details:
+          type: object
+          additionalProperties: true
+
+    ValidationResult:
+      type: object
+      required:
+        - valid
+      properties:
+        valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationWarning'
+
+    ValidationError:
+      type: object
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+
+    ValidationWarning:
+      type: object
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+
+    # Health & System
+    HealthStatus:
+      type: object
+      required:
+        - status
+        - components
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        version:
+          type: string
+          example: "1.0.0"
+        timestamp:
+          type: string
+          format: date-time
+        components:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ComponentHealth'
+
+    ComponentHealth:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        latency_ms:
+          type: integer
+        message:
+          type: string
+          nullable: true
+
+    HealthReady:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ready]
+        timestamp:
+          type: string
+          format: date-time
+
+    HealthNotReady:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [not_ready]
+        reason:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    HealthAlive:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [alive]
+        timestamp:
+          type: string
+          format: date-time
+
+    # Response Wrappers
+    ApiResponse:
+      type: object
+      required:
+        - meta
+      properties:
+        data:
+          type: object
+          nullable: true
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+        links:
+          $ref: '#/components/schemas/ApiLinks'
+
+    ApiMeta:
+      type: object
+      required:
+        - request_id
+        - timestamp
+        - api_version
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        api_version:
+          type: string
+          example: "v1"
+        total_count:
+          type: integer
+          nullable: true
+
+    ApiLinks:
+      type: object
+      properties:
+        self:
+          type: string
+          format: uri
+        next:
+          type: string
+          format: uri
+          nullable: true
+        prev:
+          type: string
+          format: uri
+          nullable: true
+        first:
+          type: string
+          format: uri
+          nullable: true
+        last:
+          type: string
+          format: uri
+          nullable: true
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - meta
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
+    ErrorDetail:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          example: "Invalid request parameters"
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+          nullable: true
+        documentation_url:
+          type: string
+          format: uri
+          nullable: true
+
+    FieldError:
+      type: object
+      required:
+        - field
+        - code
+        - message
+      properties:
+        field:
+          type: string
+          example: "file"
+        code:
+          type: string
+          example: "UNSUPPORTED_FORMAT"
+        message:
+          type: string
+          example: "File type .xyz is not supported"
+
+  parameters:
+    JobIdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Job ID
+
+    PipelineIdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Pipeline ID
+
+    SourceIdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Source ID
+
+    DestinationIdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Destination ID
+
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+      description: Page number for pagination
+
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+      description: Number of items per page
+
+    StatusFilter:
+      name: status
+      in: query
+      schema:
+        type: string
+        enum: [created, queued, processing, completed, failed, cancelled, retrying, dead_letter]
+      description: Filter by job status
+
+    SourceTypeFilter:
+      name: source_type
+      in: query
+      schema:
+        type: string
+        enum: [upload, url, s3, azure_blob, sharepoint]
+      description: Filter by source type
+
+    DateFromFilter:
+      name: date_from
+      in: query
+      schema:
+        type: string
+        format: date-time
+      description: Filter jobs created after this date
+
+    DateToFilter:
+      name: date_to
+      in: query
+      schema:
+        type: string
+        format: date-time
+      description: Filter jobs created before this date
+
+    AuditDateFromFilter:
+      name: date_from
+      in: query
+      schema:
+        type: string
+        format: date-time
+      description: Filter audit logs from this date
+
+    AuditDateToFilter:
+      name: date_to
+      in: query
+      schema:
+        type: string
+        format: date-time
+      description: Filter audit logs to this date
+
+    AuditEventTypeFilter:
+      name: event_type
+      in: query
+      schema:
+        type: string
+      description: Filter by event type
+
+    AuditUserFilter:
+      name: user
+      in: query
+      schema:
+        type: string
+      description: Filter by user
+
+    AuditResourceFilter:
+      name: resource
+      in: query
+      schema:
+        type: string
+      description: Filter by resource type or ID
+
+  requestBodies:
+    JobCreate:
+      description: Job creation request
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - source_type
+              - source_uri
+            properties:
+              source_type:
+                type: string
+                enum: [upload, url, s3, azure_blob, sharepoint]
+              source_uri:
+                type: string
+              file_name:
+                type: string
+              file_size:
+                type: integer
+              mime_type:
+                type: string
+              pipeline_id:
+                type: string
+              destination_ids:
+                type: array
+                items:
+                  type: string
+              priority:
+                type: integer
+                minimum: 1
+                maximum: 10
+              external_id:
+                type: string
+              mode:
+                type: string
+                enum: [sync, async]
+
+  responses:
+    JobAccepted:
+      description: Job accepted for processing
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Job'
+
+    JobList:
+      description: List of jobs
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+
+    JobDetail:
+      description: Job details
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Job'
+
+    JobResult:
+      description: Job processing result
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/JobResult'
+
+    PipelineList:
+      description: List of pipeline configurations
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PipelineConfig'
+
+    PipelineCreated:
+      description: Pipeline created successfully
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PipelineConfig'
+
+    PipelineDetail:
+      description: Pipeline configuration details
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PipelineConfig'
+
+    ValidationResult:
+      description: Pipeline validation result
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ValidationResult'
+
+    SourceList:
+      description: List of source plugins and configurations
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      plugins:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PluginInfo'
+                      configurations:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SourceConfig'
+
+    SourceCreated:
+      description: Source configuration created
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SourceConfig'
+
+    DestinationList:
+      description: List of destination plugins and configurations
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      plugins:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PluginInfo'
+                      configurations:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DestinationConfig'
+
+    DestinationCreated:
+      description: Destination configuration created
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DestinationConfig'
+
+    ConnectionTest:
+      description: Connection test result
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ConnectionTestResult'
+
+    ConnectionTestFailed:
+      description: Connection test failed
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ConnectionTestResult'
+
+    AuditLogList:
+      description: List of audit log entries
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLogEntry'
+
+    DataLineage:
+      description: Data lineage information
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DataLineage'
+
+    HealthStatus:
+      description: Comprehensive health status
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/HealthStatus'
+
+    # Error Responses
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Authentication required
+            meta:
+              request_id: "550e8400-e29b-41d4-a716-446655440000"
+              timestamp: "2026-02-16T12:00:00Z"
+              api_version: "v1"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Conflict:
+      description: Conflict - resource state incompatible with request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+
+    EntityTooLarge:
+      description: Request entity too large
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

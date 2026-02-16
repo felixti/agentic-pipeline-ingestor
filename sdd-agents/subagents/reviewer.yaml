@@ -1,0 +1,11 @@
+version: 1
+agent:
+  name: reviewer
+  system_prompt_path: ../system-prompts/reviewer.md
+  tools:
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.shell:Shell"
+  system_prompt_args:
+    REVIEW_DEPTH: "comprehensive"

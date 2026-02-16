@@ -1,0 +1,379 @@
+"""
+Docker Compose configuration for local development environment.
+
+Services:
+- api: FastAPI application
+- worker: Background task worker
+- postgres: PostgreSQL database
+- redis: Redis cache and message broker
+- opensearch: OpenSearch for audit logs
+- litellm: litellm proxy for LLM routing
+
+Usage:
+    docker-compose up -d
+    docker-compose logs -f api
+    docker-compose down
+"""
+
+version: "3.8"
+
+services:
+  # ============================================================================
+  # API Service
+  # ============================================================================
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: pipeline-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Application
+      - DEBUG=true
+      - ENV=development
+      - HOST=0.0.0.0
+      - PORT=8000
+      
+      # Database
+      - DB_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/pipeline
+      - DB_ECHO=false
+      
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+      
+      # OpenSearch
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+      
+      # Security
+      - SECRET_KEY=dev-secret-key-change-in-production
+      
+      # Observability
+      - OTEL_SERVICE_NAME=pipeline-api
+      - OTEL_ENVIRONMENT=development
+      - OTEL_LOG_LEVEL=INFO
+      
+      # LLM Configuration
+      - AZURE_OPENAI_API_BASE=${AZURE_OPENAI_API_BASE:-}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      
+      # Azure AI Vision (for OCR)
+      - AZURE_AI_VISION_ENDPOINT=${AZURE_AI_VISION_ENDPOINT:-}
+      - AZURE_AI_VISION_API_KEY=${AZURE_AI_VISION_API_KEY:-}
+      
+      # Cognee
+      - COGNEE_API_URL=${COGNEE_API_URL:-http://cognee:8001}
+      - COGNEE_API_KEY=${COGNEE_API_KEY:-}
+    volumes:
+      - ../src:/app/src:ro
+      - ../api:/app/api:ro
+      - ../config:/app/config:ro
+      - pipeline-uploads:/tmp/pipeline
+      - pipeline-staging:/tmp/pipeline/staging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================================
+  # Worker Service
+  # ============================================================================
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: pipeline-worker
+    command: python -m src.worker.main
+    environment:
+      - DEBUG=true
+      - ENV=development
+      - DB_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/pipeline
+      - REDIS_URL=redis://redis:6379/0
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+      - OTEL_SERVICE_NAME=pipeline-worker
+      - OTEL_ENVIRONMENT=development
+      
+      # LLM Configuration
+      - AZURE_OPENAI_API_BASE=${AZURE_OPENAI_API_BASE:-}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      
+      # Azure AI Vision (for OCR)
+      - AZURE_AI_VISION_ENDPOINT=${AZURE_AI_VISION_ENDPOINT:-}
+      - AZURE_AI_VISION_API_KEY=${AZURE_AI_VISION_API_KEY:-}
+      
+      # Cognee
+      - COGNEE_API_URL=${COGNEE_API_URL:-http://cognee:8001}
+      - COGNEE_API_KEY=${COGNEE_API_KEY:-}
+      
+      # Worker Configuration
+      - WORKER_POLL_INTERVAL=5.0
+      - WORKER_MAX_CONCURRENT=3
+    volumes:
+      - ../src:/app/src:ro
+      - ../config:/app/config:ro
+      - pipeline-uploads:/tmp/pipeline
+      - pipeline-staging:/tmp/pipeline/staging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2  # Run 2 worker instances for parallel processing
+
+  # ============================================================================
+  # PostgreSQL Database
+  # ============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: pipeline-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=pipeline
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================================================
+  # Redis Cache
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: pipeline-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # OpenSearch for Audit Logs
+  # ============================================================================
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: pipeline-opensearch
+    environment:
+      - cluster.name=pipeline-opensearch
+      - node.name=pipeline-opensearch
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # ============================================================================
+  # litellm Proxy (Optional - for centralized LLM management)
+  # ============================================================================
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: pipeline-litellm
+    environment:
+      - AZURE_OPENAI_API_BASE=${AZURE_OPENAI_API_BASE:-}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+    volumes:
+      - ../config/litellm.yaml:/app/config.yaml:ro
+    ports:
+      - "4000:4000"
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    profiles:
+      - litellm  # Only start when explicitly requested: docker-compose --profile litellm up
+
+  # ============================================================================
+  # OpenSearch Dashboards (Optional - for audit log visualization)
+  # ============================================================================
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.11.0
+    container_name: pipeline-dashboards
+    environment:
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    ports:
+      - "5601:5601"
+    depends_on:
+      - opensearch
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    profiles:
+      - dashboards  # Only start when explicitly requested
+
+  # ============================================================================
+  # Prometheus - Metrics Collection
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: pipeline-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ../config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # ============================================================================
+  # Grafana - Metrics Visualization
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: pipeline-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # ============================================================================
+  # Jaeger - Distributed Tracing
+  # ============================================================================
+  jaeger:
+    image: jaegertracing/all-in-one:1.50
+    container_name: pipeline-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"    # Jaeger UI
+      - "14268:14268"    # Jaeger HTTP thrift
+      - "14250:14250"    # Jaeger gRPC
+      - "4317:4317"      # OTLP gRPC
+      - "4318:4318"      # OTLP HTTP
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # ============================================================================
+  # OpenTelemetry Collector
+  # ============================================================================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.91.0
+    container_name: pipeline-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ../config/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "8888:8888"      # Prometheus metrics
+      - "8889:8889"      # Prometheus exporter metrics
+      - "4317:4317"      # OTLP gRPC receiver
+      - "4318:4318"      # OTLP HTTP receiver
+    depends_on:
+      - jaeger
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  opensearch-data:
+    driver: local
+  pipeline-uploads:
+    driver: local
+  pipeline-staging:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  pipeline-network:
+    driver: bridge

@@ -581,7 +581,7 @@ class DataLineage(Base):
     output_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     
     # Additional metadata
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    extra_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     
     # Timestamp
     timestamp: Mapped[datetime] = mapped_column(
@@ -736,7 +736,7 @@ class DLQEntry(Base):
     )
     
     # Additional metadata
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    extra_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     
     # Relationships
     job: Mapped[Job] = relationship("Job", backref="dlq_entry")
@@ -799,7 +799,7 @@ class ProcessingHistory(Base):
     )
     
     # Additional metadata
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    extra_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     
     # Relationships
     job: Mapped[Job] = relationship("Job", backref="processing_history")
@@ -1053,7 +1053,7 @@ class User(Base):
     )
     
     # Metadata
-    metadata: Mapped[Dict[str, Any]] = mapped_column(
+    extra_metadata: Mapped[Dict[str, Any]] = mapped_column(
         JSON,
         nullable=False,
         default=dict,
@@ -1176,7 +1176,7 @@ class APIKey(Base):
     revoked_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     
     # Metadata
-    metadata: Mapped[Dict[str, Any]] = mapped_column(
+    extra_metadata: Mapped[Dict[str, Any]] = mapped_column(
         JSON,
         nullable=False,
         default=dict,

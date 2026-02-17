@@ -27,12 +27,14 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY pyproject.toml /app/
 WORKDIR /app
 
-# Install dependencies (without the package itself)
+# Install dependencies from pyproject.toml
 RUN pip install --upgrade pip && \
     pip install \
-    fastapi uvicorn pydantic sqlalchemy alembic asyncpg redis \
+    fastapi uvicorn pydantic pydantic-settings sqlalchemy alembic asyncpg redis \
     litellm openai httpx aiohttp \
-    prometheus-client structlog python-jose passlib pyyaml
+    prometheus-client structlog python-jose passlib pyyaml tenacity \
+    opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp \
+    opentelemetry-instrumentation-fastapi opentelemetry-instrumentation-sqlalchemy
 
 # ============================================================================
 # Stage 2: Runtime

@@ -1,21 +1,17 @@
-"""
-Docker Compose configuration for local development environment.
-
-Services:
-- api: FastAPI application
-- worker: Background task worker
-- postgres: PostgreSQL database
-- redis: Redis cache and message broker
-- opensearch: OpenSearch for audit logs
-- litellm: litellm proxy for LLM routing
-
-Usage:
-    docker-compose up -d
-    docker-compose logs -f api
-    docker-compose down
-"""
-
-version: "3.8"
+# Docker Compose configuration for local development environment.
+#
+# Services:
+# - api: FastAPI application
+# - worker: Background task worker
+# - postgres: PostgreSQL database
+# - redis: Redis cache and message broker
+# - opensearch: OpenSearch for audit logs
+# - litellm: litellm proxy for LLM routing
+#
+# Usage:
+#     docker-compose up -d
+#     docker-compose logs -f api
+#     docker-compose down
 
 services:
   # ============================================================================
@@ -95,7 +91,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: pipeline-worker
+    # Note: container_name not set to allow replicas
     command: python -m src.worker.main
     environment:
       - DEBUG=true
@@ -175,7 +171,7 @@ services:
     volumes:
       - redis-data:/data
     ports:
-      - "6379:6379"
+      - "6380:6379"
     networks:
       - pipeline-network
     restart: unless-stopped

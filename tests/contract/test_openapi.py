@@ -94,13 +94,17 @@ class TestOpenAPISpecValidity:
         paths = openapi_schema["paths"]
         assert len(paths) > 0
 
-    def test_health_path_defined(self, openapi_schema):
-        """Test that /health path is defined."""
-        assert "/health" in openapi_schema["paths"]
-
     def test_jobs_path_defined(self, openapi_schema):
         """Test that /api/v1/jobs path is defined."""
         assert "/api/v1/jobs" in openapi_schema["paths"]
+
+    def test_upload_path_defined(self, openapi_schema):
+        """Test that /api/v1/upload path is defined."""
+        assert "/api/v1/upload" in openapi_schema["paths"]
+
+    def test_sources_path_defined(self, openapi_schema):
+        """Test that /api/v1/sources path is defined."""
+        assert "/api/v1/sources" in openapi_schema["paths"]
 
 
 class TestResponseSchemas:

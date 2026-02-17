@@ -63,7 +63,7 @@ Enterprise-grade agentic data pipeline for document ingestion with intelligent c
 
 - Python 3.11+
 - Docker & Docker Compose (for local development)
-- PostgreSQL 15+
+- PostgreSQL 17+
 - Redis 7+
 
 ### Installation

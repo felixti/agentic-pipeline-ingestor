@@ -18,7 +18,7 @@ services:
   # PostgreSQL Database for E2E Tests
   # ============================================================================
   postgres-e2e:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     container_name: pipeline-postgres-e2e
     environment:
       POSTGRES_DB: pipeline_test

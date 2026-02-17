@@ -178,7 +178,7 @@ agentic-pipeline-ingestion/
 |----------|------------|
 | Web Framework | FastAPI 0.104+ |
 | Data Validation | Pydantic 2.x |
-| Database | PostgreSQL 15+, SQLAlchemy 2.0 |
+| Database | PostgreSQL 17+, SQLAlchemy 2.0 |
 | Cache | Redis 7+ |
 | LLM | litellm (Azure OpenAI + OpenRouter) |
 | Testing | pytest, schemathesis |

@@ -1168,7 +1168,7 @@ Track transformations through pipeline: input hashes, output hashes, transformat
 ### Core
 - Python 3.11+
 - FastAPI 0.104+ (generated from OpenAPI spec)
-- PostgreSQL 15+
+- PostgreSQL 17+
 - Redis 7+
 - Azure Queue Storage
 

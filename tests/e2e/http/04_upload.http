@@ -1,0 +1,259 @@
+### Upload File - Single PDF Document
+### Upload a single PDF file for processing
+POST {{base_url}}/api/v1/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+X-API-Key: {{api_key}}
+Accept: application/json
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="sample-text.pdf"
+Content-Type: application/pdf
+
+< ../fixtures/documents/pdf/sample-text.pdf
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="metadata"
+
+{"source": "e2e-test", "test_case": "single-upload"}
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="priority"
+
+5
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+> {%
+    client.test("File upload returns 202", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+    client.test("Upload response has job_id", function() {
+        client.assert(response.body.data.job_id !== undefined, "Has job_id in data");
+    });
+    client.global.set("upload_job_id", response.body.data.job_id);
+%}
+
+###
+
+### Upload File - Scanned PDF (OCR Required)
+POST {{base_url}}/api/v1/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+X-API-Key: {{api_key}}
+Accept: application/json
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="sample-scanned.pdf"
+Content-Type: application/pdf
+
+< ../fixtures/documents/pdf/sample-scanned.pdf
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="options"
+
+{"force_ocr": true, "ocr_language": "eng"}
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+> {%
+    client.test("Scanned PDF upload returns 202", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+%}
+
+###
+
+### Upload File - Word Document
+POST {{base_url}}/api/v1/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+X-API-Key: {{api_key}}
+Accept: application/json
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="sample.docx"
+Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+
+< ../fixtures/documents/office/sample.docx
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+> {%
+    client.test("Word document upload returns 202", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+%}
+
+###
+
+### Upload File - Excel Spreadsheet
+POST {{base_url}}/api/v1/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+X-API-Key: {{api_key}}
+Accept: application/json
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="sample.xlsx"
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+< ../fixtures/documents/office/sample.xlsx
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+> {%
+    client.test("Excel upload returns 202", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+%}
+
+###
+
+### Upload File - PowerPoint Presentation
+POST {{base_url}}/api/v1/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+X-API-Key: {{api_key}}
+Accept: application/json
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="sample.pptx"
+Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation
+
+< ../fixtures/documents/office/sample.pptx
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+> {%
+    client.test("PowerPoint upload returns 202", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+%}
+
+###
+
+### Upload File - Image (Receipt for OCR)
+POST {{base_url}}/api/v1/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+X-API-Key: {{api_key}}
+Accept: application/json
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="receipt.jpg"
+Content-Type: image/jpeg
+
+< ../fixtures/documents/images/receipt.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="options"
+
+{"force_ocr": true}
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+> {%
+    client.test("Image upload returns 202", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+%}
+
+###
+
+### Upload File - Image (PNG Document)
+POST {{base_url}}/api/v1/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+X-API-Key: {{api_key}}
+Accept: application/json
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="document.png"
+Content-Type: image/png
+
+< ../fixtures/documents/images/document.png
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+> {%
+    client.test("PNG upload returns 202", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+%}
+
+###
+
+### Ingest from URL
+### Submit a job to ingest a document from a remote URL
+POST {{base_url}}/api/v1/upload/url
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "url": "https://example.com/documents/sample-document.pdf",
+  "file_name": "sample-document.pdf",
+  "mime_type": "application/pdf",
+  "metadata": {
+    "source": "url-ingestion",
+    "original_url": "https://example.com/documents/sample-document.pdf"
+  }
+}
+
+> {%
+    client.test("URL ingestion returns 202", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+    client.test("Response has job_id", function() {
+        client.assert(response.body.data.job_id !== undefined, "Has job_id in data");
+    });
+%}
+
+###
+
+### Upload File - Empty File (Error Test)
+POST {{base_url}}/api/v1/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+X-API-Key: {{api_key}}
+Accept: application/json
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="empty.txt"
+Content-Type: text/plain
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+> {%
+    client.test("Empty file upload handled appropriately", function() {
+        // May accept or reject depending on implementation
+        client.assert(response.status === 202 || response.status === 400 || response.status === 422, 
+                      "Expected 202, 400, or 422");
+    });
+%}
+
+###
+
+### Upload File - Large File (Error Test)
+### This tests the file size limit handling
+POST {{base_url}}/api/v1/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+X-API-Key: {{api_key}}
+Accept: application/json
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="large-document.pdf"
+Content-Type: application/pdf
+
+< ../fixtures/documents/pdf/large-document.pdf
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+> {%
+    client.test("Large file upload handled", function() {
+        // May accept or return 413 depending on size limits
+        client.assert(response.status === 202 || response.status === 413 || response.status === 400, 
+                      "Expected 202, 413, or 400");
+    });
+%}
+
+###
+
+### Upload File - Without Authentication (Error Test)
+POST {{base_url}}/api/v1/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+Accept: application/json
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test.pdf"
+Content-Type: application/pdf
+
+< ../fixtures/documents/pdf/sample-text.pdf
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+> {%
+    client.test("Unauthenticated upload returns 401", function() {
+        client.assert(response.status === 401, "Expected 401 Unauthorized");
+    });
+%}

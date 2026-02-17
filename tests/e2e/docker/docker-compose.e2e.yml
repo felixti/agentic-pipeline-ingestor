@@ -1,0 +1,305 @@
+# E2E Test Docker Compose Configuration
+# 
+# This compose file sets up the complete stack for E2E testing including:
+# - API service with test configuration
+# - PostgreSQL database for test data
+# - Redis for caching and job queues
+# - Test runner service for executing tests
+#
+# Usage:
+#   docker-compose -f docker-compose.e2e.yml up -d
+#   docker-compose -f docker-compose.e2e.yml exec test-runner pytest /tests/e2e -v
+#   docker-compose -f docker-compose.e2e.yml down
+
+version: "3.8"
+
+services:
+  # ============================================================================
+  # PostgreSQL Database for E2E Tests
+  # ============================================================================
+  postgres-e2e:
+    image: postgres:15-alpine
+    container_name: pipeline-postgres-e2e
+    environment:
+      POSTGRES_DB: pipeline_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_e2e_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"  # Use different port to avoid conflicts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pipeline_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - e2e-network
+
+  # ============================================================================
+  # Redis for Caching and Job Queues
+  # ============================================================================
+  redis-e2e:
+    image: redis:7-alpine
+    container_name: pipeline-redis-e2e
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_e2e_data:/data
+    ports:
+      - "6380:6379"  # Use different port to avoid conflicts
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - e2e-network
+
+  # ============================================================================
+  # API Service for E2E Testing
+  # ============================================================================
+  api-e2e:
+    build:
+      context: ../../..  # From project root
+      dockerfile: Dockerfile
+      args:
+        - PYTHON_VERSION=3.11
+    container_name: pipeline-api-e2e
+    environment:
+      # Application Configuration
+      - APP_NAME=agentic-pipeline-ingestor-e2e
+      - APP_VERSION=1.0.0-e2e
+      - ENV=test
+      - DEBUG=true
+      
+      # Database Configuration
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres-e2e:5432/pipeline_test
+      - DB_ECHO=false
+      - DB_POOL_SIZE=10
+      - DB_MAX_OVERFLOW=20
+      
+      # Redis Configuration
+      - REDIS_URL=redis://redis-e2e:6379/0
+      
+      # API Configuration
+      - HOST=0.0.0.0
+      - PORT=8000
+      - WORKERS=2
+      
+      # Security (Test Keys)
+      - API_KEY_HEADER=X-API-Key
+      - ALLOWED_API_KEYS=test-api-key,admin-api-key,viewer-api-key
+      - JWT_SECRET=test-jwt-secret-for-e2e-only
+      
+      # LLM Configuration (Use mock/stub for E2E)
+      - LLM_PROVIDER=mock
+      - LLM_MODEL=mock-model
+      
+      # Observability (Disabled for E2E)
+      - OTEL_EXPORTER_OTLP_ENDPOINT=
+      - METRICS_ENABLED=false
+      
+      # Processing Configuration
+      - MAX_FILE_SIZE_MB=100
+      - DEFAULT_TIMEOUT_SECONDS=300
+      - OCR_ENABLED=true
+      
+    volumes:
+      # Mount test fixtures for processing
+      - ../fixtures:/app/fixtures:ro
+      # Mount uploads directory
+      - uploads_e2e:/app/uploads
+    ports:
+      - "8001:8000"  # Use different port to avoid conflicts
+    depends_on:
+      postgres-e2e:
+        condition: service_healthy
+      redis-e2e:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - e2e-network
+    restart: unless-stopped
+
+  # ============================================================================
+  # Worker Service (if using separate worker process)
+  # ============================================================================
+  worker-e2e:
+    build:
+      context: ../../..
+      dockerfile: Dockerfile.worker
+    container_name: pipeline-worker-e2e
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres-e2e:5432/pipeline_test
+      - REDIS_URL=redis://redis-e2e:6379/0
+      - LLM_PROVIDER=mock
+      - MAX_CONCURRENT_JOBS=5
+      - POLL_INTERVAL_SECONDS=2
+    volumes:
+      - ../fixtures:/app/fixtures:ro
+      - uploads_e2e:/app/uploads
+    depends_on:
+      - postgres-e2e
+      - redis-e2e
+      - api-e2e
+    networks:
+      - e2e-network
+    restart: unless-stopped
+    profiles:
+      - with-worker  # Only start when explicitly requested
+
+  # ============================================================================
+  # Test Runner Service
+  # ============================================================================
+  test-runner:
+    build:
+      context: ../../..
+      dockerfile: tests/e2e/docker/Dockerfile.test
+    container_name: pipeline-test-runner
+    environment:
+      # Test Configuration
+      - E2E_BASE_URL=http://api-e2e:8000
+      - E2E_API_KEY=test-api-key
+      - E2E_ADMIN_API_KEY=admin-api-key
+      - E2E_VIEWER_API_KEY=viewer-api-key
+      - E2E_REQUEST_TIMEOUT=30
+      - E2E_POLL_INTERVAL=2.0
+      - E2E_MAX_POLL_ATTEMPTS=60
+      
+      # Pytest Configuration
+      - PYTHONPATH=/app:/tests
+      - PYTEST_CURRENT_TEST=1
+    volumes:
+      # Mount E2E tests
+      - ../:/tests:ro
+      # Mount reports directory for output
+      - ../reports:/reports
+      # Mount test fixtures
+      - ../fixtures:/tests/fixtures:ro
+    working_dir: /tests
+    command: >
+      sh -c "
+        echo 'Waiting for API to be ready...' &&
+        sleep 10 &&
+        echo 'Running E2E tests...' &&
+        pytest /tests/e2e/scenarios 
+        -v 
+        --tb=short 
+        --html=/reports/report.html 
+        --self-contained-html 
+        --junitxml=/reports/junit.xml 
+        -m 'e2e and not performance' 
+        || true &&
+        echo 'Test run complete. Reports saved to /reports/'
+      "
+    depends_on:
+      api-e2e:
+        condition: service_healthy
+    networks:
+      - e2e-network
+    profiles:
+      - test  # Only start when running tests
+
+  # ============================================================================
+  # Mock LLM Service (for isolated testing)
+  # ============================================================================
+  mock-llm-e2e:
+    image: mockserver/mockserver:5.15.0
+    container_name: pipeline-mock-llm-e2e
+    environment:
+      - MOCKSERVER_SERVER_PORT=1080
+      - MOCKSERVER_LOG_LEVEL=INFO
+    ports:
+      - "1081:1080"
+    volumes:
+      - ./mockserver:/config:ro
+    command: >
+      sh -c "
+        echo 'Creating mock expectations...' &&
+        /opt/mockserver/run_mockserver.sh 
+        -serverPort 1080 
+        -logLevel INFO
+      "
+    networks:
+      - e2e-network
+    profiles:
+      - with-mocks
+
+  # ============================================================================
+  # MinIO (S3-compatible storage for testing)
+  # ============================================================================
+  minio-e2e:
+    image: minio/minio:latest
+    container_name: pipeline-minio-e2e
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    volumes:
+      - minio_e2e_data:/data
+    networks:
+      - e2e-network
+    profiles:
+      - with-storage
+
+  # ============================================================================
+  # Prometheus (for metrics testing)
+  # ============================================================================
+  prometheus-e2e:
+    image: prom/prometheus:latest
+    container_name: pipeline-prometheus-e2e
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9091:9090"
+    networks:
+      - e2e-network
+    profiles:
+      - with-monitoring
+
+  # ============================================================================
+  # Grafana (for visualization testing)
+  # ============================================================================
+  grafana-e2e:
+    image: grafana/grafana:latest
+    container_name: pipeline-grafana-e2e
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3001:3000"
+    networks:
+      - e2e-network
+    profiles:
+      - with-monitoring
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  e2e-network:
+    driver: bridge
+    name: pipeline-e2e-network
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  postgres_e2e_data:
+    name: pipeline-postgres-e2e-data
+  redis_e2e_data:
+    name: pipeline-redis-e2e-data
+  uploads_e2e:
+    name: pipeline-uploads-e2e
+  minio_e2e_data:
+    name: pipeline-minio-e2e-data

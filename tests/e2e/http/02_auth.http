@@ -1,0 +1,117 @@
+### Authentication - API Key Validation
+### Test valid API key authentication
+GET {{base_url}}/api/v1/jobs?limit=1
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Valid API key returns success", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### Authentication - Invalid API Key
+### Test rejection of invalid API key
+GET {{base_url}}/api/v1/jobs?limit=1
+X-API-Key: invalid-api-key-12345
+Accept: application/json
+
+> {%
+    client.test("Invalid API key returns 401", function() {
+        client.assert(response.status === 401, "Expected 401 Unauthorized");
+    });
+%}
+
+###
+
+### Authentication - Missing API Key
+### Test rejection of request without API key
+GET {{base_url}}/api/v1/jobs?limit=1
+Accept: application/json
+
+> {%
+    client.test("Missing API key returns 401", function() {
+        client.assert(response.status === 401, "Expected 401 Unauthorized");
+    });
+%}
+
+###
+
+### Authentication - OAuth2 Bearer Token (if configured)
+### Test OAuth2 bearer token authentication
+GET {{base_url}}/api/v1/jobs?limit=1
+Authorization: Bearer {{oauth2_token}}
+Accept: application/json
+
+> {%
+    client.test("OAuth2 token returns success or 401 if not configured", function() {
+        // May return 200 or 401 depending on OAuth2 configuration
+        client.assert(response.status === 200 || response.status === 401, "Expected 200 or 401");
+    });
+%}
+
+###
+
+### Authentication - Expired Token
+### Test rejection of expired OAuth2 token
+GET {{base_url}}/api/v1/jobs?limit=1
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJleHAiOjE1MTYyMzkwMjJ9.4Adcj8TqQzyi4lpj0_ij3fZKfrE1j29nQZ2WZtkO0JM
+Accept: application/json
+
+> {%
+    client.test("Expired token returns 401", function() {
+        client.assert(response.status === 401, "Expected 401 Unauthorized");
+    });
+%}
+
+###
+
+### RBAC - Admin Access Test
+### Test admin role can access admin endpoints
+GET {{base_url}}/api/v1/admin/users
+X-API-Key: {{admin_api_key}}
+Accept: application/json
+
+> {%
+    client.test("Admin can access admin endpoints", function() {
+        // Endpoint may not exist, so accept 200 or 404
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### RBAC - Viewer Read-Only Access
+### Test viewer role can read but not write
+GET {{base_url}}/api/v1/jobs
+X-API-Key: {{viewer_api_key}}
+Accept: application/json
+
+> {%
+    client.test("Viewer can read jobs", function() {
+        client.assert(response.status === 200 || response.status === 401, "Expected 200 or 401");
+    });
+%}
+
+###
+
+### RBAC - Viewer Cannot Create Jobs
+### Test viewer role cannot create jobs
+POST {{base_url}}/api/v1/jobs
+Content-Type: application/json
+X-API-Key: {{viewer_api_key}}
+
+{
+  "source_type": "upload",
+  "source_uri": "/uploads/test.pdf",
+  "file_name": "test.pdf",
+  "mime_type": "application/pdf"
+}
+
+> {%
+    client.test("Viewer cannot create jobs", function() {
+        client.assert(response.status === 403 || response.status === 401, "Expected 403 Forbidden or 401");
+    });
+%}

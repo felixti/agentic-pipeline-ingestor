@@ -1,0 +1,149 @@
+### Health Check - Comprehensive
+### Tests the comprehensive health endpoint that checks all system components
+GET {{base_url}}/health
+Accept: application/json
+
+> {%
+    client.test("Health check returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Health status is present", function() {
+        client.assert(response.body.status !== undefined, "Has status field");
+    });
+    client.test("Version is present", function() {
+        client.assert(response.body.version !== undefined, "Has version field");
+    });
+    client.test("Components are checked", function() {
+        client.assert(response.body.components !== undefined, "Has components");
+        client.assert(Object.keys(response.body.components).length > 0, "Has at least one component");
+    });
+%}
+
+###
+
+### Health Check - Kubernetes Liveness Probe
+### Lightweight check for Kubernetes liveness probe
+GET {{base_url}}/health/live
+Accept: application/json
+
+> {%
+    client.test("Liveness returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Alive status is true", function() {
+        client.assert(response.body.alive === true, "Service is alive");
+    });
+%}
+
+###
+
+### Health Check - Kubernetes Readiness Probe
+### Checks if service is ready to receive traffic
+GET {{base_url}}/health/ready
+Accept: application/json
+
+> {%
+    client.test("Readiness returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Ready status is true", function() {
+        client.assert(response.body.ready === true, "Service is ready");
+    });
+%}
+
+###
+
+### Health Check - Detailed Component Health (Database)
+GET {{base_url}}/health/detailed/database
+Accept: application/json
+
+> {%
+    client.test("Database health check returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Component is database", function() {
+        client.assert(response.body.component === "database", "Component is database");
+    });
+    client.test("Has healthy status", function() {
+        client.assert(response.body.healthy !== undefined, "Has healthy field");
+    });
+%}
+
+###
+
+### Health Check - Detailed Component Health (Redis)
+GET {{base_url}}/health/detailed/redis
+Accept: application/json
+
+> {%
+    client.test("Redis health check returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Component is redis", function() {
+        client.assert(response.body.component === "redis", "Component is redis");
+    });
+%}
+
+###
+
+### Health Check - Detailed Component Health (LLM Providers)
+GET {{base_url}}/health/detailed/llm_providers
+Accept: application/json
+
+> {%
+    client.test("LLM providers health check returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Component is llm_providers", function() {
+        client.assert(response.body.component === "llm_providers", "Component is llm_providers");
+    });
+%}
+
+###
+
+### Health Check - Detailed Component Health (Destinations)
+GET {{base_url}}/health/detailed/destinations
+Accept: application/json
+
+> {%
+    client.test("Destinations health check returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Component is destinations", function() {
+        client.assert(response.body.component === "destinations", "Component is destinations");
+    });
+%}
+
+###
+
+### Health Check - Prometheus Metrics
+GET {{base_url}}/metrics
+Accept: text/plain
+
+> {%
+    client.test("Metrics endpoint returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Response is Prometheus format", function() {
+        client.assert(response.contentType.mimeType === "text/plain", "Content type is text/plain");
+        client.assert(response.body.indexOf("# HELP") !== -1 || response.body.indexOf("# TYPE") !== -1, "Contains Prometheus metrics");
+    });
+%}
+
+###
+
+### Health Check - OpenAPI Specification
+GET {{base_url}}/api/v1/openapi.yaml
+Accept: text/yaml
+
+> {%
+    client.test("OpenAPI spec returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Response is YAML format", function() {
+        client.assert(response.contentType.mimeType === "text/yaml" || response.body.indexOf("openapi:") !== -1, "Content is YAML");
+    });
+    client.test("Contains OpenAPI version", function() {
+        client.assert(response.body.indexOf("3.1.0") !== -1 || response.body.indexOf("3.0") !== -1, "Has OpenAPI version");
+    });
+%}

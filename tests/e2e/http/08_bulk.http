@@ -1,0 +1,247 @@
+### Bulk Job Submission
+### Submit multiple jobs in a single request
+POST {{base_url}}/api/v1/bulk/jobs
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "jobs": [
+    {
+      "source_type": "upload",
+      "source_uri": "/uploads/doc1.pdf",
+      "file_name": "doc1.pdf",
+      "mime_type": "application/pdf",
+      "priority": 5
+    },
+    {
+      "source_type": "upload",
+      "source_uri": "/uploads/doc2.pdf",
+      "file_name": "doc2.pdf",
+      "mime_type": "application/pdf",
+      "priority": 5
+    },
+    {
+      "source_type": "upload",
+      "source_uri": "/uploads/doc3.docx",
+      "file_name": "doc3.docx",
+      "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "priority": 3
+    }
+  ],
+  "common_options": {
+    "mode": "async",
+    "destination": "cognee"
+  }
+}
+
+> {%
+    client.test("Bulk job submission returns 202", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+    client.test("Response has batch_id", function() {
+        client.assert(response.body.data.batch_id !== undefined, "Has batch_id in data");
+    });
+    client.global.set("batch_id", response.body.data.batch_id);
+%}
+
+###
+
+### Get Bulk Job Status
+### Check the status of a bulk submission
+GET {{base_url}}/api/v1/bulk/jobs/{{batch_id}}
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Bulk status returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Response has batch info", function() {
+        client.assert(response.body.data.batch_id !== undefined, "Has batch_id");
+    });
+%}
+
+###
+
+### Bulk File Upload
+### Upload multiple files in a single request
+POST {{base_url}}/api/v1/bulk/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+X-API-Key: {{api_key}}
+Accept: application/json
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="files"; filename="doc1.pdf"
+Content-Type: application/pdf
+
+< ../fixtures/documents/pdf/sample-text.pdf
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="files"; filename="doc2.docx"
+Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+
+< ../fixtures/documents/office/sample.docx
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="metadata"
+
+{"source": "bulk-upload-test", "priority": 5}
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+> {%
+    client.test("Bulk upload returns 202", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+    client.test("Response has batch_id", function() {
+        client.assert(response.body.data.batch_id !== undefined, "Has batch_id in data");
+    });
+%}
+
+###
+
+### Bulk Cancel Jobs
+### Cancel multiple jobs at once
+POST {{base_url}}/api/v1/bulk/jobs/cancel
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "job_ids": [
+    "{{job_id}}",
+    "non-existent-job-1",
+    "non-existent-job-2"
+  ]
+}
+
+> {%
+    client.test("Bulk cancel returns 200 or 207", function() {
+        // 200 for full success, 207 for partial success
+        client.assert(response.status === 200 || response.status === 207, "Expected 200 or 207");
+    });
+%}
+
+###
+
+### Bulk Retry Jobs
+### Retry multiple failed jobs at once
+POST {{base_url}}/api/v1/bulk/jobs/retry
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "job_ids": [
+    "{{job_id}}"
+  ],
+  "retry_options": {
+    "max_retries": 3,
+    "force_parser": "azure_ocr"
+  }
+}
+
+> {%
+    client.test("Bulk retry returns 202", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+%}
+
+###
+
+### Bulk Delete Jobs
+### Delete multiple jobs at once
+POST {{base_url}}/api/v1/bulk/jobs/delete
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "job_ids": [
+    "{{job_id}}"
+  ],
+  "permanent": false
+}
+
+> {%
+    client.test("Bulk delete returns 200 or 207", function() {
+        client.assert(response.status === 200 || response.status === 207, "Expected 200 or 207");
+    });
+%}
+
+###
+
+### Bulk Import from Source
+### Import multiple files from a configured source
+POST {{base_url}}/api/v1/bulk/import
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "source_id": "azure-blob-source",
+  "files": [
+    "documents/doc1.pdf",
+    "documents/doc2.pdf",
+    "documents/doc3.docx"
+  ],
+  "options": {
+    "mode": "async",
+    "priority": 5
+  }
+}
+
+> {%
+    client.test("Bulk import returns 202", function() {
+        client.assert(response.status === 202 || response.status === 404, "Expected 202 or 404");
+    });
+%}
+
+###
+
+### Bulk Export Results
+### Export results for multiple jobs
+POST {{base_url}}/api/v1/bulk/export
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "job_ids": [
+    "{{job_id}}"
+  ],
+  "format": "json",
+  "include_metadata": true,
+  "include_raw_text": false
+}
+
+> {%
+    client.test("Bulk export returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### Get Bulk Operations History
+### List all bulk operations
+GET {{base_url}}/api/v1/bulk/operations?page=1&limit=20
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Bulk operations history returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### Get Bulk Operation Details
+GET {{base_url}}/api/v1/bulk/operations/{{batch_id}}
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Bulk operation details returns 200", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}

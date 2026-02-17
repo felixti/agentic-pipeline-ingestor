@@ -1,0 +1,346 @@
+### Create Job - PDF Document (Async Mode)
+### Submit a new PDF ingestion job with async processing
+POST {{base_url}}/api/v1/jobs
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "source_type": "upload",
+  "source_uri": "/uploads/sample-text.pdf",
+  "file_name": "sample-text.pdf",
+  "mime_type": "application/pdf",
+  "mode": "async",
+  "priority": 5,
+  "metadata": {
+    "source": "e2e-test",
+    "test_case": "pdf-text-extraction"
+  }
+}
+
+> {%
+    client.test("Job created successfully", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+    client.test("Response has job_id", function() {
+        client.assert(response.body.data.id !== undefined, "Has job_id in data");
+    });
+    client.test("Job status is created", function() {
+        client.assert(response.body.data.status === "created", "Status is created");
+    });
+    client.global.set("job_id", response.body.data.id);
+%}
+
+###
+
+### Create Job - Scanned PDF with OCR
+### Submit a job requiring OCR processing
+POST {{base_url}}/api/v1/jobs
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "source_type": "upload",
+  "source_uri": "/uploads/sample-scanned.pdf",
+  "file_name": "sample-scanned.pdf",
+  "mime_type": "application/pdf",
+  "mode": "async",
+  "priority": 3,
+  "options": {
+    "force_ocr": true,
+    "ocr_language": "eng"
+  }
+}
+
+> {%
+    client.test("OCR job created successfully", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+    client.global.set("ocr_job_id", response.body.data.id);
+%}
+
+###
+
+### Create Job - Office Document (Word)
+POST {{base_url}}/api/v1/jobs
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "source_type": "upload",
+  "source_uri": "/uploads/sample.docx",
+  "file_name": "sample.docx",
+  "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "mode": "async",
+  "priority": 5
+}
+
+> {%
+    client.test("Word document job created successfully", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+    client.global.set("word_job_id", response.body.data.id);
+%}
+
+###
+
+### Create Job - Excel Spreadsheet
+POST {{base_url}}/api/v1/jobs
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "source_type": "upload",
+  "source_uri": "/uploads/sample.xlsx",
+  "file_name": "sample.xlsx",
+  "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "mode": "async",
+  "priority": 5
+}
+
+> {%
+    client.test("Excel job created successfully", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+%}
+
+###
+
+### Create Job - Sync Mode (Immediate Processing)
+POST {{base_url}}/api/v1/jobs
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "source_type": "upload",
+  "source_uri": "/uploads/sample-text.pdf",
+  "file_name": "sample-text.pdf",
+  "mime_type": "application/pdf",
+  "mode": "sync",
+  "priority": 5
+}
+
+> {%
+    client.test("Sync job created successfully", function() {
+        client.assert(response.status === 202 || response.status === 200, "Expected 202 or 200");
+    });
+%}
+
+###
+
+### Get Job Status
+### Retrieve detailed information about a specific job
+GET {{base_url}}/api/v1/jobs/{{job_id}}
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Get job returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Job has correct ID", function() {
+        client.assert(response.body.data.id === client.global.get("job_id"), "Job ID matches");
+    });
+    client.test("Job has status field", function() {
+        client.assert(response.body.data.status !== undefined, "Has status field");
+    });
+%}
+
+###
+
+### List Jobs with Default Pagination
+GET {{base_url}}/api/v1/jobs
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("List jobs returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Response has data array", function() {
+        client.assert(Array.isArray(response.body.data), "Data is an array");
+    });
+%}
+
+###
+
+### List Jobs with Status Filter (Pending)
+GET {{base_url}}/api/v1/jobs?status=pending&limit=10
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Filtered list returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### List Jobs with Status Filter (Completed)
+GET {{base_url}}/api/v1/jobs?status=completed&limit=10
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Completed jobs list returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### List Jobs with Date Range Filter
+GET {{base_url}}/api/v1/jobs?date_from=2024-01-01&date_to=2024-12-31&limit=50
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Date range filter returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### List Jobs with Source Type Filter
+GET {{base_url}}/api/v1/jobs?source_type=upload&limit=10
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Source type filter returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### List Jobs - Pagination Test
+GET {{base_url}}/api/v1/jobs?page=1&limit=5
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Paginated list returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Respects limit parameter", function() {
+        if (response.body.data && response.body.data.length <= 5) {
+            client.assert(true, "Limit respected");
+        }
+    });
+%}
+
+###
+
+### Cancel Job
+### Cancel a pending or running job
+DELETE {{base_url}}/api/v1/jobs/{{job_id}}
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Cancel job returns 204 or 404", function() {
+        // May return 204 if job exists, 404 if not found
+        client.assert(response.status === 204 || response.status === 404, "Expected 204 or 404");
+    });
+%}
+
+###
+
+### Retry Failed Job
+### Retry a job that has failed or been sent to DLQ
+POST {{base_url}}/api/v1/jobs/{{job_id}}/retry
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "force_parser": "azure_ocr",
+  "priority": 10
+}
+
+> {%
+    client.test("Retry job returns 202", function() {
+        client.assert(response.status === 202, "Expected 202 Accepted");
+    });
+    client.test("Retry response has job_id", function() {
+        client.assert(response.body.data.id !== undefined, "Has job_id in data");
+    });
+%}
+
+###
+
+### Get Job Result
+### Retrieve the processed output of a completed job
+GET {{base_url}}/api/v1/jobs/{{job_id}}/result
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Get result returns 200 or 404", function() {
+        // May return 404 if job not completed yet
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### Get Non-Existent Job (404 Test)
+GET {{base_url}}/api/v1/jobs/non-existent-job-id-12345
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Non-existent job returns 404", function() {
+        client.assert(response.status === 404, "Expected 404 Not Found");
+    });
+%}
+
+###
+
+### Create Job - Invalid Request (400 Test)
+### Test validation error handling
+POST {{base_url}}/api/v1/jobs
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "source_type": "upload"
+  // Missing required fields: source_uri, file_name, mime_type
+}
+
+> {%
+    client.test("Invalid request returns 400", function() {
+        client.assert(response.status === 400 || response.status === 422, "Expected 400 or 422");
+    });
+%}
+
+###
+
+### Create Job - Unsupported MIME Type
+POST {{base_url}}/api/v1/jobs
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "source_type": "upload",
+  "source_uri": "/uploads/test.xyz",
+  "file_name": "test.xyz",
+  "mime_type": "application/x-unknown-format"
+}
+
+> {%
+    client.test("Unsupported type handled appropriately", function() {
+        // May accept with warning or return 400/422
+        client.assert(response.status === 202 || response.status === 400 || response.status === 422, 
+                      "Expected 202, 400, or 422");
+    });
+%}

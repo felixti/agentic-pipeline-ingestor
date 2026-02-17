@@ -1,0 +1,220 @@
+### Query Audit Logs - Default
+### Get audit logs with default pagination
+GET {{base_url}}/api/v1/audit/logs
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Query audit logs returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Response has data", function() {
+        client.assert(response.body.data !== undefined, "Has data field");
+    });
+%}
+
+###
+
+### Query Audit Logs - With Time Range
+### Get audit logs filtered by time range
+GET {{base_url}}/api/v1/audit/logs?from=2024-01-01T00:00:00Z&to=2024-12-31T23:59:59Z
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Time range filter returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### Query Audit Logs - By Action Type
+### Get audit logs filtered by action type
+GET {{base_url}}/api/v1/audit/logs?action=job_created&limit=50
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Action type filter returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### Query Audit Logs - By User
+### Get audit logs filtered by user
+GET {{base_url}}/api/v1/audit/logs?user_id=test-user&limit=50
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("User filter returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### Query Audit Logs - By Resource
+### Get audit logs for a specific resource
+GET {{base_url}}/api/v1/audit/logs?resource_type=job&resource_id={{job_id}}&limit=100
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Resource filter returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### Query Audit Logs - Combined Filters
+### Get audit logs with multiple filters
+GET {{base_url}}/api/v1/audit/logs?action=job_completed&from=2024-01-01T00:00:00Z&limit=100
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Combined filters returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### Query Audit Logs - Pagination
+### Get audit logs with pagination
+GET {{base_url}}/api/v1/audit/logs?page=1&limit=20
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Paginated audit logs returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### Export Audit Logs - CSV Format
+### Export audit logs as CSV
+GET {{base_url}}/api/v1/audit/logs/export?format=csv&from=2024-01-01T00:00:00Z
+X-API-Key: {{api_key}}
+Accept: text/csv
+
+> {%
+    client.test("CSV export returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+    client.test("Response is CSV or JSON", function() {
+        if (response.status === 200) {
+            var contentType = response.contentType.mimeType;
+            client.assert(contentType === "text/csv" || contentType === "application/json", 
+                          "Content type is CSV or JSON");
+        }
+    });
+%}
+
+###
+
+### Export Audit Logs - JSON Format
+### Export audit logs as JSON
+GET {{base_url}}/api/v1/audit/logs/export?format=json&from=2024-01-01T00:00:00Z
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("JSON export returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### Get Audit Log Statistics
+### Get statistics about audit logs
+GET {{base_url}}/api/v1/audit/logs/stats
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Audit stats returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### Get Audit Log Statistics by Action Type
+GET {{base_url}}/api/v1/audit/logs/stats/by-action
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Stats by action returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### Get Audit Log Statistics by User
+GET {{base_url}}/api/v1/audit/logs/stats/by-user
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Stats by user returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### Search Audit Logs
+### Full-text search through audit logs
+GET {{base_url}}/api/v1/audit/logs/search?q=job&limit=20
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Search audit logs returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### Get Audit Log Retention Policy
+GET {{base_url}}/api/v1/audit/retention
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Get retention policy returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### Update Audit Log Retention Policy
+PUT {{base_url}}/api/v1/audit/retention
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "retention_days": 90,
+  "archive_enabled": true,
+  "archive_location": "/archive/audit-logs"
+}
+
+> {%
+    client.test("Update retention policy returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}

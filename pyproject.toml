@@ -131,7 +131,8 @@ azure = [
 ]
 
 cognee = [
-    "cognee-client>=0.1.0",
+    # Cognee integration uses HTTP API - no client package required
+    # See: src/plugins/destinations/cognee.py
 ]
 
 all = [
@@ -225,7 +226,12 @@ markers = [
     "unit: Unit tests",
     "integration: Integration tests",
     "contract: Contract tests",
+    "e2e: End-to-end tests",
+    "performance: Performance tests",
     "slow: Slow tests",
+    "auth: Authentication tests",
+    "retry: Retry mechanism tests",
+    "dlq: Dead Letter Queue tests",
 ]
 
 [tool.coverage.run]

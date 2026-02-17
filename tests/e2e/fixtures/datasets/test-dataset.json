@@ -1,0 +1,351 @@
+{
+  "version": "1.0.0",
+  "description": "E2E Test Dataset for Agentic Data Pipeline Ingestor",
+  "created_at": "2024-01-01T00:00:00Z",
+  "test_cases": [
+    {
+      "id": "TC001",
+      "name": "Text PDF Processing",
+      "description": "Process a standard text-based PDF with extractable text",
+      "file": "pdf/sample-text.pdf",
+      "mime_type": "application/pdf",
+      "expected_parser": "docling",
+      "expected_duration_ms": 5000,
+      "tags": ["pdf", "text", "fast"],
+      "assertions": {
+        "status": "completed",
+        "has_text": true,
+        "quality_score": ">=0.8",
+        "error_count": 0
+      }
+    },
+    {
+      "id": "TC002",
+      "name": "Scanned PDF with OCR",
+      "description": "Process an image-based PDF requiring OCR",
+      "file": "pdf/sample-scanned.pdf",
+      "mime_type": "application/pdf",
+      "expected_parser": "azure_ocr",
+      "expected_duration_ms": 15000,
+      "tags": ["pdf", "ocr", "slow"],
+      "assertions": {
+        "status": "completed",
+        "has_text": true,
+        "ocr_used": true,
+        "quality_score": ">=0.6"
+      }
+    },
+    {
+      "id": "TC003",
+      "name": "Mixed Content PDF",
+      "description": "Process a PDF with both text and image content",
+      "file": "pdf/sample-mixed.pdf",
+      "mime_type": "application/pdf",
+      "expected_parser": "docling",
+      "fallback_parser": "azure_ocr",
+      "expected_duration_ms": 10000,
+      "tags": ["pdf", "mixed", "medium"],
+      "assertions": {
+        "status": "completed",
+        "has_text": true,
+        "has_images": true,
+        "quality_score": ">=0.7"
+      }
+    },
+    {
+      "id": "TC004",
+      "name": "Large Document Processing",
+      "description": "Process a large PDF document (50+ pages) for performance testing",
+      "file": "pdf/large-document.pdf",
+      "mime_type": "application/pdf",
+      "expected_parser": "docling",
+      "expected_duration_ms": 60000,
+      "tags": ["pdf", "large", "performance"],
+      "assertions": {
+        "status": "completed",
+        "has_text": true,
+        "page_count": ">=50",
+        "processing_time_ms": "<120000"
+      }
+    },
+    {
+      "id": "TC005",
+      "name": "Word Document Processing",
+      "description": "Process a Microsoft Word document",
+      "file": "office/sample.docx",
+      "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "expected_parser": "docling",
+      "expected_duration_ms": 3000,
+      "tags": ["office", "word", "fast"],
+      "assertions": {
+        "status": "completed",
+        "has_text": true,
+        "formatting_preserved": true
+      }
+    },
+    {
+      "id": "TC006",
+      "name": "Excel Spreadsheet Processing",
+      "description": "Process a Microsoft Excel spreadsheet",
+      "file": "office/sample.xlsx",
+      "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "expected_parser": "docling",
+      "expected_duration_ms": 3000,
+      "tags": ["office", "excel", "fast"],
+      "assertions": {
+        "status": "completed",
+        "has_tables": true,
+        "row_count": ">=1"
+      }
+    },
+    {
+      "id": "TC007",
+      "name": "PowerPoint Processing",
+      "description": "Process a Microsoft PowerPoint presentation",
+      "file": "office/sample.pptx",
+      "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "expected_parser": "docling",
+      "expected_duration_ms": 5000,
+      "tags": ["office", "powerpoint", "medium"],
+      "assertions": {
+        "status": "completed",
+        "slide_count": ">=1"
+      }
+    },
+    {
+      "id": "TC008",
+      "name": "Receipt Image OCR",
+      "description": "Process a scanned receipt image with OCR",
+      "file": "images/receipt.jpg",
+      "mime_type": "image/jpeg",
+      "expected_parser": "azure_ocr",
+      "expected_duration_ms": 8000,
+      "tags": ["image", "ocr", "receipt"],
+      "assertions": {
+        "status": "completed",
+        "has_text": true,
+        "ocr_used": true,
+        "extracted_fields": ["amount", "date", "merchant"]
+      }
+    },
+    {
+      "id": "TC009",
+      "name": "Clean Document Image",
+      "description": "Process a clean document image",
+      "file": "images/document.png",
+      "mime_type": "image/png",
+      "expected_parser": "azure_ocr",
+      "expected_duration_ms": 5000,
+      "tags": ["image", "ocr", "fast"],
+      "assertions": {
+        "status": "completed",
+        "has_text": true,
+        "ocr_used": true,
+        "quality_score": ">=0.8"
+      }
+    },
+    {
+      "id": "TC010",
+      "name": "ZIP Archive Processing",
+      "description": "Process a ZIP archive containing multiple documents",
+      "file": "archives/documents.zip",
+      "mime_type": "application/zip",
+      "expected_duration_ms": 30000,
+      "tags": ["archive", "bulk"],
+      "assertions": {
+        "status": "completed",
+        "extracted_files": ">=2",
+        "all_processed": true
+      }
+    }
+  ],
+  "retry_test_cases": [
+    {
+      "id": "RT001",
+      "name": "Same Parser Retry",
+      "description": "Test retry with same parser on transient failure",
+      "scenario": "transient_failure",
+      "retry_strategy": "same_parser",
+      "max_retries": 3,
+      "expected_result": "completed",
+      "assertions": {
+        "retry_count": ">=1",
+        "final_status": "completed"
+      }
+    },
+    {
+      "id": "RT002",
+      "name": "Fallback Parser Retry",
+      "description": "Test fallback to alternative parser on persistent failure",
+      "scenario": "parser_failure",
+      "retry_strategy": "fallback_parser",
+      "primary_parser": "docling",
+      "fallback_parser": "azure_ocr",
+      "expected_result": "completed",
+      "assertions": {
+        "primary_parser_failed": true,
+        "fallback_parser_used": true,
+        "final_status": "completed"
+      }
+    },
+    {
+      "id": "RT003",
+      "name": "Preprocess and Retry",
+      "description": "Test preprocessing then retry for low quality scans",
+      "scenario": "low_quality_scan",
+      "retry_strategy": "preprocess",
+      "preprocessing": ["denoise", "deskew", "contrast_enhance"],
+      "expected_result": "completed",
+      "assertions": {
+        "preprocessing_applied": true,
+        "quality_improved": true,
+        "final_status": "completed"
+      }
+    },
+    {
+      "id": "RT004",
+      "name": "Split Processing Retry",
+      "description": "Test split processing for very large documents",
+      "scenario": "large_document",
+      "retry_strategy": "split_processing",
+      "max_chunk_size_mb": 10,
+      "expected_result": "completed",
+      "assertions": {
+        "document_split": true,
+        "chunks_processed": ">=2",
+        "final_status": "completed"
+      }
+    }
+  ],
+  "dlq_test_cases": [
+    {
+      "id": "DLQ001",
+      "name": "Job Moves to DLQ",
+      "description": "Test that exhausted retries move job to DLQ",
+      "scenario": "persistent_failure",
+      "max_retries": 3,
+      "expected_result": "dead_letter",
+      "assertions": {
+        "retry_count": 3,
+        "dlq_entry_created": true,
+        "error_logged": true
+      }
+    },
+    {
+      "id": "DLQ002",
+      "name": "Manual Retry from DLQ",
+      "description": "Test manual retry with modified config",
+      "scenario": "dlq_manual_retry",
+      "retry_config": {
+        "force_parser": "azure_ocr",
+        "priority": 10
+      },
+      "expected_result": "completed",
+      "assertions": {
+        "dlq_cleared": true,
+        "manual_retry_succeeded": true
+      }
+    }
+  ],
+  "auth_test_cases": [
+    {
+      "id": "AUTH001",
+      "name": "API Key Authentication",
+      "description": "Test API key authentication flow",
+      "auth_type": "api_key",
+      "expected_result": "success",
+      "assertions": {
+        "authenticated": true,
+        "access_granted": true
+      }
+    },
+    {
+      "id": "AUTH002",
+      "name": "Invalid API Key Rejection",
+      "description": "Test rejection of invalid API key",
+      "auth_type": "api_key",
+      "api_key": "invalid-key",
+      "expected_result": "rejected",
+      "assertions": {
+        "status_code": 401,
+        "error_message_present": true
+      }
+    },
+    {
+      "id": "AUTH003",
+      "name": "Admin Role Access",
+      "description": "Test admin role can access all endpoints",
+      "auth_type": "api_key",
+      "role": "admin",
+      "expected_result": "full_access",
+      "assertions": {
+        "can_read": true,
+        "can_write": true,
+        "can_delete": true,
+        "can_admin": true
+      }
+    },
+    {
+      "id": "AUTH004",
+      "name": "Viewer Role Restrictions",
+      "description": "Test viewer role is read-only",
+      "auth_type": "api_key",
+      "role": "viewer",
+      "expected_result": "read_only",
+      "assertions": {
+        "can_read": true,
+        "can_write": false,
+        "can_delete": false
+      }
+    }
+  ],
+  "performance_test_cases": [
+    {
+      "id": "PERF001",
+      "name": "Latency P99",
+      "description": "Verify p99 latency is under 2 seconds for health check",
+      "endpoint": "/health",
+      "requests": 100,
+      "concurrent": 10,
+      "assertions": {
+        "p99_latency_ms": "<2000",
+        "error_rate": "<0.01"
+      }
+    },
+    {
+      "id": "PERF002",
+      "name": "Job Creation Throughput",
+      "description": "Test job creation throughput",
+      "endpoint": "/api/v1/jobs",
+      "requests": 1000,
+      "concurrent": 50,
+      "assertions": {
+        "requests_per_second": ">=100",
+        "error_rate": "<0.01"
+      }
+    },
+    {
+      "id": "PERF003",
+      "name": "Concurrent Processing",
+      "description": "Test concurrent job processing",
+      "job_count": 50,
+      "concurrent": 10,
+      "assertions": {
+        "all_completed": true,
+        "avg_processing_time_ms": "<60000",
+        "max_processing_time_ms": "<120000"
+      }
+    },
+    {
+      "id": "PERF004",
+      "name": "20GB Daily Throughput",
+      "description": "Validate 20GB/day throughput capability",
+      "total_size_gb": 1,
+      "file_count": 100,
+      "assertions": {
+        "throughput_gbps": ">=0.23",
+        "success_rate": ">=0.99"
+      }
+    }
+  ]
+}

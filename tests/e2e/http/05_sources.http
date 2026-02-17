@@ -1,0 +1,177 @@
+### List Source Plugins
+### Get all available source plugins
+GET {{base_url}}/api/v1/sources
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("List sources returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Response has data", function() {
+        client.assert(response.body.data !== undefined, "Has data field");
+    });
+    client.test("Data has plugins array", function() {
+        client.assert(response.body.data.plugins !== undefined, "Has plugins field");
+        client.assert(Array.isArray(response.body.data.plugins), "Plugins is an array");
+    });
+%}
+
+###
+
+### Get Source Plugin Details
+### Get details for a specific source plugin
+GET {{base_url}}/api/v1/sources/azure-blob
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Source details returns 200 or 404", function() {
+        // May return 404 if endpoint doesn't exist
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### Test Azure Blob Source Connection
+### Test connectivity to Azure Blob Storage
+POST {{base_url}}/api/v1/sources/azure-blob/test
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "connection_string": "{{azure_blob_connection_string}}",
+  "container_name": "test-container"
+}
+
+> {%
+    client.test("Azure Blob test returns appropriate status", function() {
+        // May return 200, 404 (endpoint not implemented), or 401 (invalid creds)
+        client.assert(response.status === 200 || response.status === 404 || response.status === 401, 
+                      "Expected 200, 404, or 401");
+    });
+%}
+
+###
+
+### Test S3 Source Connection
+POST {{base_url}}/api/v1/sources/s3/test
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "aws_access_key_id": "{{aws_access_key_id}}",
+  "aws_secret_access_key": "{{aws_secret_access_key}}",
+  "region": "us-east-1",
+  "bucket_name": "test-bucket"
+}
+
+> {%
+    client.test("S3 test returns appropriate status", function() {
+        client.assert(response.status === 200 || response.status === 404 || response.status === 401, 
+                      "Expected 200, 404, or 401");
+    });
+%}
+
+###
+
+### Test SharePoint Source Connection
+POST {{base_url}}/api/v1/sources/sharepoint/test
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "site_url": "https://{{tenant}}.sharepoint.com/sites/test",
+  "client_id": "{{sharepoint_client_id}}",
+  "client_secret": "{{sharepoint_client_secret}}"
+}
+
+> {%
+    client.test("SharePoint test returns appropriate status", function() {
+        client.assert(response.status === 200 || response.status === 404 || response.status === 401, 
+                      "Expected 200, 404, or 401");
+    });
+%}
+
+###
+
+### Create Source Configuration
+### Create a new source configuration for recurring ingestion
+POST {{base_url}}/api/v1/sources/configurations
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "name": "test-azure-blob-source",
+  "type": "azure_blob",
+  "config": {
+    "connection_string": "{{azure_blob_connection_string}}",
+    "container_name": "documents",
+    "prefix": "uploads/"
+  },
+  "schedule": {
+    "enabled": false,
+    "cron": "0 */6 * * *",
+    "timezone": "UTC"
+  }
+}
+
+> {%
+    client.test("Create source config returns 201 or 404", function() {
+        // May return 201 if implemented, 404 if not
+        client.assert(response.status === 201 || response.status === 404, "Expected 201 or 404");
+    });
+%}
+
+###
+
+### List Source Configurations
+GET {{base_url}}/api/v1/sources/configurations
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("List source configs returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### Trigger Source Ingestion
+### Manually trigger ingestion from a configured source
+POST {{base_url}}/api/v1/sources/configurations/test-azure-blob-source/ingest
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "filters": {
+    "file_extensions": [".pdf", ".docx"],
+    "modified_after": "2024-01-01T00:00:00Z"
+  }
+}
+
+> {%
+    client.test("Trigger ingestion returns 202 or 404", function() {
+        client.assert(response.status === 202 || response.status === 404, "Expected 202 or 404");
+    });
+%}
+
+###
+
+### Delete Source Configuration
+DELETE {{base_url}}/api/v1/sources/configurations/test-azure-blob-source
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Delete source config returns 204 or 404", function() {
+        client.assert(response.status === 204 || response.status === 404, "Expected 204 or 404");
+    });
+%}

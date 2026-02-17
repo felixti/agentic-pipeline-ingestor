@@ -1,0 +1,228 @@
+### List Destination Plugins
+### Get all available destination plugins
+GET {{base_url}}/api/v1/destinations
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("List destinations returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Response has data", function() {
+        client.assert(response.body.data !== undefined, "Has data field");
+    });
+    client.test("Data has plugins array", function() {
+        client.assert(response.body.data.plugins !== undefined, "Has plugins field");
+    });
+%}
+
+###
+
+### Get Destination Plugin Details
+### Get details for a specific destination plugin
+GET {{base_url}}/api/v1/destinations/cognee
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Destination details returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### Test Cognee Destination Connection
+POST {{base_url}}/api/v1/destinations/cognee/test
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "host": "{{cognee_host}}",
+  "port": {{cognee_port}},
+  "api_key": "{{cognee_api_key}}"
+}
+
+> {%
+    client.test("Cognee test returns appropriate status", function() {
+        client.assert(response.status === 200 || response.status === 404 || response.status === 401, 
+                      "Expected 200, 404, or 401");
+    });
+%}
+
+###
+
+### Test GraphRAG Destination Connection
+POST {{base_url}}/api/v1/destinations/graphrag/test
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "host": "{{graphrag_host}}",
+  "port": {{graphrag_port}},
+  "api_key": "{{graphrag_api_key}}"
+}
+
+> {%
+    client.test("GraphRAG test returns appropriate status", function() {
+        client.assert(response.status === 200 || response.status === 404 || response.status === 401, 
+                      "Expected 200, 404, or 401");
+    });
+%}
+
+###
+
+### Test Neo4j Destination Connection
+POST {{base_url}}/api/v1/destinations/neo4j/test
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "uri": "bolt://{{neo4j_host}}:7687",
+  "username": "{{neo4j_username}}",
+  "password": "{{neo4j_password}}",
+  "database": "neo4j"
+}
+
+> {%
+    client.test("Neo4j test returns appropriate status", function() {
+        client.assert(response.status === 200 || response.status === 404 || response.status === 401, 
+                      "Expected 200, 404, or 401");
+    });
+%}
+
+###
+
+### Test Pinecone Destination Connection
+POST {{base_url}}/api/v1/destinations/pinecone/test
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "api_key": "{{pinecone_api_key}}",
+  "environment": "{{pinecone_environment}}",
+  "index_name": "{{pinecone_index}}"
+}
+
+> {%
+    client.test("Pinecone test returns appropriate status", function() {
+        client.assert(response.status === 200 || response.status === 404 || response.status === 401, 
+                      "Expected 200, 404, or 401");
+    });
+%}
+
+###
+
+### Test Weaviate Destination Connection
+POST {{base_url}}/api/v1/destinations/weaviate/test
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "url": "{{weaviate_url}}",
+  "api_key": "{{weaviate_api_key}}"
+}
+
+> {%
+    client.test("Weaviate test returns appropriate status", function() {
+        client.assert(response.status === 200 || response.status === 404 || response.status === 401, 
+                      "Expected 200, 404, or 401");
+    });
+%}
+
+###
+
+### Create Destination Configuration
+### Create a new destination configuration
+POST {{base_url}}/api/v1/destinations/configurations
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "name": "test-cognee-destination",
+  "type": "cognee",
+  "config": {
+    "host": "{{cognee_host}}",
+    "port": {{cognee_port}},
+    "api_key": "{{cognee_api_key}}",
+    "dataset": "e2e-test-dataset"
+  },
+  "default": false
+}
+
+> {%
+    client.test("Create destination config returns 201 or 404", function() {
+        client.assert(response.status === 201 || response.status === 404, "Expected 201 or 404");
+    });
+%}
+
+###
+
+### List Destination Configurations
+GET {{base_url}}/api/v1/destinations/configurations
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("List destination configs returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+%}
+
+###
+
+### Get Destination Configuration Details
+GET {{base_url}}/api/v1/destinations/configurations/test-cognee-destination
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Get destination config returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### Update Destination Configuration
+PUT {{base_url}}/api/v1/destinations/configurations/test-cognee-destination
+Content-Type: application/json
+X-API-Key: {{api_key}}
+Accept: application/json
+
+{
+  "name": "test-cognee-destination",
+  "type": "cognee",
+  "config": {
+    "host": "{{cognee_host}}",
+    "port": {{cognee_port}},
+    "api_key": "{{cognee_api_key}}",
+    "dataset": "e2e-test-dataset-v2"
+  },
+  "default": true
+}
+
+> {%
+    client.test("Update destination config returns 200 or 404", function() {
+        client.assert(response.status === 200 || response.status === 404, "Expected 200 or 404");
+    });
+%}
+
+###
+
+### Delete Destination Configuration
+DELETE {{base_url}}/api/v1/destinations/configurations/test-cognee-destination
+X-API-Key: {{api_key}}
+Accept: application/json
+
+> {%
+    client.test("Delete destination config returns 204 or 404", function() {
+        client.assert(response.status === 204 || response.status === 404, "Expected 204 or 404");
+    });
+%}

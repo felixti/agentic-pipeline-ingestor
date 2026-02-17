@@ -6,11 +6,10 @@ validation and serialization for all API interactions.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
+from pydantic import BaseModel, ConfigDict, Field
 
 # ============================================================================
 # Enums
@@ -165,8 +164,8 @@ class ParserConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     primary_parser: str = Field(default="docling")
-    fallback_parser: Optional[str] = Field(default="azure_ocr")
-    parser_options: Dict[str, Any] = Field(
+    fallback_parser: str | None = Field(default="azure_ocr")
+    parser_options: dict[str, Any] = Field(
         default_factory=dict,
         description="Parser-specific options"
     )
@@ -178,9 +177,9 @@ class EnrichmentConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     extract_entities: bool = Field(default=False)
-    entity_types: List[str] = Field(default_factory=lambda: ["person", "organization", "location"])
+    entity_types: list[str] = Field(default_factory=lambda: ["person", "organization", "location"])
     classify_document: bool = Field(default=False)
-    classification_model: Optional[str] = Field(default=None)
+    classification_model: str | None = Field(default=None)
     add_metadata: bool = Field(default=True)
 
 
@@ -197,7 +196,7 @@ class QualityConfig(BaseModel):
     )
     auto_retry: bool = Field(default=True)
     max_retries: int = Field(default=3, ge=0)
-    retry_strategies: List[str] = Field(
+    retry_strategies: list[str] = Field(
         default_factory=lambda: ["same_parser", "fallback_parser"]
     )
 
@@ -218,7 +217,7 @@ class TransformationConfig(BaseModel):
 
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
     generate_embeddings: bool = Field(default=False)
-    embedding_model: Optional[str] = Field(default="text-embedding-3-small")
+    embedding_model: str | None = Field(default="text-embedding-3-small")
     output_format: OutputFormat = Field(default=OutputFormat.JSON)
 
 
@@ -226,21 +225,21 @@ class PipelineConfig(BaseModel):
     """Complete pipeline configuration."""
     model_config = ConfigDict(populate_by_name=True)
 
-    id: Optional[UUID] = Field(default=None)
+    id: UUID | None = Field(default=None)
     name: str = Field(..., description="Unique pipeline name")
-    description: Optional[str] = Field(default=None)
+    description: str | None = Field(default=None)
     content_detection: ContentDetectionConfig = Field(default_factory=ContentDetectionConfig)
     parser: ParserConfig = Field(default_factory=ParserConfig)
     enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
     quality: QualityConfig = Field(default_factory=QualityConfig)
     transformation: TransformationConfig = Field(default_factory=TransformationConfig)
-    enabled_stages: List[str] = Field(
+    enabled_stages: list[str] = Field(
         default_factory=lambda: [
             "ingest", "detect", "parse", "enrich", "quality", "transform", "output"
         ]
     )
-    created_at: Optional[datetime] = Field(default=None)
-    updated_at: Optional[datetime] = Field(default=None)
+    created_at: datetime | None = Field(default=None)
+    updated_at: datetime | None = Field(default=None)
 
 
 class DestinationFilter(BaseModel):
@@ -256,14 +255,14 @@ class DestinationConfig(BaseModel):
     """Configuration for an output destination."""
     model_config = ConfigDict(populate_by_name=True)
 
-    id: Optional[UUID] = Field(default=None)
+    id: UUID | None = Field(default=None)
     type: DestinationType = Field(...)
-    name: Optional[str] = Field(default=None)
-    config: Dict[str, Any] = Field(
+    name: str | None = Field(default=None)
+    config: dict[str, Any] = Field(
         default_factory=dict,
         description="Destination-specific configuration"
     )
-    filters: List[DestinationFilter] = Field(
+    filters: list[DestinationFilter] = Field(
         default_factory=list,
         description="Optional filters for selective routing"
     )
@@ -274,17 +273,17 @@ class SourceConfig(BaseModel):
     """Configuration for a data source."""
     model_config = ConfigDict(populate_by_name=True)
 
-    id: Optional[UUID] = Field(default=None)
+    id: UUID | None = Field(default=None)
     type: SourceType = Field(...)
     name: str = Field(...)
-    description: Optional[str] = Field(default=None)
-    config: Dict[str, Any] = Field(
+    description: str | None = Field(default=None)
+    config: dict[str, Any] = Field(
         default_factory=dict,
         description="Source-specific configuration"
     )
     enabled: bool = Field(default=True)
-    created_at: Optional[datetime] = Field(default=None)
-    updated_at: Optional[datetime] = Field(default=None)
+    created_at: datetime | None = Field(default=None)
+    updated_at: datetime | None = Field(default=None)
 
 
 # ============================================================================
@@ -298,9 +297,9 @@ class StageProgress(BaseModel):
     stage: str = Field(...)
     status: StageStatus = Field(...)
     progress_percent: int = Field(default=0, ge=0, le=100)
-    started_at: Optional[datetime] = Field(default=None)
-    completed_at: Optional[datetime] = Field(default=None)
-    message: Optional[str] = Field(default=None)
+    started_at: datetime | None = Field(default=None)
+    completed_at: datetime | None = Field(default=None)
+    message: str | None = Field(default=None)
 
 
 class JobResult(BaseModel):
@@ -308,16 +307,16 @@ class JobResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     success: bool = Field(...)
-    output_uri: Optional[str] = Field(default=None)
-    output_format: Optional[str] = Field(default=None)
-    extracted_text: Optional[str] = Field(
+    output_uri: str | None = Field(default=None)
+    output_format: str | None = Field(default=None)
+    extracted_text: str | None = Field(
         default=None,
         description="Extracted text content (for small documents)"
     )
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    quality_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    processing_time_ms: Optional[int] = Field(default=None)
-    pages_processed: Optional[int] = Field(default=None)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    quality_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    processing_time_ms: int | None = Field(default=None)
+    pages_processed: int | None = Field(default=None)
 
 
 class JobError(BaseModel):
@@ -326,9 +325,9 @@ class JobError(BaseModel):
 
     code: str = Field(...)
     message: str = Field(...)
-    details: Optional[Dict[str, Any]] = Field(default=None)
-    stack_trace: Optional[str] = Field(default=None)
-    failed_stage: Optional[str] = Field(default=None)
+    details: dict[str, Any] | None = Field(default=None)
+    stack_trace: str | None = Field(default=None)
+    failed_stage: str | None = Field(default=None)
 
 
 class RetryRecord(BaseModel):
@@ -338,8 +337,8 @@ class RetryRecord(BaseModel):
     attempt: int = Field(..., ge=1)
     timestamp: datetime = Field(...)
     strategy: str = Field(..., description="Retry strategy used")
-    error_code: Optional[str] = Field(default=None)
-    error_message: Optional[str] = Field(default=None)
+    error_code: str | None = Field(default=None)
+    error_message: str | None = Field(default=None)
 
 
 class Job(BaseModel):
@@ -347,30 +346,30 @@ class Job(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: UUID = Field(...)
-    external_id: Optional[str] = Field(default=None)
+    external_id: str | None = Field(default=None)
     source_type: SourceType = Field(...)
     source_uri: str = Field(...)
     file_name: str = Field(...)
-    file_size: Optional[int] = Field(default=None)
-    file_hash: Optional[str] = Field(default=None)
-    mime_type: Optional[str] = Field(default=None)
+    file_size: int | None = Field(default=None)
+    file_hash: str | None = Field(default=None)
+    mime_type: str | None = Field(default=None)
     mode: ProcessingMode = Field(default=ProcessingMode.ASYNC)
     priority: int = Field(default=5, ge=1, le=10)
-    pipeline_config: Optional[PipelineConfig] = Field(default=None)
-    destinations: List[DestinationConfig] = Field(default_factory=list)
+    pipeline_config: PipelineConfig | None = Field(default=None)
+    destinations: list[DestinationConfig] = Field(default_factory=list)
     status: JobStatus = Field(...)
-    current_stage: Optional[str] = Field(default=None)
-    stage_progress: Dict[str, StageProgress] = Field(default_factory=dict)
+    current_stage: str | None = Field(default=None)
+    stage_progress: dict[str, StageProgress] = Field(default_factory=dict)
     created_at: datetime = Field(...)
-    started_at: Optional[datetime] = Field(default=None)
-    completed_at: Optional[datetime] = Field(default=None)
-    expires_at: Optional[datetime] = Field(default=None)
-    result: Optional[JobResult] = Field(default=None)
-    error: Optional[JobError] = Field(default=None)
+    started_at: datetime | None = Field(default=None)
+    completed_at: datetime | None = Field(default=None)
+    expires_at: datetime | None = Field(default=None)
+    result: JobResult | None = Field(default=None)
+    error: JobError | None = Field(default=None)
     retry_count: int = Field(default=0)
-    retry_history: List[RetryRecord] = Field(default_factory=list)
-    created_by: Optional[str] = Field(default=None)
-    source_ip: Optional[str] = Field(default=None)
+    retry_history: list[RetryRecord] = Field(default_factory=list)
+    created_by: str | None = Field(default=None)
+    source_ip: str | None = Field(default=None)
 
 
 class JobCreateRequest(BaseModel):
@@ -379,13 +378,13 @@ class JobCreateRequest(BaseModel):
 
     source_type: SourceType = Field(...)
     source_uri: str = Field(...)
-    file_name: Optional[str] = Field(default=None)
-    file_size: Optional[int] = Field(default=None)
-    mime_type: Optional[str] = Field(default=None)
-    pipeline_id: Optional[UUID] = Field(default=None)
-    destination_ids: List[UUID] = Field(default_factory=list)
+    file_name: str | None = Field(default=None)
+    file_size: int | None = Field(default=None)
+    mime_type: str | None = Field(default=None)
+    pipeline_id: UUID | None = Field(default=None)
+    destination_ids: list[UUID] = Field(default_factory=list)
     priority: int = Field(default=5, ge=1, le=10)
-    external_id: Optional[str] = Field(default=None)
+    external_id: str | None = Field(default=None)
     mode: ProcessingMode = Field(default=ProcessingMode.ASYNC)
 
 
@@ -393,11 +392,11 @@ class JobRetryRequest(BaseModel):
     """Request to retry a failed job."""
     model_config = ConfigDict(populate_by_name=True)
 
-    force_parser: Optional[str] = Field(
+    force_parser: str | None = Field(
         default=None,
         description="Override parser for retry"
     )
-    updated_config: Optional[PipelineConfig] = Field(
+    updated_config: PipelineConfig | None = Field(
         default=None,
         description="Updated pipeline configuration"
     )
@@ -410,7 +409,7 @@ class JobEvent(BaseModel):
     event: EventType = Field(...)
     job_id: UUID = Field(...)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    data: Dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 # ============================================================================
@@ -424,7 +423,7 @@ class TextStatistics(BaseModel):
     total_characters: int = Field(default=0)
     total_words: int = Field(default=0)
     text_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
-    avg_chars_per_page: Optional[int] = Field(default=None)
+    avg_chars_per_page: int | None = Field(default=None)
 
 
 class ContentDetectionResult(BaseModel):
@@ -434,13 +433,13 @@ class ContentDetectionResult(BaseModel):
     detected_type: ContentType = Field(...)
     confidence: float = Field(..., ge=0.0, le=1.0)
     detection_method: str = Field(default="hybrid")
-    page_count: Optional[int] = Field(default=None)
+    page_count: int | None = Field(default=None)
     has_text_layer: bool = Field(default=False)
     has_images: bool = Field(default=False)
     image_count: int = Field(default=0)
     text_statistics: TextStatistics = Field(default_factory=TextStatistics)
     recommended_parser: str = Field(...)
-    alternative_parsers: List[str] = Field(default_factory=list)
+    alternative_parsers: list[str] = Field(default_factory=list)
     preprocessing_required: bool = Field(default=False)
 
 
@@ -452,10 +451,10 @@ class FileUploadRequest(BaseModel):
     """Request for file upload."""
     model_config = ConfigDict(populate_by_name=True)
 
-    pipeline_id: Optional[UUID] = Field(default=None)
-    destination_ids: List[UUID] = Field(default_factory=list)
+    pipeline_id: UUID | None = Field(default=None)
+    destination_ids: list[UUID] = Field(default_factory=list)
     priority: int = Field(default=5, ge=1, le=10)
-    external_id: Optional[str] = Field(default=None)
+    external_id: str | None = Field(default=None)
     mode: ProcessingMode = Field(default=ProcessingMode.ASYNC)
 
 
@@ -464,11 +463,11 @@ class UrlIngestRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     url: str = Field(...)
-    pipeline_id: Optional[UUID] = Field(default=None)
-    destination_ids: List[UUID] = Field(default_factory=list)
+    pipeline_id: UUID | None = Field(default=None)
+    destination_ids: list[UUID] = Field(default_factory=list)
     priority: int = Field(default=5, ge=1, le=10)
-    external_id: Optional[str] = Field(default=None)
-    headers: Dict[str, str] = Field(default_factory=dict)
+    external_id: str | None = Field(default=None)
+    headers: dict[str, str] = Field(default_factory=dict)
     mode: ProcessingMode = Field(default=ProcessingMode.ASYNC)
 
 
@@ -484,12 +483,12 @@ class AuditLogEntry(BaseModel):
     timestamp: datetime = Field(...)
     event_type: str = Field(...)
     user: str = Field(...)
-    resource_type: Optional[str] = Field(default=None)
-    resource_id: Optional[str] = Field(default=None)
+    resource_type: str | None = Field(default=None)
+    resource_id: str | None = Field(default=None)
     action: str = Field(...)
-    details: Dict[str, Any] = Field(default_factory=dict)
-    source_ip: Optional[str] = Field(default=None)
-    user_agent: Optional[str] = Field(default=None)
+    details: dict[str, Any] = Field(default_factory=dict)
+    source_ip: str | None = Field(default=None)
+    user_agent: str | None = Field(default=None)
 
 
 class LineageStep(BaseModel):
@@ -497,8 +496,8 @@ class LineageStep(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     stage: str = Field(...)
-    input_hash: Optional[str] = Field(default=None)
-    output_hash: Optional[str] = Field(default=None)
+    input_hash: str | None = Field(default=None)
+    output_hash: str | None = Field(default=None)
     transformation: str = Field(...)
     timestamp: datetime = Field(...)
 
@@ -508,9 +507,9 @@ class DataLineage(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     job_id: UUID = Field(...)
-    input_hash: Optional[str] = Field(default=None)
-    output_hash: Optional[str] = Field(default=None)
-    steps: List[LineageStep] = Field(default_factory=list)
+    input_hash: str | None = Field(default=None)
+    output_hash: str | None = Field(default=None)
+    steps: list[LineageStep] = Field(default_factory=list)
 
 
 class AuditExportRequest(BaseModel):
@@ -518,9 +517,9 @@ class AuditExportRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     format: str = Field(default="json", pattern="^(json|csv)$")
-    date_from: Optional[datetime] = Field(default=None)
-    date_to: Optional[datetime] = Field(default=None)
-    event_types: List[str] = Field(default_factory=list)
+    date_from: datetime | None = Field(default=None)
+    date_to: datetime | None = Field(default=None)
+    event_types: list[str] = Field(default_factory=list)
 
 
 class AuditExportResult(BaseModel):
@@ -545,9 +544,9 @@ class PluginInfo(BaseModel):
     name: str = Field(...)
     version: str = Field(...)
     type: PluginType = Field(...)
-    description: Optional[str] = Field(default=None)
-    supported_formats: List[str] = Field(default_factory=list)
-    config_schema: Optional[Dict[str, Any]] = Field(
+    description: str | None = Field(default=None)
+    supported_formats: list[str] = Field(default_factory=list)
+    config_schema: dict[str, Any] | None = Field(
         default=None,
         description="JSON Schema for plugin configuration"
     )
@@ -559,8 +558,8 @@ class ConnectionTestResult(BaseModel):
 
     success: bool = Field(...)
     message: str = Field(...)
-    latency_ms: Optional[int] = Field(default=None)
-    details: Dict[str, Any] = Field(default_factory=dict)
+    latency_ms: int | None = Field(default=None)
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 # ============================================================================
@@ -589,8 +588,8 @@ class ValidationResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     valid: bool = Field(...)
-    errors: List[ValidationError] = Field(default_factory=list)
-    warnings: List[ValidationWarning] = Field(default_factory=list)
+    errors: list[ValidationError] = Field(default_factory=list)
+    warnings: list[ValidationWarning] = Field(default_factory=list)
 
 
 # ============================================================================
@@ -602,8 +601,8 @@ class ComponentHealth(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     status: HealthStatus = Field(...)
-    latency_ms: Optional[int] = Field(default=None)
-    message: Optional[str] = Field(default=None)
+    latency_ms: int | None = Field(default=None)
+    message: str | None = Field(default=None)
 
 
 class HealthStatusResponse(BaseModel):
@@ -613,7 +612,7 @@ class HealthStatusResponse(BaseModel):
     status: HealthStatus = Field(...)
     version: str = Field(...)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    components: Dict[str, ComponentHealth] = Field(default_factory=dict)
+    components: dict[str, ComponentHealth] = Field(default_factory=dict)
 
 
 class HealthReady(BaseModel):
@@ -652,7 +651,7 @@ class ApiMeta(BaseModel):
     request_id: UUID = Field(...)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     api_version: str = Field(default="v1")
-    total_count: Optional[int] = Field(default=None)
+    total_count: int | None = Field(default=None)
 
 
 class ApiLinks(BaseModel):
@@ -660,27 +659,27 @@ class ApiLinks(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     self: str = Field(...)
-    next: Optional[str] = Field(default=None)
-    prev: Optional[str] = Field(default=None)
-    first: Optional[str] = Field(default=None)
-    last: Optional[str] = Field(default=None)
+    next: str | None = Field(default=None)
+    prev: str | None = Field(default=None)
+    first: str | None = Field(default=None)
+    last: str | None = Field(default=None)
 
 
 class ApiResponse(BaseModel):
     """Standard API response wrapper."""
     model_config = ConfigDict(populate_by_name=True)
 
-    data: Optional[Any] = Field(default=None)
+    data: Any | None = Field(default=None)
     meta: ApiMeta = Field(...)
-    links: Optional[ApiLinks] = Field(default=None)
+    links: ApiLinks | None = Field(default=None)
 
     @classmethod
     def create(
         cls,
         data: Any,
         request_id: UUID,
-        total_count: Optional[int] = None,
-        links: Optional[ApiLinks] = None,
+        total_count: int | None = None,
+        links: ApiLinks | None = None,
     ) -> "ApiResponse":
         """Create a standardized API response.
         
@@ -719,8 +718,8 @@ class ErrorDetail(BaseModel):
 
     code: str = Field(...)
     message: str = Field(...)
-    details: Optional[List[FieldError]] = Field(default=None)
-    documentation_url: Optional[str] = Field(default=None)
+    details: list[FieldError] | None = Field(default=None)
+    documentation_url: str | None = Field(default=None)
 
 
 class ErrorResponse(BaseModel):
@@ -736,8 +735,8 @@ class ErrorResponse(BaseModel):
         code: str,
         message: str,
         request_id: UUID,
-        details: Optional[List[FieldError]] = None,
-        documentation_url: Optional[str] = None,
+        details: list[FieldError] | None = None,
+        documentation_url: str | None = None,
     ) -> "ErrorResponse":
         """Create a standardized error response.
         

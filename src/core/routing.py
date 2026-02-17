@@ -9,11 +9,11 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 from uuid import UUID
 
 from src.api.models import DestinationConfig, DestinationFilter, FilterOperator
-from src.plugins.base import Connection, DestinationPlugin, TransformedData, WriteResult
+from src.plugins.base import TransformedData, WriteResult
 from src.plugins.registry import PluginRegistry
 
 logger = logging.getLogger(__name__)
@@ -48,11 +48,11 @@ class DestinationRouteResult:
     destination_type: str
     status: RoutingStatus
     success: bool
-    write_result: Optional[WriteResult] = None
-    error: Optional[str] = None
+    write_result: WriteResult | None = None
+    error: str | None = None
     latency_ms: int = 0
     filtered: bool = False
-    filter_reason: Optional[str] = None
+    filter_reason: str | None = None
 
 
 @dataclass
@@ -72,15 +72,15 @@ class MultiDestinationResult:
     """
     job_id: UUID
     overall_status: RoutingStatus
-    destination_results: List[DestinationRouteResult]
+    destination_results: list[DestinationRouteResult]
     success_count: int = 0
     failure_count: int = 0
     skipped_count: int = 0
     total_latency_ms: int = 0
     partial_failure: bool = False
-    errors: List[str] = field(default_factory=list)
-    
-    def to_dict(self) -> Dict[str, Any]:
+    errors: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert result to dictionary."""
         return {
             "job_id": str(self.job_id),
@@ -117,8 +117,8 @@ class DestinationRouter:
     - Circuit breaker pattern for failing destinations
     - Retry logic per destination
     """
-    
-    def __init__(self, plugin_registry: Optional[PluginRegistry] = None) -> None:
+
+    def __init__(self, plugin_registry: PluginRegistry | None = None) -> None:
         """Initialize the destination router.
         
         Args:
@@ -126,12 +126,12 @@ class DestinationRouter:
         """
         self.logger = logger
         self.registry = plugin_registry or PluginRegistry()
-        self._circuit_breakers: Dict[str, "CircuitBreaker"] = {}
-    
+        self._circuit_breakers: dict[str, CircuitBreaker] = {}
+
     async def route_to_multiple(
         self,
         data: TransformedData,
-        destinations: List[DestinationConfig],
+        destinations: list[DestinationConfig],
         parallel: bool = True,
         max_concurrent: int = 5,
     ) -> MultiDestinationResult:
@@ -147,7 +147,7 @@ class DestinationRouter:
             MultiDestinationResult with results for all destinations
         """
         start_time = datetime.utcnow()
-        
+
         if not destinations:
             return MultiDestinationResult(
                 job_id=data.job_id,
@@ -155,30 +155,30 @@ class DestinationRouter:
                 destination_results=[],
                 skipped_count=1,
             )
-        
+
         self.logger.info(
             "routing_to_destinations",
             job_id=str(data.job_id),
             destination_count=len(destinations),
             parallel=parallel,
         )
-        
-        results: List[DestinationRouteResult] = []
-        
+
+        results: list[DestinationRouteResult] = []
+
         if parallel:
             # Use semaphore to limit concurrency
             semaphore = asyncio.Semaphore(max_concurrent)
-            
+
             async def route_with_semaphore(dest: DestinationConfig) -> DestinationRouteResult:
                 async with semaphore:
                     return await self._route_to_single(data, dest)
-            
+
             # Route to all destinations in parallel
             tasks = [route_with_semaphore(dest) for dest in destinations]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             # Handle any exceptions
-            processed_results: List[DestinationRouteResult] = []
+            processed_results: list[DestinationRouteResult] = []
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     self.logger.error(
@@ -202,12 +202,12 @@ class DestinationRouter:
             for dest in destinations:
                 result = await self._route_to_single(data, dest)
                 results.append(result)
-        
+
         # Calculate statistics
         success_count = sum(1 for r in results if r.success and not r.filtered)
         failure_count = sum(1 for r in results if not r.success and not r.filtered)
         skipped_count = sum(1 for r in results if r.filtered)
-        
+
         # Determine overall status
         if failure_count == 0:
             overall_status = RoutingStatus.SUCCESS
@@ -215,11 +215,11 @@ class DestinationRouter:
             overall_status = RoutingStatus.PARTIAL_SUCCESS
         else:
             overall_status = RoutingStatus.FAILED
-        
+
         total_latency = int((datetime.utcnow() - start_time).total_seconds() * 1000)
-        
+
         errors = [r.error for r in results if r.error]
-        
+
         self.logger.info(
             "routing_completed",
             job_id=str(data.job_id),
@@ -227,7 +227,7 @@ class DestinationRouter:
             failure_count=failure_count,
             total_latency_ms=total_latency,
         )
-        
+
         return MultiDestinationResult(
             job_id=data.job_id,
             overall_status=overall_status,
@@ -239,7 +239,7 @@ class DestinationRouter:
             partial_failure=failure_count > 0 and success_count > 0,
             errors=errors,
         )
-    
+
     async def _route_to_single(
         self,
         data: TransformedData,
@@ -257,7 +257,7 @@ class DestinationRouter:
         start_time = datetime.utcnow()
         dest_id = str(destination.id) if destination.id else destination.type.value
         dest_type = destination.type.value
-        
+
         # Check if destination is enabled
         if not destination.enabled:
             return DestinationRouteResult(
@@ -268,7 +268,7 @@ class DestinationRouter:
                 filtered=True,
                 filter_reason="Destination disabled",
             )
-        
+
         # Check circuit breaker
         if self._is_circuit_open(dest_id):
             return DestinationRouteResult(
@@ -279,7 +279,7 @@ class DestinationRouter:
                 filtered=True,
                 filter_reason="Circuit breaker open - destination temporarily unavailable",
             )
-        
+
         # Apply filters
         filter_result = self._apply_filters(data, destination.filters)
         if not filter_result["passed"]:
@@ -291,7 +291,7 @@ class DestinationRouter:
                 filtered=True,
                 filter_reason=filter_result["reason"],
             )
-        
+
         try:
             # Get destination plugin
             plugin = self.registry.get_destination(dest_type)
@@ -303,19 +303,19 @@ class DestinationRouter:
                     success=False,
                     error=f"Destination plugin not found: {dest_type}",
                 )
-            
+
             # Initialize and connect
             await plugin.initialize(destination.config)
             conn = await plugin.connect(destination.config)
-            
+
             # Write data
             write_result = await plugin.write(conn, data)
-            
+
             latency = int((datetime.utcnow() - start_time).total_seconds() * 1000)
-            
+
             # Record success for circuit breaker
             self._record_success(dest_id)
-            
+
             return DestinationRouteResult(
                 destination_id=dest_id,
                 destination_type=dest_type,
@@ -325,20 +325,20 @@ class DestinationRouter:
                 error=write_result.error,
                 latency_ms=latency,
             )
-            
+
         except Exception as e:
             latency = int((datetime.utcnow() - start_time).total_seconds() * 1000)
-            
+
             # Record failure for circuit breaker
             self._record_failure(dest_id)
-            
+
             self.logger.error(
                 "routing_to_destination_failed",
                 job_id=str(data.job_id),
                 destination=dest_id,
                 error=str(e),
             )
-            
+
             return DestinationRouteResult(
                 destination_id=dest_id,
                 destination_type=dest_type,
@@ -347,12 +347,12 @@ class DestinationRouter:
                 error=str(e),
                 latency_ms=latency,
             )
-    
+
     def _apply_filters(
         self,
         data: TransformedData,
-        filters: List[DestinationFilter],
-    ) -> Dict[str, Any]:
+        filters: list[DestinationFilter],
+    ) -> dict[str, Any]:
         """Apply filters to determine if data should be routed.
         
         Args:
@@ -364,25 +364,25 @@ class DestinationRouter:
         """
         if not filters:
             return {"passed": True, "reason": None}
-        
+
         # Get metadata for filtering
         metadata = data.metadata
-        
+
         for filter_config in filters:
             field_value = metadata.get(filter_config.field)
             filter_value = filter_config.value
             operator = filter_config.operator
-            
+
             passed = self._evaluate_filter(field_value, filter_value, operator)
-            
+
             if not passed:
                 return {
                     "passed": False,
                     "reason": f"Filter failed: {filter_config.field} {operator.value} {filter_value}",
                 }
-        
+
         return {"passed": True, "reason": None}
-    
+
     def _evaluate_filter(
         self,
         field_value: Any,
@@ -402,7 +402,7 @@ class DestinationRouter:
         # Convert field value to string for comparison
         field_str = str(field_value) if field_value is not None else ""
         filter_str = str(filter_value) if filter_value is not None else ""
-        
+
         if operator == FilterOperator.EQUALS:
             return field_str == filter_str
         elif operator == FilterOperator.NOT_EQUALS:
@@ -419,9 +419,9 @@ class DestinationRouter:
                 return bool(re.search(filter_str, field_str))
             except re.error:
                 return False
-        
+
         return True
-    
+
     def _is_circuit_open(self, destination_id: str) -> bool:
         """Check if circuit breaker is open for a destination.
         
@@ -435,7 +435,7 @@ class DestinationRouter:
         if breaker:
             return breaker.is_open()
         return False
-    
+
     def _record_success(self, destination_id: str) -> None:
         """Record a successful operation for circuit breaker.
         
@@ -445,7 +445,7 @@ class DestinationRouter:
         if destination_id not in self._circuit_breakers:
             self._circuit_breakers[destination_id] = CircuitBreaker()
         self._circuit_breakers[destination_id].record_success()
-    
+
     def _record_failure(self, destination_id: str) -> None:
         """Record a failed operation for circuit breaker.
         
@@ -455,8 +455,8 @@ class DestinationRouter:
         if destination_id not in self._circuit_breakers:
             self._circuit_breakers[destination_id] = CircuitBreaker()
         self._circuit_breakers[destination_id].record_failure()
-    
-    async def get_destination_health(self) -> Dict[str, Dict[str, Any]]:
+
+    async def get_destination_health(self) -> dict[str, dict[str, Any]]:
         """Get health status for all destinations with circuit breakers.
         
         Returns:
@@ -487,12 +487,12 @@ class CircuitBreaker:
     Prevents cascading failures by temporarily disabling
     destinations that are experiencing issues.
     """
-    
+
     # Thresholds
     FAILURE_THRESHOLD = 5
     SUCCESS_THRESHOLD = 3
     TIMEOUT_SECONDS = 60
-    
+
     def __init__(
         self,
         failure_threshold: int = 5,
@@ -510,13 +510,13 @@ class CircuitBreaker:
         self.failure_threshold = failure_threshold
         self.success_threshold = success_threshold
         self.timeout_seconds = timeout_seconds
-        
+
         self.failure_count = 0
         self.success_count = 0
-        self.last_failure_time: Optional[datetime] = None
-        self.last_success_time: Optional[datetime] = None
-        self.last_state_change: Optional[datetime] = None
-    
+        self.last_failure_time: datetime | None = None
+        self.last_success_time: datetime | None = None
+        self.last_state_change: datetime | None = None
+
     def is_open(self) -> bool:
         """Check if circuit is open (failing).
         
@@ -536,12 +536,12 @@ class CircuitBreaker:
                     return False
             return True
         return False
-    
+
     def record_success(self) -> None:
         """Record a successful operation."""
         self.success_count += 1
         self.last_success_time = datetime.utcnow()
-        
+
         if self.state == CircuitBreakerState.HALF_OPEN:
             if self.success_count >= self.success_threshold:
                 # Close the circuit
@@ -549,19 +549,19 @@ class CircuitBreaker:
                 self.failure_count = 0
                 self.last_state_change = datetime.utcnow()
                 logger.info("circuit_breaker_closed")
-    
+
     def record_failure(self) -> None:
         """Record a failed operation."""
         self.failure_count += 1
         self.last_failure_time = datetime.utcnow()
-        
+
         if self.state == CircuitBreakerState.CLOSED:
             if self.failure_count >= self.failure_threshold:
                 # Open the circuit
                 self.state = CircuitBreakerState.OPEN
                 self.last_state_change = datetime.utcnow()
                 logger.warning("circuit_breaker_opened", failure_count=self.failure_count)
-        
+
         elif self.state == CircuitBreakerState.HALF_OPEN:
             # Go back to open
             self.state = CircuitBreakerState.OPEN
@@ -574,11 +574,11 @@ class RoutingFilterBuilder:
     
     Provides a fluent interface for building complex filter conditions.
     """
-    
+
     def __init__(self) -> None:
         """Initialize the filter builder."""
-        self.filters: List[DestinationFilter] = []
-    
+        self.filters: list[DestinationFilter] = []
+
     def equals(self, field: str, value: str) -> "RoutingFilterBuilder":
         """Add equals filter.
         
@@ -595,7 +595,7 @@ class RoutingFilterBuilder:
             value=value,
         ))
         return self
-    
+
     def not_equals(self, field: str, value: str) -> "RoutingFilterBuilder":
         """Add not equals filter.
         
@@ -612,7 +612,7 @@ class RoutingFilterBuilder:
             value=value,
         ))
         return self
-    
+
     def contains(self, field: str, value: str) -> "RoutingFilterBuilder":
         """Add contains filter.
         
@@ -629,7 +629,7 @@ class RoutingFilterBuilder:
             value=value,
         ))
         return self
-    
+
     def starts_with(self, field: str, value: str) -> "RoutingFilterBuilder":
         """Add starts with filter.
         
@@ -646,7 +646,7 @@ class RoutingFilterBuilder:
             value=value,
         ))
         return self
-    
+
     def regex(self, field: str, pattern: str) -> "RoutingFilterBuilder":
         """Add regex filter.
         
@@ -663,8 +663,8 @@ class RoutingFilterBuilder:
             value=pattern,
         ))
         return self
-    
-    def build(self) -> List[DestinationFilter]:
+
+    def build(self) -> list[DestinationFilter]:
         """Build and return the filters.
         
         Returns:
@@ -674,10 +674,10 @@ class RoutingFilterBuilder:
 
 
 # Global router instance
-_router: Optional[DestinationRouter] = None
+_router: DestinationRouter | None = None
 
 
-def get_router(plugin_registry: Optional[PluginRegistry] = None) -> DestinationRouter:
+def get_router(plugin_registry: PluginRegistry | None = None) -> DestinationRouter:
     """Get the global destination router.
     
     Args:

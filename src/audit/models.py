@@ -3,10 +3,9 @@
 This module defines the data models for audit events and queries.
 """
 
-from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -26,56 +25,56 @@ class AuditEventType(str, Enum):
     JOB_CANCELLED = "job.cancelled"
     JOB_RETRY = "job.retry"
     JOB_DELETED = "job.deleted"
-    
+
     # Stage events
     STAGE_STARTED = "stage.started"
     STAGE_COMPLETED = "stage.completed"
     STAGE_FAILED = "stage.failed"
-    
+
     # Source access events
     SOURCE_ACCESSED = "source.accessed"
     SOURCE_CREATED = "source.created"
     SOURCE_UPDATED = "source.updated"
     SOURCE_DELETED = "source.deleted"
     SOURCE_TESTED = "source.tested"
-    
+
     # Destination events
     DESTINATION_CREATED = "destination.created"
     DESTINATION_UPDATED = "destination.updated"
     DESTINATION_DELETED = "destination.deleted"
     DESTINATION_TESTED = "destination.tested"
     DESTINATION_WRITE = "destination.write"
-    
+
     # Pipeline config events
     CONFIG_CREATED = "config.created"
     CONFIG_UPDATED = "config.updated"
     CONFIG_DELETED = "config.deleted"
-    
+
     # Authentication events
     AUTH_LOGIN = "auth.login"
     AUTH_LOGOUT = "auth.logout"
     AUTH_FAILED = "auth.failed"
     AUTH_TOKEN_REFRESH = "auth.token_refresh"
-    
+
     # API key events
     API_KEY_CREATED = "api_key.created"
     API_KEY_REVOKED = "api_key.revoked"
     API_KEY_USED = "api_key.used"
-    
+
     # User management events
     USER_CREATED = "user.created"
     USER_UPDATED = "user.updated"
     USER_DELETED = "user.deleted"
-    
+
     # Audit and compliance events
     AUDIT_EXPORTED = "audit.exported"
     LINEAGE_ACCESSED = "lineage.accessed"
-    
+
     # DLQ events
     DLQ_ENTRY_CREATED = "dlq.entry_created"
     DLQ_ENTRY_RETRIED = "dlq.entry_retried"
     DLQ_ENTRY_ARCHIVED = "dlq.entry_archived"
-    
+
     # System events
     SYSTEM_HEALTH_CHECK = "system.health_check"
     SYSTEM_METRICS_ACCESSED = "system.metrics_accessed"
@@ -112,22 +111,22 @@ class AuditEvent(BaseModel):
         user_agent: Client user agent
         metadata: Additional metadata
     """
-    
+
     id: UUID = Field(default_factory=UUID)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     event_type: AuditEventType
-    user_id: Optional[str] = None
-    ip_address: Optional[str] = None
-    resource_type: Optional[str] = None
-    resource_id: Optional[str] = None
-    action: Optional[str] = None
+    user_id: str | None = None
+    ip_address: str | None = None
+    resource_type: str | None = None
+    resource_id: str | None = None
+    action: str | None = None
     status: AuditEventStatus = AuditEventStatus.SUCCESS
-    details: Dict[str, Any] = Field(default_factory=dict)
-    correlation_id: Optional[str] = None
-    request_id: Optional[str] = None
-    user_agent: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    
+    details: dict[str, Any] = Field(default_factory=dict)
+    correlation_id: str | None = None
+    request_id: str | None = None
+    user_agent: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
     class Config:
         """Pydantic configuration."""
         use_enum_values = True
@@ -135,8 +134,8 @@ class AuditEvent(BaseModel):
             datetime: lambda v: v.isoformat(),
             UUID: lambda v: str(v),
         }
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert event to dictionary."""
         return {
             "id": str(self.id),
@@ -154,15 +153,15 @@ class AuditEvent(BaseModel):
             "user_agent": self.user_agent,
             "metadata": self.metadata,
         }
-    
+
     @classmethod
     def from_job_event(
         cls,
         event_type: AuditEventType,
         job_id: UUID,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         status: AuditEventStatus = AuditEventStatus.SUCCESS,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
         **kwargs,
     ) -> "AuditEvent":
         """Create an audit event for a job-related action.
@@ -188,15 +187,15 @@ class AuditEvent(BaseModel):
             details=details or {},
             **kwargs,
         )
-    
+
     @classmethod
     def from_auth_event(
         cls,
         event_type: AuditEventType,
-        user_id: Optional[str] = None,
-        ip_address: Optional[str] = None,
+        user_id: str | None = None,
+        ip_address: str | None = None,
         status: AuditEventStatus = AuditEventStatus.SUCCESS,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
         **kwargs,
     ) -> "AuditEvent":
         """Create an audit event for an authentication action.
@@ -222,15 +221,15 @@ class AuditEvent(BaseModel):
             details=details or {},
             **kwargs,
         )
-    
+
     @classmethod
     def from_source_event(
         cls,
         event_type: AuditEventType,
         source_id: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         status: AuditEventStatus = AuditEventStatus.SUCCESS,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
         **kwargs,
     ) -> "AuditEvent":
         """Create an audit event for a source-related action.
@@ -275,48 +274,48 @@ class AuditLogQuery(BaseModel):
         sort_by: Field to sort by
         sort_order: Sort direction (asc/desc)
     """
-    
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    event_types: Optional[List[AuditEventType]] = None
-    user_ids: Optional[List[str]] = None
-    resource_types: Optional[List[str]] = None
-    resource_ids: Optional[List[str]] = None
-    status: Optional[AuditEventStatus] = None
-    correlation_id: Optional[str] = None
+
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    event_types: list[AuditEventType] | None = None
+    user_ids: list[str] | None = None
+    resource_types: list[str] | None = None
+    resource_ids: list[str] | None = None
+    status: AuditEventStatus | None = None
+    correlation_id: str | None = None
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=50, ge=1, le=1000)
     sort_by: str = "timestamp"
     sort_order: str = Field(default="desc", pattern="^(asc|desc)$")
-    
-    def to_db_filters(self) -> Dict[str, Any]:
+
+    def to_db_filters(self) -> dict[str, Any]:
         """Convert query to database filter dictionary."""
         filters = {}
-        
+
         if self.start_time:
             filters["timestamp__gte"] = self.start_time
-        
+
         if self.end_time:
             filters["timestamp__lte"] = self.end_time
-        
+
         if self.event_types:
             filters["event_type__in"] = [e.value for e in self.event_types]
-        
+
         if self.user_ids:
             filters["user_id__in"] = self.user_ids
-        
+
         if self.resource_types:
             filters["resource_type__in"] = self.resource_types
-        
+
         if self.resource_ids:
             filters["resource_id__in"] = self.resource_ids
-        
+
         if self.status:
             filters["status"] = self.status.value
-        
+
         if self.correlation_id:
             filters["correlation_id"] = self.correlation_id
-        
+
         return filters
 
 
@@ -330,13 +329,13 @@ class AuditLogQueryResult(BaseModel):
         page_size: Page size
         has_more: Whether there are more results
     """
-    
-    events: List[AuditEvent]
+
+    events: list[AuditEvent]
     total: int
     page: int
     page_size: int
     has_more: bool
-    
+
     @property
     def total_pages(self) -> int:
         """Calculate total number of pages."""
@@ -351,7 +350,7 @@ class AuditLogExportRequest(BaseModel):
         format: Export format (json, csv, ndjson)
         include_metadata: Whether to include metadata
     """
-    
+
     query: AuditLogQuery
     format: str = Field(default="json", pattern="^(json|csv|ndjson)$")
     include_metadata: bool = True

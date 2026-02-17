@@ -12,8 +12,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
-from uuid import UUID
+from typing import Any
 
 from src.api.models import Job, PipelineConfig, RetryRecord
 
@@ -51,10 +50,10 @@ class RetryContext:
     """
     job: Job
     attempt_number: int
-    previous_error: Optional[Exception] = None
-    previous_strategy: Optional[str] = None
-    retry_history: List[RetryRecord] = field(default_factory=list)
-    pipeline_config: Optional[PipelineConfig] = None
+    previous_error: Exception | None = None
+    previous_strategy: str | None = None
+    retry_history: list[RetryRecord] = field(default_factory=list)
+    pipeline_config: PipelineConfig | None = None
 
 
 @dataclass
@@ -74,11 +73,11 @@ class RetryResult:
     success: bool
     status: RetryStatus
     message: str
-    updated_config: Optional[PipelineConfig] = None
+    updated_config: PipelineConfig | None = None
     preprocessing_applied: bool = False
     strategy_used: str = ""
-    error: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class RetryStrategy(ABC):
@@ -87,17 +86,17 @@ class RetryStrategy(ABC):
     All retry strategies must inherit from this class and implement
     the execute method.
     """
-    
+
     def __init__(self) -> None:
         """Initialize the retry strategy."""
         self.logger = logging.getLogger(self.__class__.__name__)
-    
+
     @property
     @abstractmethod
     def strategy_type(self) -> RetryStrategyType:
         """Return the strategy type."""
         ...
-    
+
     @abstractmethod
     async def execute(self, context: RetryContext) -> RetryResult:
         """Execute the retry strategy.
@@ -109,7 +108,7 @@ class RetryStrategy(ABC):
             RetryResult indicating success/failure and any config changes
         """
         ...
-    
+
     async def can_apply(self, context: RetryContext) -> bool:
         """Check if this strategy can be applied to the given context.
         
@@ -120,12 +119,12 @@ class RetryStrategy(ABC):
             True if strategy can be applied
         """
         return True
-    
+
     def _create_retry_record(
         self,
         context: RetryContext,
         success: bool,
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> RetryRecord:
         """Create a retry record.
         
@@ -155,11 +154,11 @@ class SameParserRetry(RetryStrategy):
     - Rate limiting (with backoff)
     - Memory pressure that has been resolved
     """
-    
+
     @property
     def strategy_type(self) -> RetryStrategyType:
         return RetryStrategyType.SAME_PARSER
-    
+
     async def can_apply(self, context: RetryContext) -> bool:
         """Check if same parser retry can be applied.
         
@@ -171,7 +170,7 @@ class SameParserRetry(RetryStrategy):
         )
         # Limit same-parser retries to 2 attempts
         return same_strategy_count < 2
-    
+
     async def execute(self, context: RetryContext) -> RetryResult:
         """Execute same parser retry.
         
@@ -189,27 +188,27 @@ class SameParserRetry(RetryStrategy):
             job_id=str(context.job.id),
             attempt=context.attempt_number,
         )
-        
+
         # Calculate exponential backoff delay
         base_delay = 5  # seconds
         delay = base_delay * (2 ** (context.attempt_number - 1))
-        
+
         # Add jitter to prevent thundering herd
         import random
         jitter = random.uniform(0, 1)
         total_delay = delay + jitter
-        
+
         # Get current config or create default
         updated_config = context.pipeline_config
         if updated_config is None:
             from src.api.models import PipelineConfig
             updated_config = PipelineConfig(name=f"retry_config_{context.job.id}")
-        
+
         # Add retry delay to parser options
         if updated_config.parser:
             updated_config.parser.parser_options["retry_delay"] = total_delay
             updated_config.parser.parser_options["retry_attempt"] = context.attempt_number
-        
+
         return RetryResult(
             success=True,
             status=RetryStatus.PENDING,
@@ -231,11 +230,11 @@ class FallbackParserRetry(RetryStrategy):
     - Quality score is too low with primary parser
     - Document format is not well supported by primary parser
     """
-    
+
     @property
     def strategy_type(self) -> RetryStrategyType:
         return RetryStrategyType.FALLBACK_PARSER
-    
+
     async def can_apply(self, context: RetryContext) -> bool:
         """Check if fallback parser retry can be applied.
         
@@ -243,20 +242,20 @@ class FallbackParserRetry(RetryStrategy):
         """
         if context.pipeline_config is None:
             return False
-        
+
         # Check if fallback parser is configured
         fallback = context.pipeline_config.parser.fallback_parser
         if not fallback:
             return False
-        
+
         # Check if we've already tried fallback
         fallback_attempts = [
             r for r in context.retry_history
             if r.strategy == self.strategy_type.value
         ]
-        
+
         return len(fallback_attempts) == 0
-    
+
     async def execute(self, context: RetryContext) -> RetryResult:
         """Execute fallback parser retry.
         
@@ -273,7 +272,7 @@ class FallbackParserRetry(RetryStrategy):
             job_id=str(context.job.id),
             attempt=context.attempt_number,
         )
-        
+
         if context.pipeline_config is None:
             return RetryResult(
                 success=False,
@@ -282,10 +281,10 @@ class FallbackParserRetry(RetryStrategy):
                 strategy_used=self.strategy_type.value,
                 error="Missing pipeline configuration",
             )
-        
+
         current_primary = context.pipeline_config.parser.primary_parser
         fallback = context.pipeline_config.parser.fallback_parser
-        
+
         if not fallback:
             return RetryResult(
                 success=False,
@@ -294,19 +293,19 @@ class FallbackParserRetry(RetryStrategy):
                 strategy_used=self.strategy_type.value,
                 error="Fallback parser not configured",
             )
-        
+
         # Create updated config with swapped parsers
         from copy import deepcopy
         updated_config = deepcopy(context.pipeline_config)
-        
+
         # Swap primary and fallback
         updated_config.parser.primary_parser = fallback
         updated_config.parser.fallback_parser = current_primary
-        
+
         # Add fallback flag to options
         updated_config.parser.parser_options["using_fallback"] = True
         updated_config.parser.parser_options["original_parser"] = current_primary
-        
+
         return RetryResult(
             success=True,
             status=RetryStatus.PENDING,
@@ -330,11 +329,11 @@ class PreprocessRetry(RetryStrategy):
     - Document needs deskewing or denoising
     - Images need enhancement before parsing
     """
-    
+
     @property
     def strategy_type(self) -> RetryStrategyType:
         return RetryStrategyType.PREPROCESS_THEN_RETRY
-    
+
     async def can_apply(self, context: RetryContext) -> bool:
         """Check if preprocess retry can be applied.
         
@@ -349,11 +348,11 @@ class PreprocessRetry(RetryStrategy):
             ]
             if any(keyword in error_str for keyword in image_related):
                 return True
-        
+
         # Check if document type suggests preprocessing might help
         mime_type = (context.job.mime_type or "").lower()
         return any(t in mime_type for t in ["pdf", "image", "tiff", "png", "jpg"])
-    
+
     async def execute(self, context: RetryContext) -> RetryResult:
         """Execute preprocess and retry.
         
@@ -370,17 +369,17 @@ class PreprocessRetry(RetryStrategy):
             job_id=str(context.job.id),
             attempt=context.attempt_number,
         )
-        
+
         from copy import deepcopy
         updated_config = deepcopy(context.pipeline_config) if context.pipeline_config else None
-        
+
         if updated_config is None:
-            from src.api.models import PipelineConfig, ParserConfig
+            from src.api.models import ParserConfig, PipelineConfig
             updated_config = PipelineConfig(
                 name=f"preprocess_config_{context.job.id}",
                 parser=ParserConfig(),
             )
-        
+
         # Define preprocessing steps
         preprocessing_steps = [
             "deskew",           # Correct page rotation
@@ -388,12 +387,12 @@ class PreprocessRetry(RetryStrategy):
             "contrast_enhance", # Enhance contrast
             "binarize",         # Convert to black and white
         ]
-        
+
         # Add preprocessing to parser options
         updated_config.parser.parser_options["preprocessing_steps"] = preprocessing_steps
         updated_config.parser.parser_options["preprocessing_enabled"] = True
         updated_config.parser.parser_options["target_dpi"] = 300  # Ensure high resolution
-        
+
         return RetryResult(
             success=True,
             status=RetryStatus.PENDING,
@@ -418,16 +417,16 @@ class SplitProcessingRetry(RetryStrategy):
     - Timeout due to document size
     - Processing fails on specific pages only
     """
-    
+
     # Size threshold for considering split processing (100 MB)
     SIZE_THRESHOLD = 100 * 1024 * 1024
     # Page threshold for PDFs
     PAGE_THRESHOLD = 100
-    
+
     @property
     def strategy_type(self) -> RetryStrategyType:
         return RetryStrategyType.SPLIT_PROCESSING
-    
+
     async def can_apply(self, context: RetryContext) -> bool:
         """Check if split processing can be applied.
         
@@ -442,13 +441,13 @@ class SplitProcessingRetry(RetryStrategy):
             ]
             if any(keyword in error_str for keyword in resource_errors):
                 return True
-        
+
         # Check file size
         if context.job.file_size and context.job.file_size > self.SIZE_THRESHOLD:
             return True
-        
+
         return False
-    
+
     async def execute(self, context: RetryContext) -> RetryResult:
         """Execute split processing retry.
         
@@ -466,20 +465,20 @@ class SplitProcessingRetry(RetryStrategy):
             attempt=context.attempt_number,
             file_size=context.job.file_size,
         )
-        
+
         from copy import deepcopy
         updated_config = deepcopy(context.pipeline_config) if context.pipeline_config else None
-        
+
         if updated_config is None:
-            from src.api.models import PipelineConfig, ParserConfig
+            from src.api.models import ParserConfig, PipelineConfig
             updated_config = PipelineConfig(
                 name=f"split_config_{context.job.id}",
                 parser=ParserConfig(),
             )
-        
+
         # Determine chunk size based on file size
         chunk_size = self._calculate_chunk_size(context.job.file_size)
-        
+
         # Configure split processing
         updated_config.parser.parser_options["split_processing"] = True
         updated_config.parser.parser_options["chunk_size"] = chunk_size
@@ -487,7 +486,7 @@ class SplitProcessingRetry(RetryStrategy):
         updated_config.parser.parser_options["max_pages_per_chunk"] = 10
         updated_config.parser.parser_options["parallel_chunks"] = 2  # Process 2 chunks at a time
         updated_config.parser.parser_options["merge_results"] = True
-        
+
         return RetryResult(
             success=True,
             status=RetryStatus.PENDING,
@@ -503,8 +502,8 @@ class SplitProcessingRetry(RetryStrategy):
                 "file_size": context.job.file_size,
             },
         )
-    
-    def _calculate_chunk_size(self, file_size: Optional[int]) -> int:
+
+    def _calculate_chunk_size(self, file_size: int | None) -> int:
         """Calculate appropriate chunk size based on file size.
         
         Args:
@@ -515,7 +514,7 @@ class SplitProcessingRetry(RetryStrategy):
         """
         if file_size is None:
             return 10 * 1024 * 1024  # 10 MB default
-        
+
         # For files > 500 MB, use 50 MB chunks
         if file_size > 500 * 1024 * 1024:
             return 50 * 1024 * 1024
@@ -533,19 +532,19 @@ class RetryStrategyRegistry:
     Manages available retry strategies and selects appropriate
     strategies based on context.
     """
-    
+
     def __init__(self) -> None:
         """Initialize the retry strategy registry."""
-        self._strategies: Dict[RetryStrategyType, RetryStrategy] = {}
+        self._strategies: dict[RetryStrategyType, RetryStrategy] = {}
         self._register_default_strategies()
-    
+
     def _register_default_strategies(self) -> None:
         """Register the default retry strategies."""
         self.register(SameParserRetry())
         self.register(FallbackParserRetry())
         self.register(PreprocessRetry())
         self.register(SplitProcessingRetry())
-    
+
     def register(self, strategy: RetryStrategy) -> None:
         """Register a retry strategy.
         
@@ -554,8 +553,8 @@ class RetryStrategyRegistry:
         """
         self._strategies[strategy.strategy_type] = strategy
         logger.debug(f"Registered retry strategy: {strategy.strategy_type.value}")
-    
-    def get_strategy(self, strategy_type: RetryStrategyType) -> Optional[RetryStrategy]:
+
+    def get_strategy(self, strategy_type: RetryStrategyType) -> RetryStrategy | None:
         """Get a retry strategy by type.
         
         Args:
@@ -565,12 +564,12 @@ class RetryStrategyRegistry:
             RetryStrategy or None if not found
         """
         return self._strategies.get(strategy_type)
-    
+
     async def select_strategy(
         self,
         context: RetryContext,
-        preferred_order: Optional[List[RetryStrategyType]] = None,
-    ) -> Optional[RetryStrategy]:
+        preferred_order: list[RetryStrategyType] | None = None,
+    ) -> RetryStrategy | None:
         """Select the best retry strategy for the context.
         
         Args:
@@ -586,7 +585,7 @@ class RetryStrategyRegistry:
             RetryStrategyType.PREPROCESS_THEN_RETRY,
             RetryStrategyType.SPLIT_PROCESSING,
         ]
-        
+
         for strategy_type in order:
             strategy = self._strategies.get(strategy_type)
             if strategy and await strategy.can_apply(context):
@@ -597,15 +596,15 @@ class RetryStrategyRegistry:
                     attempt=context.attempt_number,
                 )
                 return strategy
-        
+
         logger.warning(
             "no_applicable_retry_strategy",
             job_id=str(context.job.id),
             attempt=context.attempt_number,
         )
         return None
-    
-    def list_strategies(self) -> List[RetryStrategyType]:
+
+    def list_strategies(self) -> list[RetryStrategyType]:
         """List all registered strategy types.
         
         Returns:
@@ -615,7 +614,7 @@ class RetryStrategyRegistry:
 
 
 # Global registry instance
-_retry_registry: Optional[RetryStrategyRegistry] = None
+_retry_registry: RetryStrategyRegistry | None = None
 
 
 def get_retry_registry() -> RetryStrategyRegistry:

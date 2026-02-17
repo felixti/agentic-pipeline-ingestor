@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, BinaryIO, Dict, List, Optional, Protocol, Union
+from typing import Any, BinaryIO, Protocol
 from uuid import UUID
 
 
@@ -48,8 +48,8 @@ class PluginMetadata:
     type: PluginType
     description: str = ""
     author: str = ""
-    supported_formats: List[str] = field(default_factory=list)
-    config_schema: Dict[str, Any] = field(default_factory=dict)
+    supported_formats: list[str] = field(default_factory=list)
+    config_schema: dict[str, Any] = field(default_factory=dict)
     requires_auth: bool = False
 
 
@@ -67,9 +67,9 @@ class Connection:
     """
     id: UUID
     plugin_id: str
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
     connected_at: datetime = field(default_factory=datetime.utcnow)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     is_open: bool = True
 
 
@@ -88,11 +88,11 @@ class SourceFile:
     """
     path: str
     name: str
-    size: Optional[int] = None
-    mime_type: Optional[str] = None
-    modified_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    size: int | None = None
+    mime_type: str | None = None
+    modified_at: datetime | None = None
+    created_at: datetime | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -107,10 +107,10 @@ class RetrievedFile:
         local_path: Optional local file path if saved to disk
     """
     source_file: SourceFile
-    content: Union[bytes, BinaryIO]
+    content: bytes | BinaryIO
     content_hash: str = ""
     retrieved_at: datetime = field(default_factory=datetime.utcnow)
-    local_path: Optional[str] = None
+    local_path: str | None = None
 
 
 @dataclass
@@ -133,16 +133,16 @@ class ParsingResult:
     """
     success: bool
     text: str = ""
-    pages: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    pages: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
     format: str = ""
     parser_used: str = ""
     processing_time_ms: int = 0
     confidence: float = 0.0
-    error: Optional[str] = None
-    images: List[Dict[str, Any]] = field(default_factory=list)
-    tables: List[Dict[str, Any]] = field(default_factory=list)
-    attachments: List[Dict[str, Any]] = field(default_factory=list)
+    error: str | None = None
+    images: list[dict[str, Any]] = field(default_factory=list)
+    tables: list[dict[str, Any]] = field(default_factory=list)
+    attachments: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -159,10 +159,10 @@ class TransformedData:
         output_format: Requested output format
     """
     job_id: UUID
-    chunks: List[Dict[str, Any]] = field(default_factory=list)
-    embeddings: Optional[List[List[float]]] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    lineage: Dict[str, Any] = field(default_factory=dict)
+    chunks: list[dict[str, Any]] = field(default_factory=list)
+    embeddings: list[list[float]] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    lineage: dict[str, Any] = field(default_factory=dict)
     original_format: str = ""
     output_format: str = "json"
 
@@ -187,8 +187,8 @@ class WriteResult:
     records_written: int = 0
     bytes_written: int = 0
     processing_time_ms: int = 0
-    error: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -201,8 +201,8 @@ class ValidationResult:
         warnings: List of validation warnings
     """
     valid: bool
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -216,7 +216,7 @@ class SupportResult:
     """
     supported: bool
     confidence: float = 1.0
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 # ============================================================================
@@ -229,7 +229,7 @@ class BasePlugin(ABC):
     All plugins must inherit from this class and implement
     the required abstract methods.
     """
-    
+
     @property
     @abstractmethod
     def metadata(self) -> PluginMetadata:
@@ -239,8 +239,8 @@ class BasePlugin(ABC):
             PluginMetadata containing plugin information
         """
         ...
-    
-    async def initialize(self, config: Dict[str, Any]) -> None:
+
+    async def initialize(self, config: dict[str, Any]) -> None:
         """Initialize the plugin with configuration.
         
         This method is called once when the plugin is loaded.
@@ -250,8 +250,8 @@ class BasePlugin(ABC):
             config: Plugin configuration dictionary
         """
         pass
-    
-    async def health_check(self, config: Optional[Dict[str, Any]] = None) -> HealthStatus:
+
+    async def health_check(self, config: dict[str, Any] | None = None) -> HealthStatus:
         """Check the health of the plugin.
         
         Args:
@@ -261,7 +261,7 @@ class BasePlugin(ABC):
             HealthStatus indicating plugin health
         """
         return HealthStatus.HEALTHY
-    
+
     async def shutdown(self) -> None:
         """Shutdown the plugin and cleanup resources.
         
@@ -277,9 +277,9 @@ class SourcePlugin(BasePlugin, ABC):
     Source plugins provide connectivity to data sources such as
     S3, Azure Blob Storage, SharePoint, or local filesystem.
     """
-    
+
     @abstractmethod
-    async def connect(self, config: Dict[str, Any]) -> Connection:
+    async def connect(self, config: dict[str, Any]) -> Connection:
         """Establish a connection to the source.
         
         Args:
@@ -292,15 +292,15 @@ class SourcePlugin(BasePlugin, ABC):
             ConnectionError: If connection fails
         """
         ...
-    
+
     @abstractmethod
     async def list_files(
         self,
         conn: Connection,
         path: str,
         recursive: bool = False,
-        pattern: Optional[str] = None,
-    ) -> List[SourceFile]:
+        pattern: str | None = None,
+    ) -> list[SourceFile]:
         """List files in the source.
         
         Args:
@@ -316,13 +316,13 @@ class SourcePlugin(BasePlugin, ABC):
             ConnectionError: If connection is invalid
         """
         ...
-    
+
     @abstractmethod
     async def get_file(
         self,
         conn: Connection,
         path: str,
-        download_to: Optional[str] = None,
+        download_to: str | None = None,
     ) -> RetrievedFile:
         """Retrieve a file from the source.
         
@@ -339,8 +339,8 @@ class SourcePlugin(BasePlugin, ABC):
             ConnectionError: If connection fails
         """
         ...
-    
-    async def validate_config(self, config: Dict[str, Any]) -> ValidationResult:
+
+    async def validate_config(self, config: dict[str, Any]) -> ValidationResult:
         """Validate source configuration.
         
         Args:
@@ -350,8 +350,8 @@ class SourcePlugin(BasePlugin, ABC):
             ValidationResult with validation status and any errors
         """
         return ValidationResult(valid=True)
-    
-    async def test_connection(self, config: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+
+    async def test_connection(self, config: dict[str, Any]) -> tuple[bool, str | None]:
         """Test if a connection can be established.
         
         Args:
@@ -368,13 +368,13 @@ class SourcePlugin(BasePlugin, ABC):
             return True, None
         except Exception as e:
             return False, str(e)
-    
+
     async def authorize(
         self,
         user_id: str,
         resource: str,
         action: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> bool:
         """Check if user is authorized to access a resource.
         
@@ -394,16 +394,16 @@ class SourcePlugin(BasePlugin, ABC):
         # Default implementation: allow all authenticated users to read
         if action == "read":
             return True
-        
+
         # For write operations, default to requiring explicit permission
         return False
-    
+
     async def check_permission(
         self,
         user_id: str,
         resource: str,
         action: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> bool:
         """Check user permission for a resource action.
         
@@ -428,12 +428,12 @@ class ParserPlugin(BasePlugin, ABC):
     Parser plugins extract text and structure from documents
     using various parsing strategies (Docling, Azure OCR, etc.).
     """
-    
+
     @abstractmethod
     async def parse(
         self,
         file_path: str,
-        options: Optional[Dict[str, Any]] = None,
+        options: dict[str, Any] | None = None,
     ) -> ParsingResult:
         """Parse a document and extract content.
         
@@ -449,12 +449,12 @@ class ParserPlugin(BasePlugin, ABC):
             ParseError: If parsing fails
         """
         ...
-    
+
     @abstractmethod
     async def supports(
         self,
         file_path: str,
-        mime_type: Optional[str] = None,
+        mime_type: str | None = None,
     ) -> SupportResult:
         """Check if this parser supports the given file.
         
@@ -466,12 +466,12 @@ class ParserPlugin(BasePlugin, ABC):
             SupportResult indicating support status
         """
         ...
-    
+
     async def preprocess(
         self,
         file_path: str,
-        steps: List[str],
-        options: Optional[Dict[str, Any]] = None,
+        steps: list[str],
+        options: dict[str, Any] | None = None,
     ) -> str:
         """Preprocess a file before parsing.
         
@@ -485,7 +485,7 @@ class ParserPlugin(BasePlugin, ABC):
         """
         # Default implementation returns original file
         return file_path
-    
+
     async def get_quality_score(self, result: ParsingResult) -> float:
         """Calculate quality score for parsing result.
         
@@ -506,9 +506,9 @@ class DestinationPlugin(BasePlugin, ABC):
     Destination plugins route processed data to output systems
     such as Cognee, vector databases, webhooks, etc.
     """
-    
+
     @abstractmethod
-    async def connect(self, config: Dict[str, Any]) -> Connection:
+    async def connect(self, config: dict[str, Any]) -> Connection:
         """Establish a connection to the destination.
         
         Args:
@@ -518,7 +518,7 @@ class DestinationPlugin(BasePlugin, ABC):
             Connection handle for subsequent operations
         """
         ...
-    
+
     @abstractmethod
     async def write(
         self,
@@ -535,8 +535,8 @@ class DestinationPlugin(BasePlugin, ABC):
             WriteResult containing operation status
         """
         ...
-    
-    async def validate_config(self, config: Dict[str, Any]) -> ValidationResult:
+
+    async def validate_config(self, config: dict[str, Any]) -> ValidationResult:
         """Validate destination configuration.
         
         Args:
@@ -546,8 +546,8 @@ class DestinationPlugin(BasePlugin, ABC):
             ValidationResult with validation status
         """
         return ValidationResult(valid=True)
-    
-    async def test_connection(self, config: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+
+    async def test_connection(self, config: dict[str, Any]) -> tuple[bool, str | None]:
         """Test if a connection can be established.
         
         Args:
@@ -571,7 +571,7 @@ class DestinationPlugin(BasePlugin, ABC):
 
 class StreamingSource(Protocol):
     """Protocol for sources that support streaming large files."""
-    
+
     async def stream_file(
         self,
         conn: Connection,
@@ -593,12 +593,12 @@ class StreamingSource(Protocol):
 
 class AsyncParser(Protocol):
     """Protocol for parsers with async chunk processing."""
-    
+
     async def parse_chunks(
         self,
         file_path: str,
         chunk_size: int,
-        options: Optional[Dict[str, Any]] = None,
+        options: dict[str, Any] | None = None,
     ) -> ParsingResult:
         """Parse a document in chunks for memory efficiency.
         
@@ -615,12 +615,12 @@ class AsyncParser(Protocol):
 
 class BatchDestination(Protocol):
     """Protocol for destinations that support batch writes."""
-    
+
     async def write_batch(
         self,
         conn: Connection,
-        data_list: List[TransformedData],
-    ) -> List[WriteResult]:
+        data_list: list[TransformedData],
+    ) -> list[WriteResult]:
         """Write multiple data items in a batch.
         
         Args:

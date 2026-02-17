@@ -13,8 +13,8 @@ import logging
 import mimetypes
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from uuid import UUID, uuid4
+from typing import Any
+from uuid import uuid4
 
 from src.plugins.base import (
     Connection,
@@ -48,13 +48,13 @@ class SharePointConfig:
     site_url: str
     tenant_id: str
     client_id: str
-    client_secret: Optional[str] = None
-    certificate_path: Optional[str] = None
-    certificate_thumbprint: Optional[str] = None
-    drive_id: Optional[str] = None
+    client_secret: str | None = None
+    certificate_path: str | None = None
+    certificate_thumbprint: str | None = None
+    drive_id: str | None = None
     folder_path: str = "/"
-    scopes: List[str] = None  # type: ignore
-    
+    scopes: list[str] = None  # type: ignore
+
     def __post_init__(self) -> None:
         """Initialize default values."""
         if self.scopes is None:
@@ -71,14 +71,14 @@ class SharePointSourcePlugin(SourcePlugin):
     - Folder-level operations
     - Microsoft Graph API integration
     """
-    
+
     def __init__(self) -> None:
         """Initialize the SharePoint source plugin."""
         self.logger = logger
-        self._access_token: Optional[str] = None
-        self._token_expires: Optional[datetime] = None
+        self._access_token: str | None = None
+        self._token_expires: datetime | None = None
         self._graph_client = None
-    
+
     @property
     def metadata(self) -> PluginMetadata:
         """Return plugin metadata."""
@@ -111,7 +111,7 @@ class SharePointSourcePlugin(SourcePlugin):
                 },
             },
         )
-    
+
     async def _get_access_token(self, config: SharePointConfig) -> str:
         """Get or refresh access token.
         
@@ -122,20 +122,20 @@ class SharePointSourcePlugin(SourcePlugin):
             Access token
         """
         import aiohttp
-        
+
         # Check if token is still valid
         if self._access_token and self._token_expires and datetime.utcnow() < self._token_expires:
             return self._access_token
-        
+
         # Request new token
         token_url = f"https://login.microsoftonline.com/{config.tenant_id}/oauth2/v2.0/token"
-        
+
         token_data = {
             "grant_type": "client_credentials",
             "client_id": config.client_id,
             "scope": " ".join(config.scopes),
         }
-        
+
         # Add client secret or certificate
         if config.client_secret:
             token_data["client_secret"] = config.client_secret
@@ -148,27 +148,27 @@ class SharePointSourcePlugin(SourcePlugin):
             )
         else:
             raise ValueError("Either client_secret or certificate must be provided")
-        
+
         async with aiohttp.ClientSession() as session:
             async with session.post(token_url, data=token_data) as response:
                 if response.status != 200:
                     error_text = await response.text()
                     raise AuthenticationError(f"Failed to get access token: {error_text}")
-                
+
                 token_response = await response.json()
                 self._access_token = token_response["access_token"]
                 expires_in = token_response.get("expires_in", 3600)
                 self._token_expires = datetime.utcnow() + timedelta(seconds=expires_in - 300)  # 5 min buffer
-                
+
                 return self._access_token
-    
+
     async def _make_graph_request(
         self,
         config: SharePointConfig,
         endpoint: str,
         method: str = "GET",
-        data: Optional[Dict] = None,
-    ) -> Dict[str, Any]:
+        data: dict | None = None,
+    ) -> dict[str, Any]:
         """Make a Microsoft Graph API request.
         
         Args:
@@ -181,16 +181,16 @@ class SharePointSourcePlugin(SourcePlugin):
             Response JSON
         """
         import aiohttp
-        
+
         token = await self._get_access_token(config)
-        
+
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
-        
+
         url = f"https://graph.microsoft.com/v1.0{endpoint}"
-        
+
         async with aiohttp.ClientSession() as session:
             async with session.request(method, url, headers=headers, json=data) as response:
                 if response.status == 404:
@@ -200,9 +200,9 @@ class SharePointSourcePlugin(SourcePlugin):
                 elif response.status >= 400:
                     error_text = await response.text()
                     raise RuntimeError(f"Graph API error {response.status}: {error_text}")
-                
+
                 return await response.json()
-    
+
     async def _get_site_id(self, config: SharePointConfig) -> str:
         """Get SharePoint site ID from URL.
         
@@ -217,13 +217,13 @@ class SharePointSourcePlugin(SourcePlugin):
         parsed = urlparse(config.site_url)
         hostname = parsed.hostname
         site_path = parsed.path.strip("/")
-        
+
         # Use Graph API to get site
         endpoint = f"/sites/{hostname}:/{site_path}"
         response = await self._make_graph_request(config, endpoint)
-        
+
         return response["id"]
-    
+
     async def _get_drive_id(self, config: SharePointConfig) -> str:
         """Get default document library drive ID.
         
@@ -235,16 +235,16 @@ class SharePointSourcePlugin(SourcePlugin):
         """
         if config.drive_id:
             return config.drive_id
-        
+
         site_id = await self._get_site_id(config)
-        
+
         # Get default drive (document library)
         endpoint = f"/sites/{site_id}/drive"
         response = await self._make_graph_request(config, endpoint)
-        
+
         return response["id"]
-    
-    async def connect(self, config: Dict[str, Any]) -> Connection:
+
+    async def connect(self, config: dict[str, Any]) -> Connection:
         """Establish connection to SharePoint.
         
         Args:
@@ -254,19 +254,19 @@ class SharePointSourcePlugin(SourcePlugin):
             Connection handle
         """
         sp_config = SharePointConfig(**config)
-        
+
         # Test connection by getting site info
         try:
             site_id = await self._get_site_id(sp_config)
             drive_id = await self._get_drive_id(sp_config)
-            
+
             # Verify access by listing root
             endpoint = f"/drives/{drive_id}/root/children"
             await self._make_graph_request(sp_config, endpoint)
-            
+
         except Exception as e:
             raise ConnectionError(f"Failed to connect to SharePoint: {e}")
-        
+
         return Connection(
             id=uuid4(),
             plugin_id=self.metadata.id,
@@ -278,14 +278,14 @@ class SharePointSourcePlugin(SourcePlugin):
                 "folder_path": sp_config.folder_path,
             },
         )
-    
+
     async def list_files(
         self,
         conn: Connection,
         path: str,
         recursive: bool = False,
-        pattern: Optional[str] = None,
-    ) -> List[SourceFile]:
+        pattern: str | None = None,
+    ) -> list[SourceFile]:
         """List files in SharePoint document library.
         
         Args:
@@ -299,14 +299,14 @@ class SharePointSourcePlugin(SourcePlugin):
         """
         config = SharePointConfig(**conn.config)
         drive_id = await self._get_drive_id(config)
-        
+
         # Build folder path
-        folder_path = path if path else config.folder_path
+        folder_path = path or config.folder_path
         if not folder_path.startswith("/"):
             folder_path = "/" + folder_path
-        
-        files: List[SourceFile] = []
-        
+
+        files: list[SourceFile] = []
+
         try:
             if recursive:
                 # Use delta or search for recursive listing
@@ -318,25 +318,25 @@ class SharePointSourcePlugin(SourcePlugin):
                 # List single folder
                 endpoint = f"/drives/{drive_id}/root:{folder_path}:/children"
                 response = await self._make_graph_request(config, endpoint)
-                
+
                 for item in response.get("value", []):
                     file_info = self._parse_drive_item(item, pattern)
                     if file_info:
                         files.append(file_info)
-        
+
         except Exception as e:
             self.logger.error(f"Failed to list SharePoint files: {e}")
             raise
-        
+
         return files
-    
+
     async def _list_files_recursive(
         self,
         config: SharePointConfig,
         drive_id: str,
         folder_path: str,
-        pattern: Optional[str],
-        files: List[SourceFile],
+        pattern: str | None,
+        files: list[SourceFile],
     ) -> None:
         """Recursively list files.
         
@@ -349,7 +349,7 @@ class SharePointSourcePlugin(SourcePlugin):
         """
         endpoint = f"/drives/{drive_id}/root:{folder_path}:/children"
         response = await self._make_graph_request(config, endpoint)
-        
+
         for item in response.get("value", []):
             if "folder" in item:
                 # Recurse into subfolder
@@ -361,12 +361,12 @@ class SharePointSourcePlugin(SourcePlugin):
                 file_info = self._parse_drive_item(item, pattern)
                 if file_info:
                     files.append(file_info)
-    
+
     def _parse_drive_item(
         self,
-        item: Dict[str, Any],
-        pattern: Optional[str],
-    ) -> Optional[SourceFile]:
+        item: dict[str, Any],
+        pattern: str | None,
+    ) -> SourceFile | None:
         """Parse a DriveItem into SourceFile.
         
         Args:
@@ -379,20 +379,20 @@ class SharePointSourcePlugin(SourcePlugin):
         # Skip folders
         if "folder" in item:
             return None
-        
+
         name = item.get("name", "")
-        
+
         # Apply pattern filter
         if pattern:
             import fnmatch
             if not fnmatch.fnmatch(name, pattern):
                 return None
-        
+
         # Get MIME type
         mime_type = item.get("file", {}).get("mimeType")
         if not mime_type:
             mime_type, _ = mimetypes.guess_type(name)
-        
+
         # Parse modified time
         modified_str = item.get("lastModifiedDateTime")
         modified_at = None
@@ -401,7 +401,7 @@ class SharePointSourcePlugin(SourcePlugin):
                 modified_at = datetime.fromisoformat(modified_str.replace("Z", "+00:00"))
             except ValueError:
                 pass
-        
+
         return SourceFile(
             path=item.get("parentReference", {}).get("path", "") + "/" + name,
             name=name,
@@ -415,12 +415,12 @@ class SharePointSourcePlugin(SourcePlugin):
                 "modified_by": item.get("lastModifiedBy", {}).get("user", {}).get("displayName"),
             },
         )
-    
+
     async def get_file(
         self,
         conn: Connection,
         path: str,
-        download_to: Optional[str] = None,
+        download_to: str | None = None,
     ) -> RetrievedFile:
         """Retrieve a file from SharePoint.
         
@@ -434,34 +434,34 @@ class SharePointSourcePlugin(SourcePlugin):
         """
         config = SharePointConfig(**conn.config)
         drive_id = await self._get_drive_id(config)
-        
+
         # Normalize path
         if not path.startswith("/"):
             path = "/" + path
-        
+
         try:
             # Get file metadata
             endpoint = f"/drives/{drive_id}/root:{path}"
             file_metadata = await self._make_graph_request(config, endpoint)
-            
+
             # Parse source file info
             source_file = self._parse_drive_item(file_metadata, None)
             if not source_file:
                 raise FileNotFoundError(f"SharePoint item is not a file: {path}")
-            
+
             # Get download URL
             download_url = file_metadata.get("@microsoft.graph.downloadUrl")
             if not download_url:
                 raise RuntimeError(f"No download URL available for: {path}")
-            
+
             # Download content
             import aiohttp
-            
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(download_url) as response:
                     if response.status != 200:
                         raise RuntimeError(f"Download failed: {response.status}")
-                    
+
                     if download_to:
                         # Save to file
                         with open(download_to, "wb") as f:
@@ -470,14 +470,14 @@ class SharePointSourcePlugin(SourcePlugin):
                                 if not chunk:
                                     break
                                 f.write(chunk)
-                        
+
                         # Calculate hash
                         import hashlib
                         sha256 = hashlib.sha256()
                         with open(download_to, "rb") as f:
                             for chunk in iter(lambda: f.read(8192), b""):
                                 sha256.update(chunk)
-                        
+
                         return RetrievedFile(
                             source_file=source_file,
                             content=b"",
@@ -487,24 +487,24 @@ class SharePointSourcePlugin(SourcePlugin):
                     else:
                         # Load into memory
                         content = await response.read()
-                        
+
                         # Calculate hash
                         import hashlib
                         content_hash = hashlib.sha256(content).hexdigest()
-                        
+
                         return RetrievedFile(
                             source_file=source_file,
                             content=content,
                             content_hash=content_hash,
                         )
-        
+
         except Exception as e:
             if "Not Found" in str(e) or "404" in str(e):
                 raise FileNotFoundError(f"SharePoint file not found: {path}")
             self.logger.error(f"Failed to get SharePoint file {path}: {e}")
             raise
-    
-    async def validate_config(self, config: Dict[str, Any]) -> ValidationResult:
+
+    async def validate_config(self, config: dict[str, Any]) -> ValidationResult:
         """Validate SharePoint configuration.
         
         Args:
@@ -515,35 +515,35 @@ class SharePointSourcePlugin(SourcePlugin):
         """
         errors = []
         warnings = []
-        
+
         # Check required fields
         required = ["site_url", "tenant_id", "client_id"]
         for field in required:
             if not config.get(field):
                 errors.append(f"{field} is required")
-        
+
         # Validate authentication
         has_secret = bool(config.get("client_secret"))
         has_cert = bool(config.get("certificate_path"))
-        
+
         if not has_secret and not has_cert:
             errors.append("Either client_secret or certificate_path must be provided")
-        
+
         # Validate site URL format
         site_url = config.get("site_url", "")
         if site_url and not site_url.startswith("https://"):
             errors.append("site_url must be a valid HTTPS URL")
-        
+
         if site_url and ".sharepoint.com" not in site_url:
             warnings.append("site_url doesn't appear to be a SharePoint Online URL")
-        
+
         return ValidationResult(
             valid=len(errors) == 0,
             errors=errors,
             warnings=warnings,
         )
-    
-    async def health_check(self, config: Optional[Dict[str, Any]] = None) -> HealthStatus:
+
+    async def health_check(self, config: dict[str, Any] | None = None) -> HealthStatus:
         """Check SharePoint health.
         
         Args:
@@ -554,28 +554,28 @@ class SharePointSourcePlugin(SourcePlugin):
         """
         if config is None:
             return HealthStatus.UNKNOWN
-        
+
         try:
             sp_config = SharePointConfig(**config)
-            
+
             # Try to get site info
             site_id = await self._get_site_id(sp_config)
-            
+
             # Try to get drive
             drive_id = await self._get_drive_id(sp_config)
-            
+
             return HealthStatus.HEALTHY
-            
+
         except Exception as e:
             self.logger.warning(f"SharePoint health check failed: {e}")
             return HealthStatus.UNHEALTHY
-    
+
     async def authorize(
         self,
         user_id: str,
         resource: str,
         action: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> bool:
         """Check if user is authorized to access a SharePoint resource.
         
@@ -595,15 +595,15 @@ class SharePointSourcePlugin(SourcePlugin):
         # SharePoint authorization is handled at two levels:
         # 1. Application permissions (Azure AD) - determines what the app can access
         # 2. SharePoint permissions - determines what users can access
-        
+
         # The application permissions are checked when we make Graph API calls
         # If the app doesn't have permission, the API will return 403
-        
+
         # For user-level authorization, we can check if the user has access
         # to the specific SharePoint resource
-        
+
         sp_config = SharePointConfig(**config)
-        
+
         # Check if user is in allowed users list (if configured)
         allowed_users = config.get("allowed_users", [])
         if allowed_users and user_id not in allowed_users:
@@ -611,7 +611,7 @@ class SharePointSourcePlugin(SourcePlugin):
                 f"User {user_id} not in allowed users list for SharePoint"
             )
             return False
-        
+
         # Check folder-level restrictions
         allowed_folders = config.get("allowed_folders", [])
         if allowed_folders:
@@ -623,25 +623,25 @@ class SharePointSourcePlugin(SourcePlugin):
                     f"User {user_id} attempted to access restricted folder: {resource}"
                 )
                 return False
-        
+
         # For read operations, we rely on SharePoint's permission system
         # The Graph API will return 403 if the user doesn't have access
         if action == "read":
             return True
-        
+
         # For write/delete operations, check if explicitly enabled
         if action in ("write", "delete"):
             allow_write = config.get("allow_write_operations", False)
             if not allow_write:
                 return False
-            
+
             # Additional check for specific users who can write
             write_users = config.get("write_users", [])
             if write_users and user_id not in write_users:
                 return False
-        
+
         return True
-    
+
     async def check_user_access(
         self,
         user_id: str,
@@ -663,18 +663,18 @@ class SharePointSourcePlugin(SourcePlugin):
         try:
             # Get drive ID
             drive_id = await self._get_drive_id(config)
-            
+
             # Get the item
             if not file_path.startswith("/"):
                 file_path = "/" + file_path
-            
+
             endpoint = f"/drives/{drive_id}/root:{file_path}"
-            
+
             # Try to get the item - this will fail if no access
             await self._make_graph_request(config, endpoint)
-            
+
             return True
-            
+
         except Exception as e:
             if "403" in str(e) or "Access Denied" in str(e):
                 return False

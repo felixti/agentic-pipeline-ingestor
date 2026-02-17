@@ -11,13 +11,11 @@ This module implements the 7-stage processing pipeline:
 """
 
 import logging
-import os
 import shutil
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type
-from uuid import UUID
+from typing import Any
 
 from src.api.models import (
     ContentDetectionResult,
@@ -25,21 +23,15 @@ from src.api.models import (
     JobResult,
     JobStatus,
     PipelineConfig,
-    QualityConfig,
-    StageProgress,
-    StageStatus,
 )
-from src.core.decisions import AgenticDecisionEngine, ParserSelection, RetryDecision
-from src.core.detection import ContentDetector, detect_content
-from src.core.quality import QualityAssessor, QualityScore, assess_quality
+from src.core.decisions import AgenticDecisionEngine
+from src.core.detection import ContentDetector
+from src.core.quality import QualityAssessor
 from src.llm.provider import LLMProvider
-from src.observability.tracing import get_tracer, start_pipeline_stage_span
 from src.observability.metrics import get_metrics_manager
+from src.observability.tracing import get_tracer, start_pipeline_stage_span
 from src.plugins.base import (
-    Connection,
-    DestinationPlugin,
     ParsingResult,
-    PluginMetadata,
     TransformedData,
     WriteResult,
 )
@@ -58,7 +50,7 @@ class PipelineContext:
         errors: List of errors encountered
         stage_results: Dictionary of stage execution results
     """
-    
+
     def __init__(self, job: Job, config: PipelineConfig) -> None:
         """Initialize pipeline context.
         
@@ -68,12 +60,12 @@ class PipelineContext:
         """
         self.job = job
         self.config = config
-        self.data: Dict[str, Any] = {}
-        self.errors: List[str] = []
-        self.stage_results: Dict[str, Dict[str, Any]] = {}
-        self.current_stage: Optional[str] = None
-    
-    def set_stage_result(self, stage: str, result: Dict[str, Any]) -> None:
+        self.data: dict[str, Any] = {}
+        self.errors: list[str] = []
+        self.stage_results: dict[str, dict[str, Any]] = {}
+        self.current_stage: str | None = None
+
+    def set_stage_result(self, stage: str, result: dict[str, Any]) -> None:
         """Set result for a stage.
         
         Args:
@@ -82,8 +74,8 @@ class PipelineContext:
         """
         self.stage_results[stage] = result
         self.data[stage] = result
-    
-    def get_stage_result(self, stage: str) -> Optional[Dict[str, Any]]:
+
+    def get_stage_result(self, stage: str) -> dict[str, Any] | None:
         """Get result for a stage.
         
         Args:
@@ -100,18 +92,18 @@ class PipelineStage(ABC):
     
     Each stage in the pipeline must implement this interface.
     """
-    
+
     @property
     @abstractmethod
     def name(self) -> str:
         """Return the stage name."""
         ...
-    
+
     @abstractmethod
     async def execute(
         self,
         context: PipelineContext,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute the pipeline stage.
         
         Args:
@@ -121,11 +113,11 @@ class PipelineStage(ABC):
             Stage result data
         """
         ...
-    
+
     async def on_success(
         self,
         context: PipelineContext,
-        result: Dict[str, Any],
+        result: dict[str, Any],
     ) -> None:
         """Called when stage executes successfully.
         
@@ -134,7 +126,7 @@ class PipelineStage(ABC):
             result: Stage result
         """
         pass
-    
+
     async def on_failure(
         self,
         context: PipelineContext,
@@ -158,26 +150,26 @@ class IngestStage(PipelineStage):
     - Staging to blob storage
     - Create job record
     """
-    
+
     @property
     def name(self) -> str:
         return "ingest"
-    
+
     async def execute(
         self,
         context: PipelineContext,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute ingestion stage."""
         logger.info("ingest_stage_started", job_id=str(context.job.id))
-        
+
         job = context.job
-        
+
         # Determine staging path
         staging_dir = Path("/tmp/pipeline/staging") / str(job.id)
         staging_dir.mkdir(parents=True, exist_ok=True)
-        
+
         staged_path = staging_dir / job.file_name
-        
+
         # If source is upload, file is already staged
         # Otherwise, download from source
         if job.source_type.value == "upload":
@@ -185,31 +177,31 @@ class IngestStage(PipelineStage):
             source_path = Path(job.source_uri)
             if source_path.exists() and source_path != staged_path:
                 shutil.copy2(source_path, staged_path)
-        
+
         # Validate file exists
         if not staged_path.exists():
             raise FileNotFoundError(f"Staged file not found: {staged_path}")
-        
+
         # Get file info
         file_size = staged_path.stat().st_size
         file_hash = await self._calculate_hash(staged_path)
-        
+
         result = {
             "staged_path": str(staged_path),
             "file_size": file_size,
             "file_hash": file_hash,
             "validated": True,
         }
-        
+
         logger.info(
             "ingest_stage_completed",
             job_id=str(context.job.id),
             file_size=file_size,
             file_hash=file_hash[:16],
         )
-        
+
         return result
-    
+
     async def _calculate_hash(self, file_path: Path) -> str:
         """Calculate SHA-256 hash of file.
         
@@ -220,13 +212,13 @@ class IngestStage(PipelineStage):
             Hex digest of hash
         """
         import hashlib
-        
+
         sha256_hash = hashlib.sha256()
-        
+
         with open(file_path, "rb") as f:
             for byte_block in iter(lambda: f.read(4096), b""):
                 sha256_hash.update(byte_block)
-        
+
         return sha256_hash.hexdigest()
 
 
@@ -238,49 +230,49 @@ class DetectStage(PipelineStage):
     - Detect scanned vs. text-based PDFs
     - Determine optimal parser strategy
     """
-    
+
     def __init__(self) -> None:
         """Initialize the detect stage."""
         self.detector = ContentDetector()
-    
+
     @property
     def name(self) -> str:
         return "detect"
-    
+
     async def execute(
         self,
         context: PipelineContext,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute content detection stage."""
         logger.info("detect_stage_started", job_id=str(context.job.id))
-        
+
         # Get staged file path
         ingest_result = context.get_stage_result("ingest")
         if not ingest_result:
             raise ValueError("Ingest stage must run before detect stage")
-        
+
         file_path = ingest_result["staged_path"]
-        
+
         # Perform content detection
         detection_result = await self.detector.detect(
             file_path,
             mime_type=context.job.mime_type,
         )
-        
+
         result = {
             "detection": detection_result.model_dump(),
             "detected_type": detection_result.detected_type.value,
             "recommended_parser": detection_result.recommended_parser,
             "confidence": detection_result.confidence,
         }
-        
+
         logger.info(
             "detect_stage_completed",
             job_id=str(context.job.id),
             detected_type=detection_result.detected_type.value,
             confidence=detection_result.confidence,
         )
-        
+
         return result
 
 
@@ -292,16 +284,16 @@ class ParseStage(PipelineStage):
     - Fallback to secondary parser if needed
     - Handle parsing errors and retries
     """
-    
-    def __init__(self, plugin_registry: Optional[PluginRegistry] = None) -> None:
+
+    def __init__(self, plugin_registry: PluginRegistry | None = None) -> None:
         """Initialize the parse stage.
         
         Args:
             plugin_registry: Plugin registry for accessing parsers
         """
         self.registry = plugin_registry or PluginRegistry()
-        self.decision_engine: Optional[AgenticDecisionEngine] = None
-    
+        self.decision_engine: AgenticDecisionEngine | None = None
+
     def set_decision_engine(self, engine: AgenticDecisionEngine) -> None:
         """Set the decision engine for intelligent parser selection.
         
@@ -309,31 +301,31 @@ class ParseStage(PipelineStage):
             engine: Agentic decision engine
         """
         self.decision_engine = engine
-    
+
     @property
     def name(self) -> str:
         return "parse"
-    
+
     async def execute(
         self,
         context: PipelineContext,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute parsing stage."""
         logger.info("parse_stage_started", job_id=str(context.job.id))
-        
+
         # Get required data
         ingest_result = context.get_stage_result("ingest")
         detect_result = context.get_stage_result("detect")
-        
+
         if not ingest_result or not detect_result:
             raise ValueError("Ingest and detect stages must run before parse stage")
-        
+
         file_path = ingest_result["staged_path"]
         detection = ContentDetectionResult(**detect_result["detection"])
-        
+
         # Get parser config
         parser_config = context.config.parser
-        
+
         # Use agentic decision if available
         if self.decision_engine:
             selection = await self.decision_engine.select_parser(detection)
@@ -342,12 +334,12 @@ class ParseStage(PipelineStage):
         else:
             primary_parser = parser_config.primary_parser
             fallback_parser = parser_config.fallback_parser
-        
+
         # Try primary parser
         parse_result = await self._try_parse(
             file_path, primary_parser, parser_config.parser_options
         )
-        
+
         # Try fallback if primary failed
         if not parse_result.success and fallback_parser:
             logger.warning(
@@ -357,14 +349,14 @@ class ParseStage(PipelineStage):
                 fallback=fallback_parser,
                 error=parse_result.error,
             )
-            
+
             parse_result = await self._try_parse(
                 file_path, fallback_parser, parser_config.parser_options
             )
             parser_used = fallback_parser if parse_result.success else primary_parser
         else:
             parser_used = primary_parser
-        
+
         result = {
             "parser_used": parser_used,
             "success": parse_result.success,
@@ -376,10 +368,10 @@ class ParseStage(PipelineStage):
             "confidence": parse_result.confidence,
             "processing_time_ms": parse_result.processing_time_ms,
         }
-        
+
         if not parse_result.success:
             result["error"] = parse_result.error
-        
+
         logger.info(
             "parse_stage_completed",
             job_id=str(context.job.id),
@@ -387,14 +379,14 @@ class ParseStage(PipelineStage):
             success=parse_result.success,
             confidence=parse_result.confidence,
         )
-        
+
         return result
-    
+
     async def _try_parse(
         self,
         file_path: str,
         parser_id: str,
-        options: Dict[str, Any],
+        options: dict[str, Any],
     ) -> ParsingResult:
         """Try to parse with a specific parser.
         
@@ -408,20 +400,20 @@ class ParseStage(PipelineStage):
         """
         try:
             parser = self.registry.get_parser(parser_id)
-            
+
             if not parser:
                 return ParsingResult(
                     success=False,
                     error=f"Parser not found: {parser_id}",
                 )
-            
+
             return await parser.parse(file_path, options)
-            
+
         except Exception as e:
             logger.error(f"Parser {parser_id} failed: {e}")
             return ParsingResult(
                 success=False,
-                error=f"Parser error: {str(e)}",
+                error=f"Parser error: {e!s}",
             )
 
 
@@ -433,72 +425,72 @@ class EnrichStage(PipelineStage):
     - Entity recognition
     - Document classification
     """
-    
-    def __init__(self, llm_provider: Optional[LLMProvider] = None) -> None:
+
+    def __init__(self, llm_provider: LLMProvider | None = None) -> None:
         """Initialize the enrich stage.
         
         Args:
             llm_provider: LLM provider for enrichment
         """
         self.llm = llm_provider
-    
+
     @property
     def name(self) -> str:
         return "enrich"
-    
+
     async def execute(
         self,
         context: PipelineContext,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute enrichment stage."""
         logger.info("enrich_stage_started", job_id=str(context.job.id))
-        
+
         parse_result = context.get_stage_result("parse")
         if not parse_result:
             raise ValueError("Parse stage must run before enrich stage")
-        
+
         text = parse_result.get("text", "")
         enrichment_config = context.config.enrichment
-        
-        entities: List[Dict[str, Any]] = []
-        classification: Optional[str] = None
-        metadata: Dict[str, Any] = {}
-        
+
+        entities: list[dict[str, Any]] = []
+        classification: str | None = None
+        metadata: dict[str, Any] = {}
+
         # Extract basic metadata
         metadata = {
             "word_count": len(text.split()),
             "char_count": len(text),
             "line_count": len(text.split("\n")),
         }
-        
+
         # Entity extraction if enabled and LLM available
         if enrichment_config.extract_entities and self.llm and text:
             entities = await self._extract_entities(text, enrichment_config.entity_types)
-        
+
         # Document classification if enabled
         if enrichment_config.classify_document and self.llm and text:
             classification = await self._classify_document(text)
-        
+
         result = {
             "entities": entities,
             "classification": classification,
             "metadata": metadata,
         }
-        
+
         logger.info(
             "enrich_stage_completed",
             job_id=str(context.job.id),
             entities_count=len(entities),
             classification=classification,
         )
-        
+
         return result
-    
+
     async def _extract_entities(
         self,
         text: str,
-        entity_types: List[str],
-    ) -> List[Dict[str, Any]]:
+        entity_types: list[str],
+    ) -> list[dict[str, Any]]:
         """Extract entities from text using LLM.
         
         Args:
@@ -510,11 +502,11 @@ class EnrichStage(PipelineStage):
         """
         if not self.llm:
             return []
-        
+
         try:
             # Sample text if too long
             sample = text[:5000] if len(text) > 5000 else text
-            
+
             prompt = f"""Extract {', '.join(entity_types)} entities from the following text.
 Return a JSON array of objects with "type", "value", and "confidence" fields.
 
@@ -522,25 +514,25 @@ Text:
 {sample}
 
 Entities:"""
-            
+
             response = await self.llm.json_completion(
                 prompt=prompt,
                 system_prompt="You are a named entity recognition system. Extract entities accurately.",
                 max_tokens=500,
             )
-            
+
             if isinstance(response, list):
                 return response
             elif isinstance(response, dict) and "entities" in response:
                 return response["entities"]
             else:
                 return []
-                
+
         except Exception as e:
             logger.warning(f"Entity extraction failed: {e}")
             return []
-    
-    async def _classify_document(self, text: str) -> Optional[str]:
+
+    async def _classify_document(self, text: str) -> str | None:
         """Classify document type using LLM.
         
         Args:
@@ -551,11 +543,11 @@ Entities:"""
         """
         if not self.llm:
             return None
-        
+
         try:
             # Sample text if too long
             sample = text[:3000] if len(text) > 3000 else text
-            
+
             prompt = f"""Classify the following document into one of these categories:
 - contract
 - invoice
@@ -572,16 +564,16 @@ Text:
 {sample}
 
 Category:"""
-            
+
             response = await self.llm.simple_completion(
                 prompt=prompt,
                 system_prompt="You are a document classification system.",
                 max_tokens=50,
                 temperature=0.1,
             )
-            
+
             return response.strip().lower()
-            
+
         except Exception as e:
             logger.warning(f"Document classification failed: {e}")
             return None
@@ -595,8 +587,8 @@ class QualityStage(PipelineStage):
     - Compare to thresholds
     - Trigger retries if needed
     """
-    
-    def __init__(self, decision_engine: Optional[AgenticDecisionEngine] = None) -> None:
+
+    def __init__(self, decision_engine: AgenticDecisionEngine | None = None) -> None:
         """Initialize the quality stage.
         
         Args:
@@ -604,22 +596,22 @@ class QualityStage(PipelineStage):
         """
         self.assessor = QualityAssessor()
         self.decision_engine = decision_engine
-    
+
     @property
     def name(self) -> str:
         return "quality"
-    
+
     async def execute(
         self,
         context: PipelineContext,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute quality assessment stage."""
         logger.info("quality_stage_started", job_id=str(context.job.id))
-        
+
         parse_result = context.get_stage_result("parse")
         if not parse_result:
             raise ValueError("Parse stage must run before quality stage")
-        
+
         # Build parsing result for assessment
         parsing_result = ParsingResult(
             success=parse_result.get("success", False),
@@ -630,16 +622,16 @@ class QualityStage(PipelineStage):
             images=parse_result.get("images", []),
             confidence=parse_result.get("confidence", 0.0),
         )
-        
+
         # Assess quality
         quality_config = context.config.quality
         quality_score = await self.assessor.assess(parsing_result, quality_config)
-        
+
         # Check if retry needed
         should_retry = self.assessor.should_retry(
             quality_score, quality_config, context.job.retry_count
         )
-        
+
         result = {
             "overall_score": quality_score.overall_score,
             "text_quality": quality_score.text_quality,
@@ -652,7 +644,7 @@ class QualityStage(PipelineStage):
             "recommendations": quality_score.recommendations,
             "threshold": quality_config.min_quality_score,
         }
-        
+
         logger.info(
             "quality_stage_completed",
             job_id=str(context.job.id),
@@ -660,7 +652,7 @@ class QualityStage(PipelineStage):
             passed=quality_score.passed,
             should_retry=should_retry,
         )
-        
+
         return result
 
 
@@ -672,24 +664,24 @@ class TransformStage(PipelineStage):
     - Embedding generation (placeholder)
     - Format conversion
     """
-    
+
     @property
     def name(self) -> str:
         return "transform"
-    
+
     async def execute(
         self,
         context: PipelineContext,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute transformation stage."""
         logger.info("transform_stage_started", job_id=str(context.job.id))
-        
+
         parse_result = context.get_stage_result("parse")
         quality_result = context.get_stage_result("quality")
-        
+
         if not parse_result:
             raise ValueError("Parse stage must run before transform stage")
-        
+
         # Skip if quality check failed
         if quality_result and not quality_result.get("passed", True):
             logger.warning(
@@ -702,39 +694,39 @@ class TransformStage(PipelineStage):
                 "skipped": True,
                 "reason": "quality_check_failed",
             }
-        
+
         text = parse_result.get("text", "")
         transform_config = context.config.transformation
         chunking_config = transform_config.chunking
-        
+
         # Perform chunking if enabled
-        chunks: List[Dict[str, Any]] = []
+        chunks: list[dict[str, Any]] = []
         if chunking_config.enabled and text:
             chunks = self._chunk_text(text, chunking_config)
         else:
             # Single chunk with full text
             chunks = [{"content": text, "metadata": {}}]
-        
+
         result = {
             "chunks": chunks,
             "chunk_count": len(chunks),
             "embeddings": None,  # Placeholder for embedding generation
             "output_format": transform_config.output_format.value,
         }
-        
+
         logger.info(
             "transform_stage_completed",
             job_id=str(context.job.id),
             chunks=len(chunks),
         )
-        
+
         return result
-    
+
     def _chunk_text(
         self,
         text: str,
         config,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Chunk text into segments.
         
         Args:
@@ -745,9 +737,9 @@ class TransformStage(PipelineStage):
             List of chunks
         """
         from src.api.models import ChunkingStrategy
-        
-        chunks: List[Dict[str, Any]] = []
-        
+
+        chunks: list[dict[str, Any]] = []
+
         if config.strategy == ChunkingStrategy.FIXED:
             chunks = self._fixed_chunking(text, config.chunk_size, config.chunk_overlap)
         elif config.strategy == ChunkingStrategy.SEMANTIC:
@@ -755,15 +747,15 @@ class TransformStage(PipelineStage):
         else:
             # Default to fixed
             chunks = self._fixed_chunking(text, config.chunk_size, config.chunk_overlap)
-        
+
         return chunks
-    
+
     def _fixed_chunking(
         self,
         text: str,
         chunk_size: int,
         overlap: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Fixed-size chunking with overlap.
         
         Args:
@@ -774,9 +766,9 @@ class TransformStage(PipelineStage):
         Returns:
             List of chunks
         """
-        chunks: List[Dict[str, Any]] = []
+        chunks: list[dict[str, Any]] = []
         step = chunk_size - overlap
-        
+
         for i in range(0, len(text), step):
             chunk_text = text[i:i + chunk_size]
             if chunk_text.strip():
@@ -787,14 +779,14 @@ class TransformStage(PipelineStage):
                         "end_char": i + len(chunk_text),
                     },
                 })
-        
+
         return chunks
-    
+
     def _semantic_chunking(
         self,
         text: str,
         chunk_size: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Semantic chunking by paragraphs.
         
         Args:
@@ -804,12 +796,12 @@ class TransformStage(PipelineStage):
         Returns:
             List of chunks
         """
-        chunks: List[Dict[str, Any]] = []
+        chunks: list[dict[str, Any]] = []
         paragraphs = text.split("\n\n")
-        
+
         current_chunk = ""
         start_idx = 0
-        
+
         for para in paragraphs:
             if len(current_chunk) + len(para) < chunk_size:
                 current_chunk += para + "\n\n"
@@ -824,7 +816,7 @@ class TransformStage(PipelineStage):
                     })
                 current_chunk = para + "\n\n"
                 start_idx += len(current_chunk)
-        
+
         # Add final chunk
         if current_chunk.strip():
             chunks.append({
@@ -834,7 +826,7 @@ class TransformStage(PipelineStage):
                     "end_char": start_idx + len(current_chunk),
                 },
             })
-        
+
         return chunks
 
 
@@ -846,30 +838,30 @@ class OutputStage(PipelineStage):
     - Apply filters
     - Confirm writes
     """
-    
-    def __init__(self, plugin_registry: Optional[PluginRegistry] = None) -> None:
+
+    def __init__(self, plugin_registry: PluginRegistry | None = None) -> None:
         """Initialize the output stage.
         
         Args:
             plugin_registry: Plugin registry for accessing destinations
         """
         self.registry = plugin_registry or PluginRegistry()
-    
+
     @property
     def name(self) -> str:
         return "output"
-    
+
     async def execute(
         self,
         context: PipelineContext,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute output stage."""
         logger.info("output_stage_started", job_id=str(context.job.id))
-        
+
         transform_result = context.get_stage_result("transform")
         if not transform_result:
             raise ValueError("Transform stage must run before output stage")
-        
+
         # Skip if transform was skipped
         if transform_result.get("skipped"):
             return {
@@ -877,7 +869,7 @@ class OutputStage(PipelineStage):
                 "skipped": True,
                 "reason": transform_result.get("reason"),
             }
-        
+
         # Build transformed data
         data = TransformedData(
             job_id=context.job.id,
@@ -891,21 +883,21 @@ class OutputStage(PipelineStage):
             original_format=context.job.mime_type or "unknown",
             output_format=transform_result.get("output_format", "json"),
         )
-        
+
         # Write to destinations
-        destinations_results: List[Dict[str, Any]] = []
-        
+        destinations_results: list[dict[str, Any]] = []
+
         for dest_config in context.job.destinations:
             if not dest_config.enabled:
                 continue
-            
+
             try:
                 result = await self._write_to_destination(
                     dest_config.type.value,
                     dest_config.config,
                     data,
                 )
-                
+
                 destinations_results.append({
                     "destination_id": dest_config.type.value,
                     "success": result.success,
@@ -913,7 +905,7 @@ class OutputStage(PipelineStage):
                     "uri": result.destination_uri,
                     "error": result.error,
                 })
-                
+
             except Exception as e:
                 logger.error(
                     "destination_write_failed",
@@ -926,28 +918,28 @@ class OutputStage(PipelineStage):
                     "success": False,
                     "error": str(e),
                 })
-        
+
         all_success = all(d.get("success", False) for d in destinations_results)
-        
+
         result = {
             "destinations": destinations_results,
             "success": all_success,
             "destination_count": len(destinations_results),
         }
-        
+
         logger.info(
             "output_stage_completed",
             job_id=str(context.job.id),
             destinations=len(destinations_results),
             success=all_success,
         )
-        
+
         return result
-    
+
     async def _write_to_destination(
         self,
         destination_type: str,
-        dest_config: Dict[str, Any],
+        dest_config: dict[str, Any],
         data: TransformedData,
     ) -> WriteResult:
         """Write data to a destination.
@@ -962,29 +954,29 @@ class OutputStage(PipelineStage):
         """
         try:
             destination = self.registry.get_destination(destination_type)
-            
+
             if not destination:
                 return WriteResult(
                     success=False,
                     error=f"Destination not found: {destination_type}",
                 )
-            
+
             # Initialize if needed
             await destination.initialize(dest_config)
-            
+
             # Connect and write
             conn = await destination.connect(dest_config)
             result = await destination.write(conn, data)
-            
+
             return result
-            
+
         except Exception as e:
             return WriteResult(
                 success=False,
-                error=f"Destination error: {str(e)}",
+                error=f"Destination error: {e!s}",
             )
-    
-    def _build_lineage(self, context: PipelineContext) -> Dict[str, Any]:
+
+    def _build_lineage(self, context: PipelineContext) -> dict[str, Any]:
         """Build data lineage information.
         
         Args:
@@ -993,17 +985,17 @@ class OutputStage(PipelineStage):
         Returns:
             Lineage dictionary
         """
-        lineage: Dict[str, Any] = {
+        lineage: dict[str, Any] = {
             "job_id": str(context.job.id),
             "stages": [],
         }
-        
+
         for stage_name, stage_data in context.stage_results.items():
             lineage["stages"].append({
                 "stage": stage_name,
                 "timestamp": datetime.utcnow().isoformat(),
             })
-        
+
         return lineage
 
 
@@ -1012,12 +1004,12 @@ class PipelineExecutor:
     
     Manages stage execution, error handling, and context passing.
     """
-    
+
     def __init__(
         self,
-        config: Optional[PipelineConfig] = None,
-        plugin_registry: Optional[PluginRegistry] = None,
-        llm_provider: Optional[LLMProvider] = None,
+        config: PipelineConfig | None = None,
+        plugin_registry: PluginRegistry | None = None,
+        llm_provider: LLMProvider | None = None,
     ) -> None:
         """Initialize the pipeline executor.
         
@@ -1029,16 +1021,16 @@ class PipelineExecutor:
         self.config = config
         self.registry = plugin_registry or PluginRegistry()
         self.llm = llm_provider
-        
+
         # Create decision engine if LLM available
-        self.decision_engine: Optional[AgenticDecisionEngine] = None
+        self.decision_engine: AgenticDecisionEngine | None = None
         if llm_provider:
             self.decision_engine = AgenticDecisionEngine(llm_provider)
-        
+
         # Initialize stages
-        self.stages: List[PipelineStage] = self._create_stages()
-    
-    def _create_stages(self) -> List[PipelineStage]:
+        self.stages: list[PipelineStage] = self._create_stages()
+
+    def _create_stages(self) -> list[PipelineStage]:
         """Create pipeline stages with dependencies.
         
         Returns:
@@ -1047,7 +1039,7 @@ class PipelineExecutor:
         parse_stage = ParseStage(self.registry)
         if self.decision_engine:
             parse_stage.set_decision_engine(self.decision_engine)
-        
+
         return [
             IngestStage(),
             DetectStage(),
@@ -1057,11 +1049,11 @@ class PipelineExecutor:
             TransformStage(),
             OutputStage(self.registry),
         ]
-    
+
     async def execute(
         self,
         job: Job,
-        enabled_stages: Optional[List[str]] = None,
+        enabled_stages: list[str] | None = None,
     ) -> PipelineContext:
         """Execute the pipeline for a job.
         
@@ -1073,29 +1065,29 @@ class PipelineExecutor:
             Final pipeline context
         """
         import time
-        
+
         config = job.pipeline_config or self.config or PipelineConfig(name="default")
         context = PipelineContext(job, config)
-        
+
         enabled = enabled_stages or config.enabled_stages or [s.name for s in self.stages]
-        
+
         # Update job status
         job.status = JobStatus.PROCESSING
         job.started_at = datetime.utcnow()
-        
+
         # Get tracer and metrics manager
         tracer = get_tracer("pipeline")
         metrics = get_metrics_manager()
-        
+
         # Record job start in metrics
         metrics.record_job_created(
             source_type=job.source_type.value,
             priority=str(job.priority),
         )
         metrics.record_job_start(str(job.id))
-        
+
         job_start_time = time.time()
-        
+
         # Start pipeline trace span
         with tracer.start_as_current_span(
             name="pipeline.execute",
@@ -1112,10 +1104,10 @@ class PipelineExecutor:
                     if stage.name not in enabled:
                         logger.debug("skipping_stage", stage=stage.name, job_id=str(job.id))
                         continue
-                    
+
                     context.current_stage = stage.name
                     job.current_stage = stage.name
-                    
+
                     # Start stage span
                     with start_pipeline_stage_span(
                         stage_name=stage.name,
@@ -1127,26 +1119,26 @@ class PipelineExecutor:
                                 stage=stage.name,
                                 job_id=str(job.id),
                             )
-                            
+
                             # Execute stage with timing
                             with metrics.time_stage(stage.name):
                                 result = await stage.execute(context)
-                            
+
                             context.set_stage_result(stage.name, result)
                             await stage.on_success(context, result)
-                            
+
                             # Add result attributes to span
                             if isinstance(result, dict):
                                 for key, value in result.items():
                                     if isinstance(value, (str, int, float, bool)):
                                         stage_span.set_attribute(f"stage.result.{key}", value)
-                            
+
                             logger.info(
                                 "stage_completed",
                                 stage=stage.name,
                                 job_id=str(job.id),
                             )
-                            
+
                             # Check for retry after quality stage
                             if stage.name == "quality":
                                 quality_result = context.get_stage_result("quality")
@@ -1154,14 +1146,14 @@ class PipelineExecutor:
                                     if job.retry_count < config.quality.max_retries:
                                         job.retry_count += 1
                                         job.status = JobStatus.RETRYING
-                                        
+
                                         # Record retry in metrics
                                         metrics.record_job_completed(
                                             source_type=job.source_type.value,
                                             status="retrying",
                                             job_id=str(job.id),
                                         )
-                                        
+
                                         logger.info(
                                             "job_retrying",
                                             job_id=str(job.id),
@@ -1169,12 +1161,12 @@ class PipelineExecutor:
                                         )
                                         # Break out and let caller handle retry
                                         break
-                            
+
                         except Exception as e:
                             stage_span.set_attribute("error", True)
                             stage_span.set_attribute("error.message", str(e))
                             stage_span.record_exception(e)
-                            
+
                             logger.error(
                                 "stage_execution_failed",
                                 stage=stage.name,
@@ -1182,21 +1174,21 @@ class PipelineExecutor:
                                 error=str(e),
                             )
                             await stage.on_failure(context, e)
-                            context.errors.append(f"{stage.name}: {str(e)}")
+                            context.errors.append(f"{stage.name}: {e!s}")
                             raise
-                
+
                 # Mark as completed if no errors
                 if not context.errors:
                     job.status = JobStatus.COMPLETED
                     job.completed_at = datetime.utcnow()
-                    
+
                     # Record job completion
                     metrics.record_job_completed(
                         source_type=job.source_type.value,
                         status="completed",
                         job_id=str(job.id),
                     )
-                    
+
                     # Record quality score if available
                     quality_result = context.get_stage_result("quality")
                     if quality_result:
@@ -1208,12 +1200,12 @@ class PipelineExecutor:
                                 parser_used=parser_used,
                                 score=score,
                             )
-                    
+
                     # Build job result
                     quality_result = context.get_stage_result("quality")
                     output_result = context.get_stage_result("output")
                     parse_result = context.get_stage_result("parse")
-                    
+
                     job.result = JobResult(
                         success=True,
                         quality_score=quality_result.get("overall_score") if quality_result else None,
@@ -1223,11 +1215,11 @@ class PipelineExecutor:
                             "destinations": output_result.get("destinations", []) if output_result else [],
                         },
                     )
-                    
+
                     # Update pipeline span
                     pipeline_span.set_attribute("job.status", "completed")
                     pipeline_span.set_attribute("job.success", True)
-                
+
             except Exception as e:
                 job.status = JobStatus.FAILED
                 job.error = {
@@ -1235,14 +1227,14 @@ class PipelineExecutor:
                     "message": str(e),
                     "failed_stage": context.current_stage,
                 }
-                
+
                 # Record job failure
                 metrics.record_job_failed(
                     source_type=job.source_type.value,
                     stage=context.current_stage or "unknown",
                     error_type=type(e).__name__,
                 )
-                
+
                 # Update pipeline span
                 pipeline_span.set_attribute("job.status", "failed")
                 pipeline_span.set_attribute("job.success", False)
@@ -1250,12 +1242,12 @@ class PipelineExecutor:
                 pipeline_span.set_attribute("error", True)
                 pipeline_span.set_attribute("error.message", str(e))
                 pipeline_span.record_exception(e)
-                
+
                 raise
-        
+
         return context
-    
-    def get_stage(self, name: str) -> Optional[PipelineStage]:
+
+    def get_stage(self, name: str) -> PipelineStage | None:
         """Get a stage by name.
         
         Args:

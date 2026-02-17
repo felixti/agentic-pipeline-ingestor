@@ -6,14 +6,12 @@ the lifecycle of data in the system.
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Protocol
-from uuid import UUID
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
-
 
 logger = logging.getLogger(__name__)
 
@@ -40,20 +38,20 @@ class RetentionRule(BaseModel):
         conditions: Optional conditions for applying rule
         priority: Rule priority (higher = more specific)
     """
-    
+
     name: str
     description: str
     data_type: str
     retention_days: int
     action: RetentionAction
-    archive_location: Optional[str] = None
-    conditions: Dict[str, Any] = Field(default_factory=dict)
+    archive_location: str | None = None
+    conditions: dict[str, Any] = Field(default_factory=dict)
     priority: int = 0
-    
+
     def is_applicable(
         self,
         data_type: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Check if this rule applies to given data.
         
@@ -66,15 +64,15 @@ class RetentionRule(BaseModel):
         """
         if self.data_type != data_type:
             return False
-        
+
         # Check conditions
         if metadata and self.conditions:
             for key, value in self.conditions.items():
                 if metadata.get(key) != value:
                     return False
-        
+
         return True
-    
+
     def get_expiration_date(self, created_at: datetime) -> datetime:
         """Calculate expiration date for data.
         
@@ -85,7 +83,7 @@ class RetentionRule(BaseModel):
             Expiration timestamp
         """
         return created_at + timedelta(days=self.retention_days)
-    
+
     def is_expired(self, created_at: datetime) -> bool:
         """Check if data has expired according to this rule.
         
@@ -107,17 +105,17 @@ class RetentionPolicy(BaseModel):
         rules: List of retention rules
         default_action: Default action for unclassified data
     """
-    
+
     name: str
     description: str
-    rules: List[RetentionRule]
+    rules: list[RetentionRule]
     default_action: RetentionAction = RetentionAction.KEEP
-    
+
     def get_applicable_rule(
         self,
         data_type: str,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Optional[RetentionRule]:
+        metadata: dict[str, Any] | None = None,
+    ) -> RetentionRule | None:
         """Get the applicable rule for data.
         
         Rules are sorted by priority (highest first), and the first
@@ -132,21 +130,21 @@ class RetentionPolicy(BaseModel):
         """
         # Sort by priority (highest first)
         sorted_rules = sorted(self.rules, key=lambda r: r.priority, reverse=True)
-        
+
         for rule in sorted_rules:
             if rule.is_applicable(data_type, metadata):
                 return rule
-        
+
         return None
 
 
 class RetentionHandler(Protocol):
     """Protocol for retention action handlers."""
-    
+
     async def delete(self, data_id: str, data_type: str) -> bool:
         """Delete data."""
         ...
-    
+
     async def archive(
         self,
         data_id: str,
@@ -155,11 +153,11 @@ class RetentionHandler(Protocol):
     ) -> bool:
         """Archive data to specified location."""
         ...
-    
+
     async def compress(self, data_id: str, data_type: str) -> bool:
         """Compress data."""
         ...
-    
+
     async def anonymize(self, data_id: str, data_type: str) -> bool:
         """Anonymize data (remove PII)."""
         ...
@@ -243,11 +241,11 @@ class DataRetentionManager:
         # Check data expiration
         is_expired = manager.is_data_expired(data_type, created_at)
     """
-    
+
     def __init__(
         self,
-        policy: Optional[RetentionPolicy] = None,
-        handler: Optional[RetentionHandler] = None,
+        policy: RetentionPolicy | None = None,
+        handler: RetentionHandler | None = None,
     ):
         """Initialize retention manager.
         
@@ -261,9 +259,9 @@ class DataRetentionManager:
             rules=DEFAULT_RETENTION_RULES,
         )
         self.handler = handler
-        self._action_handlers: Dict[RetentionAction, Callable] = {}
+        self._action_handlers: dict[RetentionAction, Callable] = {}
         self._lock = asyncio.Lock()
-    
+
     def register_action_handler(
         self,
         action: RetentionAction,
@@ -276,11 +274,11 @@ class DataRetentionManager:
             handler: Handler function
         """
         self._action_handlers[action] = handler
-    
+
     def get_retention_rule(
         self,
         data_type: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> RetentionRule:
         """Get the retention rule for data.
         
@@ -292,10 +290,10 @@ class DataRetentionManager:
             Applicable retention rule
         """
         rule = self.policy.get_applicable_rule(data_type, metadata)
-        
+
         if rule:
             return rule
-        
+
         # Return default rule
         return RetentionRule(
             name="default",
@@ -304,12 +302,12 @@ class DataRetentionManager:
             retention_days=2555,  # 7 years default
             action=self.policy.default_action,
         )
-    
+
     def is_data_expired(
         self,
         data_type: str,
         created_at: datetime,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Check if data has expired according to retention policy.
         
@@ -323,12 +321,12 @@ class DataRetentionManager:
         """
         rule = self.get_retention_rule(data_type, metadata)
         return rule.is_expired(created_at)
-    
+
     def get_expiration_date(
         self,
         data_type: str,
         created_at: datetime,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> datetime:
         """Get expiration date for data.
         
@@ -342,12 +340,12 @@ class DataRetentionManager:
         """
         rule = self.get_retention_rule(data_type, metadata)
         return rule.get_expiration_date(created_at)
-    
+
     async def apply_retention_policy(
         self,
         bucket: str,
-        data_type: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        data_type: str | None = None,
+    ) -> dict[str, Any]:
         """Apply retention policy to a bucket.
         
         This is the main entry point for retention enforcement.
@@ -361,7 +359,7 @@ class DataRetentionManager:
             Summary of actions taken
         """
         logger.info(f"Applying retention policy to bucket: {bucket}")
-        
+
         summary = {
             "bucket": bucket,
             "processed": 0,
@@ -372,19 +370,19 @@ class DataRetentionManager:
             "kept": 0,
             "errors": [],
         }
-        
+
         # This is a placeholder - actual implementation would scan
         # the bucket and process each item
         # In production, this would integrate with the storage backend
-        
+
         return summary
-    
+
     async def process_data_item(
         self,
         data_id: str,
         data_type: str,
         created_at: datetime,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Process a single data item according to retention policy.
         
@@ -400,44 +398,44 @@ class DataRetentionManager:
         # Check if data has expired
         if not self.is_data_expired(data_type, created_at, metadata):
             return True  # Not expired, nothing to do
-        
+
         # Get applicable rule
         rule = self.get_retention_rule(data_type, metadata)
-        
+
         logger.info(
             f"Applying retention action {rule.action.value} to {data_id} "
             f"(type: {data_type}, rule: {rule.name})"
         )
-        
+
         # Apply action
         try:
             if rule.action == RetentionAction.DELETE:
                 return await self._delete_data(data_id, data_type)
-            
+
             elif rule.action == RetentionAction.ARCHIVE:
                 return await self._archive_data(
                     data_id,
                     data_type,
                     rule.archive_location,
                 )
-            
+
             elif rule.action == RetentionAction.COMPRESS:
                 return await self._compress_data(data_id, data_type)
-            
+
             elif rule.action == RetentionAction.ANONYMIZE:
                 return await self._anonymize_data(data_id, data_type)
-            
+
             elif rule.action == RetentionAction.KEEP:
                 return True  # Keep data, nothing to do
-            
+
             else:
                 logger.warning(f"Unknown retention action: {rule.action}")
                 return False
-        
+
         except Exception as e:
             logger.error(f"Failed to apply retention action: {e}")
             return False
-    
+
     async def _delete_data(self, data_id: str, data_type: str) -> bool:
         """Delete data.
         
@@ -452,18 +450,18 @@ class DataRetentionManager:
             return await self._action_handlers[RetentionAction.DELETE](
                 data_id, data_type
             )
-        
+
         if self.handler:
             return await self.handler.delete(data_id, data_type)
-        
+
         logger.warning(f"No handler for delete action: {data_id}")
         return False
-    
+
     async def _archive_data(
         self,
         data_id: str,
         data_type: str,
-        archive_location: Optional[str],
+        archive_location: str | None,
     ) -> bool:
         """Archive data.
         
@@ -479,13 +477,13 @@ class DataRetentionManager:
             return await self._action_handlers[RetentionAction.ARCHIVE](
                 data_id, data_type, archive_location
             )
-        
+
         if self.handler:
             return await self.handler.archive(data_id, data_type, archive_location or "archive")
-        
+
         logger.warning(f"No handler for archive action: {data_id}")
         return False
-    
+
     async def _compress_data(self, data_id: str, data_type: str) -> bool:
         """Compress data.
         
@@ -500,13 +498,13 @@ class DataRetentionManager:
             return await self._action_handlers[RetentionAction.COMPRESS](
                 data_id, data_type
             )
-        
+
         if self.handler:
             return await self.handler.compress(data_id, data_type)
-        
+
         logger.warning(f"No handler for compress action: {data_id}")
         return False
-    
+
     async def _anonymize_data(self, data_id: str, data_type: str) -> bool:
         """Anonymize data.
         
@@ -521,14 +519,14 @@ class DataRetentionManager:
             return await self._action_handlers[RetentionAction.ANONYMIZE](
                 data_id, data_type
             )
-        
+
         if self.handler:
             return await self.handler.anonymize(data_id, data_type)
-        
+
         logger.warning(f"No handler for anonymize action: {data_id}")
         return False
-    
-    def get_policy_summary(self) -> Dict[str, Any]:
+
+    def get_policy_summary(self) -> dict[str, Any]:
         """Get a summary of the current retention policy.
         
         Returns:
@@ -552,7 +550,7 @@ class DataRetentionManager:
 
 
 # Global retention manager instance
-_retention_manager: Optional[DataRetentionManager] = None
+_retention_manager: DataRetentionManager | None = None
 
 
 def get_retention_manager() -> DataRetentionManager:

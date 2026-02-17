@@ -6,7 +6,7 @@ supporting environment variables, .env files, and YAML configuration files.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import yaml
 from pydantic import Field, PostgresDsn, RedisDsn, field_validator
@@ -35,7 +35,7 @@ class RedisSettings(BaseSettings):
         default="redis://localhost:6379/0",
         description="Redis connection URL",
     )
-    password: Optional[str] = Field(default=None)
+    password: str | None = Field(default=None)
     ssl: bool = Field(default=False)
     socket_timeout: int = Field(default=5)
     socket_connect_timeout: int = Field(default=5)
@@ -47,9 +47,9 @@ class RedisSettings(BaseSettings):
 class OpenSearchSettings(BaseSettings):
     """OpenSearch connection settings for audit logs."""
 
-    hosts: List[str] = Field(default=["http://localhost:9200"])
-    username: Optional[str] = Field(default=None)
-    password: Optional[str] = Field(default=None)
+    hosts: list[str] = Field(default=["http://localhost:9200"])
+    username: str | None = Field(default=None)
+    password: str | None = Field(default=None)
     use_ssl: bool = Field(default=False)
     verify_certs: bool = Field(default=True)
     index_prefix: str = Field(default="pipeline-audit")
@@ -60,13 +60,13 @@ class OpenSearchSettings(BaseSettings):
 class AzureSettings(BaseSettings):
     """Azure service settings."""
 
-    tenant_id: Optional[str] = Field(default=None)
-    client_id: Optional[str] = Field(default=None)
-    client_secret: Optional[str] = Field(default=None)
-    subscription_id: Optional[str] = Field(default=None)
-    storage_account: Optional[str] = Field(default=None)
-    storage_key: Optional[str] = Field(default=None)
-    queue_connection_string: Optional[str] = Field(default=None)
+    tenant_id: str | None = Field(default=None)
+    client_id: str | None = Field(default=None)
+    client_secret: str | None = Field(default=None)
+    subscription_id: str | None = Field(default=None)
+    storage_account: str | None = Field(default=None)
+    storage_key: str | None = Field(default=None)
+    queue_connection_string: str | None = Field(default=None)
 
     model_config = SettingsConfigDict(env_prefix="AZURE_")
 
@@ -83,11 +83,11 @@ class SecuritySettings(BaseSettings):
     api_key_header: str = Field(default="X-API-Key")
     rate_limit_default: int = Field(default=100, ge=1)
     rate_limit_window: int = Field(default=60, ge=1)
-    allowed_hosts: List[str] = Field(default=["*"])
-    cors_origins: List[str] = Field(default=["http://localhost:3000"])
+    allowed_hosts: list[str] = Field(default=["*"])
+    cors_origins: list[str] = Field(default=["http://localhost:3000"])
     cors_allow_credentials: bool = Field(default=True)
-    cors_allow_methods: List[str] = Field(default=["*"])
-    cors_allow_headers: List[str] = Field(default=["*"])
+    cors_allow_methods: list[str] = Field(default=["*"])
+    cors_allow_headers: list[str] = Field(default=["*"])
 
     @field_validator("secret_key")
     @classmethod
@@ -109,7 +109,7 @@ class ProcessingSettings(BaseSettings):
 
     max_file_size_mb: int = Field(default=100, ge=1, le=1000)
     max_pages_per_document: int = Field(default=1000, ge=1)
-    allowed_mime_types: List[str] = Field(
+    allowed_mime_types: list[str] = Field(
         default=[
             "application/pdf",
             "application/msword",
@@ -141,7 +141,7 @@ class ObservabilitySettings(BaseSettings):
     service_name: str = Field(default="pipeline-ingestor")
     service_version: str = Field(default="1.0.0")
     environment: str = Field(default="development")
-    otlp_endpoint: Optional[str] = Field(default=None)
+    otlp_endpoint: str | None = Field(default=None)
     otlp_insecure: bool = Field(default=True)
     jaeger_enabled: bool = Field(default=False)
     prometheus_enabled: bool = Field(default=True)
@@ -167,9 +167,9 @@ class LLMYamlConfig(BaseSettings):
     """LLM configuration loaded from YAML file."""
 
     config_path: Path = Field(default=Path("config/llm.yaml"))
-    _config_cache: Optional[Dict[str, Any]] = None
+    _config_cache: dict[str, Any] | None = None
 
-    def load_yaml(self) -> Dict[str, Any]:
+    def load_yaml(self) -> dict[str, Any]:
         """Load LLM configuration from YAML file.
         
         Returns:
@@ -181,11 +181,11 @@ class LLMYamlConfig(BaseSettings):
         if not self.config_path.exists():
             return self._default_config()
 
-        with open(self.config_path, "r") as f:
+        with open(self.config_path) as f:
             self._config_cache = yaml.safe_load(f)
         return self._config_cache or self._default_config()
 
-    def _default_config(self) -> Dict[str, Any]:
+    def _default_config(self) -> dict[str, Any]:
         """Return default LLM configuration."""
         return {
             "llm": {

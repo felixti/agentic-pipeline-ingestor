@@ -6,11 +6,9 @@ testing.
 """
 
 import asyncio
-import logging
 import signal
 import sys
-from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -36,7 +34,6 @@ structlog.configure(
 
 logger = structlog.get_logger(__name__)
 
-from src.config import settings
 from src.core.engine import OrchestrationEngine
 from src.worker.processor import JobProcessor
 
@@ -53,7 +50,7 @@ them through the pipeline.
         >>> # Run until stopped
         >>> await worker.stop()
     """
-    
+
     def __init__(
         self,
         poll_interval: float = 5.0,
@@ -67,40 +64,40 @@ them through the pipeline.
         """
         self.poll_interval = poll_interval
         self.max_concurrent_jobs = max_concurrent_jobs
-        self.processor: Optional[JobProcessor] = None
-        self.engine: Optional[OrchestrationEngine] = None
+        self.processor: JobProcessor | None = None
+        self.engine: OrchestrationEngine | None = None
         self._running = False
         self._shutdown_event = asyncio.Event()
         self._active_tasks: set = set()
-    
+
     async def initialize(self) -> None:
         """Initialize the worker service."""
         logger.info("Initializing worker service...")
-        
+
         # Initialize orchestration engine
         self.engine = OrchestrationEngine()
-        
+
         # Initialize processor
         self.processor = JobProcessor(engine=self.engine)
         await self.processor.initialize()
-        
+
         logger.info("Worker service initialized")
-    
+
     async def start(self) -> None:
         """Start the worker service."""
         if self._running:
             logger.warning("Worker service already running")
             return
-        
+
         await self.initialize()
-        
+
         self._running = True
         logger.info(
             "Worker service started",
             poll_interval=self.poll_interval,
             max_concurrent=self.max_concurrent_jobs,
         )
-        
+
         # Start job processing loop
         try:
             await self._processing_loop()
@@ -111,16 +108,16 @@ them through the pipeline.
             raise
         finally:
             await self.stop()
-    
+
     async def stop(self) -> None:
         """Stop the worker service gracefully."""
         if not self._running:
             return
-        
+
         logger.info("Stopping worker service...")
         self._running = False
         self._shutdown_event.set()
-        
+
         # Wait for active tasks to complete
         if self._active_tasks:
             logger.info(
@@ -128,13 +125,13 @@ them through the pipeline.
                 count=len(self._active_tasks),
             )
             await asyncio.gather(*self._active_tasks, return_exceptions=True)
-        
+
         # Shutdown processor
         if self.processor:
             await self.processor.shutdown()
-        
+
         logger.info("Worker service stopped")
-    
+
     async def _processing_loop(self) -> None:
         """Main processing loop."""
         while self._running:
@@ -147,10 +144,10 @@ them through the pipeline.
                         timeout=0.5,
                     )
                     continue
-                
+
                 # Poll for jobs (simulated - in real implementation would use queue)
                 job = await self._poll_for_job()
-                
+
                 if job:
                     # Start processing job
                     task = asyncio.create_task(self._process_job_safe(job))
@@ -162,14 +159,14 @@ them through the pipeline.
                         self._shutdown_event.wait(),
                         timeout=self.poll_interval,
                     )
-                
-            except asyncio.TimeoutError:
+
+            except TimeoutError:
                 continue
             except Exception as e:
                 logger.error("Error in processing loop", error=str(e))
                 await asyncio.sleep(1)
-    
-    async def _poll_for_job(self) -> Optional[UUID]:
+
+    async def _poll_for_job(self) -> UUID | None:
         """Poll for a job from the queue.
         
         Returns:
@@ -179,20 +176,20 @@ them through the pipeline.
         # For now, we check the orchestration engine for queued jobs
         if not self.engine:
             return None
-        
+
         from src.api.models import JobStatus
-        
+
         # Find queued jobs
         jobs = await self.engine.list_jobs(status=JobStatus.QUEUED, limit=1)
-        
+
         if jobs:
             job = jobs[0]
             # Mark as processing
             await self.engine.update_job_status(job.id, JobStatus.PROCESSING)
             return job.id
-        
+
         return None
-    
+
     async def _process_job_safe(self, job_id: UUID) -> None:
         """Process a job with error handling.
         
@@ -201,26 +198,26 @@ them through the pipeline.
         """
         try:
             logger.info("Starting job processing", job_id=str(job_id))
-            
+
             if not self.processor:
                 raise RuntimeError("Processor not initialized")
-            
+
             result = await self.processor.process_job_with_retry(job_id)
-            
+
             logger.info(
                 "Job processing complete",
                 job_id=str(job_id),
                 status=result.get("status"),
                 success=result.get("success"),
             )
-            
+
         except Exception as e:
             logger.error(
                 "Job processing failed",
                 job_id=str(job_id),
                 error=str(e),
             )
-    
+
     def signal_handler(self, sig: int) -> None:
         """Handle shutdown signals.
         
@@ -231,7 +228,7 @@ them through the pipeline.
         asyncio.create_task(self.stop())
 
 
-async def run_single_job(job_id: str) -> Dict[str, Any]:
+async def run_single_job(job_id: str) -> dict[str, Any]:
     """Run a single job and exit.
     
     Args:
@@ -242,7 +239,7 @@ async def run_single_job(job_id: str) -> Dict[str, Any]:
     """
     worker = WorkerService()
     await worker.initialize()
-    
+
     try:
         result = await worker.processor.process_job(UUID(job_id))
         return result
@@ -253,7 +250,7 @@ async def run_single_job(job_id: str) -> Dict[str, Any]:
 async def main() -> None:
     """Main entry point for the worker service."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Pipeline Worker Service")
     parser.add_argument(
         "--single-job",
@@ -271,26 +268,26 @@ async def main() -> None:
         default=3,
         help="Maximum concurrent jobs",
     )
-    
+
     args = parser.parse_args()
-    
+
     if args.single_job:
         # Process single job
         result = await run_single_job(args.single_job)
         print(f"Result: {result}")
         sys.exit(0 if result.get("success") else 1)
-    
+
     # Start worker service
     worker = WorkerService(
         poll_interval=args.poll_interval,
         max_concurrent_jobs=args.max_concurrent,
     )
-    
+
     # Setup signal handlers
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, worker.signal_handler, sig)
-    
+
     try:
         await worker.start()
     except KeyboardInterrupt:

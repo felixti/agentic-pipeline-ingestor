@@ -8,7 +8,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from src.llm.provider import LLMProvider
 
@@ -52,12 +52,12 @@ class Entity:
     """
     text: str
     type: EntityType
-    start_pos: Optional[int] = None
-    end_pos: Optional[int] = None
+    start_pos: int | None = None
+    end_pos: int | None = None
     confidence: float = 1.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    
-    def to_dict(self) -> Dict[str, Any]:
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert entity to dictionary."""
         return {
             "text": self.text,
@@ -67,9 +67,9 @@ class Entity:
             "confidence": self.confidence,
             "metadata": self.metadata,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Entity":
+    def from_dict(cls, data: dict[str, Any]) -> "Entity":
         """Create entity from dictionary."""
         return cls(
             text=data["text"],
@@ -84,17 +84,17 @@ class Entity:
 @dataclass
 class ExtractionResult:
     """Result of entity extraction."""
-    entities: List[Entity] = field(default_factory=list)
+    entities: list[Entity] = field(default_factory=list)
     processing_time_ms: int = 0
     model_used: str = ""
-    
-    def get_by_type(self, entity_type: EntityType) -> List[Entity]:
+
+    def get_by_type(self, entity_type: EntityType) -> list[Entity]:
         """Get entities of a specific type."""
         return [e for e in self.entities if e.type == entity_type]
-    
-    def get_unique(self) -> List[Entity]:
+
+    def get_unique(self) -> list[Entity]:
         """Get unique entities (by text and type)."""
-        seen: Set[tuple] = set()
+        seen: set[tuple] = set()
         unique = []
         for entity in self.entities:
             key = (entity.text.lower(), entity.type)
@@ -118,7 +118,7 @@ class EntityExtractor:
         >>> for entity in result.entities:
         ...     print(f"{entity.text} ({entity.type.value})")
     """
-    
+
     # Default entity types to extract
     DEFAULT_ENTITY_TYPES = [
         EntityType.PERSON,
@@ -127,11 +127,11 @@ class EntityExtractor:
         EntityType.DATE,
         EntityType.GPE,
     ]
-    
+
     def __init__(
         self,
         llm_provider: LLMProvider,
-        entity_types: Optional[List[EntityType]] = None,
+        entity_types: list[EntityType] | None = None,
         min_confidence: float = 0.7,
     ):
         """Initialize the entity extractor.
@@ -144,11 +144,11 @@ class EntityExtractor:
         self._llm = llm_provider
         self._entity_types = entity_types or self.DEFAULT_ENTITY_TYPES
         self._min_confidence = min_confidence
-    
+
     async def extract_entities(
         self,
         text: str,
-        entity_types: Optional[List[EntityType]] = None,
+        entity_types: list[EntityType] | None = None,
     ) -> ExtractionResult:
         """Extract entities from text.
         
@@ -160,26 +160,26 @@ class EntityExtractor:
             ExtractionResult with extracted entities
         """
         import time
-        
+
         start_time = time.time()
-        
+
         types_to_extract = entity_types or self._entity_types
-        
+
         try:
             # Use LLM for entity extraction
             entities = await self._extract_with_llm(text, types_to_extract)
-            
+
             # Filter by confidence
             entities = [e for e in entities if e.confidence >= self._min_confidence]
-            
+
             processing_time = int((time.time() - start_time) * 1000)
-            
+
             return ExtractionResult(
                 entities=entities,
                 processing_time_ms=processing_time,
                 model_used=self._llm.get_model_name(),
             )
-            
+
         except Exception as e:
             logger.error(f"Entity extraction failed: {e}", exc_info=True)
             return ExtractionResult(
@@ -187,11 +187,11 @@ class EntityExtractor:
                 processing_time_ms=int((time.time() - start_time) * 1000),
                 model_used="error",
             )
-    
+
     async def extract_from_chunks(
         self,
-        chunks: List[Dict[str, Any]],
-        entity_types: Optional[List[EntityType]] = None,
+        chunks: list[dict[str, Any]],
+        entity_types: list[EntityType] | None = None,
     ) -> ExtractionResult:
         """Extract entities from multiple text chunks.
         
@@ -204,30 +204,30 @@ class EntityExtractor:
         """
         all_entities = []
         total_time = 0
-        
+
         for chunk in chunks:
             content = chunk.get("content", "")
             if not content:
                 continue
-            
+
             result = await self.extract_entities(content, entity_types)
             all_entities.extend(result.entities)
             total_time += result.processing_time_ms
-        
+
         # Deduplicate entities
         unique_entities = self._deduplicate_entities(all_entities)
-        
+
         return ExtractionResult(
             entities=unique_entities,
             processing_time_ms=total_time,
             model_used=self._llm.get_model_name(),
         )
-    
+
     async def _extract_with_llm(
         self,
         text: str,
-        entity_types: List[EntityType],
-    ) -> List[Entity]:
+        entity_types: list[EntityType],
+    ) -> list[Entity]:
         """Extract entities using LLM.
         
         Args:
@@ -239,7 +239,7 @@ class EntityExtractor:
         """
         # Build the prompt
         type_list = ", ".join([t.value for t in entity_types])
-        
+
         prompt = f"""Extract named entities from the following text.
 
 Text:
@@ -258,7 +258,7 @@ Rules:
 - Return an empty array if no entities are found
 - Do not include explanations, only the JSON array
 """
-        
+
         try:
             response = await self._llm.chat_completion(
                 messages=[
@@ -268,13 +268,13 @@ Rules:
                 temperature=0.1,
                 max_tokens=2000,
             )
-            
+
             # Parse the response
             content = response.choices[0].message.content.strip()
-            
+
             # Extract JSON from response
             entities_data = self._parse_json_response(content)
-            
+
             # Convert to Entity objects
             entities = []
             for item in entities_data:
@@ -288,14 +288,14 @@ Rules:
                 except (KeyError, ValueError) as e:
                     logger.warning(f"Invalid entity data: {item}, error: {e}")
                     continue
-            
+
             return entities
-            
+
         except Exception as e:
             logger.error(f"LLM extraction failed: {e}")
             return []
-    
-    def _parse_json_response(self, content: str) -> List[Dict[str, Any]]:
+
+    def _parse_json_response(self, content: str) -> list[dict[str, Any]]:
         """Parse JSON from LLM response.
         
         Args:
@@ -306,33 +306,30 @@ Rules:
         """
         # Try to find JSON array in response
         content = content.strip()
-        
+
         # Remove markdown code blocks if present
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        
+        content = content.removeprefix("```json")
+        content = content.removeprefix("```")
+        content = content.removesuffix("```")
+
         content = content.strip()
-        
+
         try:
             return json.loads(content)
         except json.JSONDecodeError:
             # Try to extract JSON array
             import re
-            match = re.search(r'\[.*\]', content, re.DOTALL)
+            match = re.search(r"\[.*\]", content, re.DOTALL)
             if match:
                 try:
                     return json.loads(match.group())
                 except json.JSONDecodeError:
                     pass
-            
+
             logger.warning(f"Failed to parse JSON from: {content[:200]}")
             return []
-    
-    def _deduplicate_entities(self, entities: List[Entity]) -> List[Entity]:
+
+    def _deduplicate_entities(self, entities: list[Entity]) -> list[Entity]:
         """Deduplicate entities by text and type.
         
         Args:
@@ -341,25 +338,25 @@ Rules:
         Returns:
             Deduplicated list
         """
-        seen: Dict[tuple, Entity] = {}
-        
+        seen: dict[tuple, Entity] = {}
+
         for entity in entities:
             key = (entity.text.lower().strip(), entity.type)
-            
+
             if key in seen:
                 # Keep the one with higher confidence
                 if entity.confidence > seen[key].confidence:
                     seen[key] = entity
             else:
                 seen[key] = entity
-        
+
         return list(seen.values())
-    
+
     async def extract_relationships(
         self,
         text: str,
-        entities: Optional[List[Entity]] = None,
-    ) -> List[Dict[str, Any]]:
+        entities: list[Entity] | None = None,
+    ) -> list[dict[str, Any]]:
         """Extract relationships between entities.
         
         Args:
@@ -372,15 +369,15 @@ Rules:
         if not entities:
             result = await self.extract_entities(text)
             entities = result.entities
-        
+
         if len(entities) < 2:
             return []
-        
+
         entity_text = "\n".join([
             f"- {e.text} ({e.type.value})"
             for e in entities[:20]  # Limit to 20 entities
         ])
-        
+
         prompt = f"""Extract relationships between the following entities found in the text.
 
 Entities:
@@ -401,7 +398,7 @@ Return a JSON array of relationships with this format:
 
 Common relationship types: works_at, founded, located_in, part_of, owns, knows, employs, acquired
 """
-        
+
         try:
             response = await self._llm.chat_completion(
                 messages=[
@@ -411,12 +408,12 @@ Common relationship types: works_at, founded, located_in, part_of, owns, knows, 
                 temperature=0.1,
                 max_tokens=2000,
             )
-            
+
             content = response.choices[0].message.content.strip()
             relationships = self._parse_json_response(content)
-            
+
             return relationships
-            
+
         except Exception as e:
             logger.error(f"Relationship extraction failed: {e}")
             return []
@@ -428,17 +425,17 @@ class RegexEntityExtractor:
     This class provides basic entity extraction using regex patterns
     when LLM is unavailable or for simple cases.
     """
-    
+
     # Regex patterns for entity types
     PATTERNS = {
-        EntityType.EMAIL: r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-        EntityType.URL: r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+[^\s]*',
-        EntityType.PHONE: r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b',
-        EntityType.DATE: r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}\b',
-        EntityType.MONEY: r'\$[\d,]+(?:\.\d{2})?|\b\d+\s*(?:USD|EUR|GBP)\b',
-        EntityType.PERCENT: r'\b\d+(?:\.\d+)?%',
+        EntityType.EMAIL: r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+        EntityType.URL: r"https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+[^\s]*",
+        EntityType.PHONE: r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b",
+        EntityType.DATE: r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}\b",
+        EntityType.MONEY: r"\$[\d,]+(?:\.\d{2})?|\b\d+\s*(?:USD|EUR|GBP)\b",
+        EntityType.PERCENT: r"\b\d+(?:\.\d+)?%",
     }
-    
+
     def __init__(self, min_confidence: float = 0.8):
         """Initialize the regex extractor.
         
@@ -451,7 +448,7 @@ class RegexEntityExtractor:
             entity_type: re.compile(pattern, re.IGNORECASE)
             for entity_type, pattern in self.PATTERNS.items()
         }
-    
+
     def extract_entities(self, text: str) -> ExtractionResult:
         """Extract entities using regex patterns.
         
@@ -462,10 +459,10 @@ class RegexEntityExtractor:
             ExtractionResult with extracted entities
         """
         import time
-        
+
         start_time = time.time()
         entities = []
-        
+
         for entity_type, pattern in self._compiled.items():
             for match in pattern.finditer(text):
                 entity = Entity(
@@ -476,9 +473,9 @@ class RegexEntityExtractor:
                     confidence=0.9,  # Regex matches are fairly confident
                 )
                 entities.append(entity)
-        
+
         processing_time = int((time.time() - start_time) * 1000)
-        
+
         return ExtractionResult(
             entities=entities,
             processing_time_ms=processing_time,
@@ -492,10 +489,10 @@ class HybridEntityExtractor:
     This class uses LLM for complex entity extraction and regex
     for pattern-based entities like emails, URLs, etc.
     """
-    
+
     def __init__(
         self,
-        llm_provider: Optional[LLMProvider] = None,
+        llm_provider: LLMProvider | None = None,
         min_confidence: float = 0.7,
     ):
         """Initialize the hybrid extractor.
@@ -507,13 +504,13 @@ class HybridEntityExtractor:
         self._llm_extractor = None
         if llm_provider:
             self._llm_extractor = EntityExtractor(llm_provider, min_confidence=min_confidence)
-        
+
         self._regex_extractor = RegexEntityExtractor(min_confidence=min_confidence)
-    
+
     async def extract_entities(
         self,
         text: str,
-        entity_types: Optional[List[EntityType]] = None,
+        entity_types: list[EntityType] | None = None,
     ) -> ExtractionResult:
         """Extract entities using both methods.
         
@@ -527,20 +524,20 @@ class HybridEntityExtractor:
         all_entities = []
         total_time = 0
         models_used = []
-        
+
         # Get regex entities (for pattern-based types)
         regex_result = self._regex_extractor.extract_entities(text)
         all_entities.extend(regex_result.entities)
         total_time += regex_result.processing_time_ms
         models_used.append("regex")
-        
+
         # Get LLM entities if available
         if self._llm_extractor:
             llm_result = await self._llm_extractor.extract_entities(text, entity_types)
             all_entities.extend(llm_result.entities)
             total_time += llm_result.processing_time_ms
             models_used.append(llm_result.model_used)
-        
+
         # Deduplicate
         seen = set()
         unique_entities = []
@@ -549,7 +546,7 @@ class HybridEntityExtractor:
             if key not in seen:
                 seen.add(key)
                 unique_entities.append(entity)
-        
+
         return ExtractionResult(
             entities=unique_entities,
             processing_time_ms=total_time,

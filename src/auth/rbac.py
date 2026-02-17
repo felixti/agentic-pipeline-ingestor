@@ -4,10 +4,9 @@ This module provides role-based access control with support for
 enterprise-grade authorization patterns.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
-from uuid import UUID
+from typing import Any
 
 from src.auth.base import Permission, User
 
@@ -41,14 +40,14 @@ class RoleDefinition:
     name: str
     display_name: str
     description: str
-    permissions: Set[Permission]
-    inherits_from: Optional[str] = None
-    
+    permissions: set[Permission]
+    inherits_from: str | None = None
+
     def has_permission(self, permission: Permission) -> bool:
         """Check if role has a specific permission."""
         return permission in self.permissions or Permission.ADMIN in self.permissions
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary representation."""
         return {
             "name": self.name,
@@ -82,9 +81,9 @@ class RBACManager:
         # Get user's permissions
         permissions = rbac.get_user_permissions(user)
     """
-    
+
     # Standard role definitions
-    ROLES: Dict[str, RoleDefinition] = {
+    ROLES: dict[str, RoleDefinition] = {
         Role.ADMIN.value: RoleDefinition(
             name=Role.ADMIN.value,
             display_name="Administrator",
@@ -136,9 +135,9 @@ class RBACManager:
             },
         ),
     }
-    
+
     # Resource-action to permission mapping
-    RESOURCE_ACTION_PERMISSIONS: Dict[str, Dict[str, Permission]] = {
+    RESOURCE_ACTION_PERMISSIONS: dict[str, dict[str, Permission]] = {
         "jobs": {
             "read": Permission.READ,
             "create": Permission.CREATE,
@@ -198,12 +197,12 @@ class RBACManager:
             "metrics": Permission.READ,
         },
     }
-    
+
     def __init__(self):
         """Initialize RBAC manager."""
-        self._custom_roles: Dict[str, RoleDefinition] = {}
-    
-    def get_role(self, role_name: str) -> Optional[RoleDefinition]:
+        self._custom_roles: dict[str, RoleDefinition] = {}
+
+    def get_role(self, role_name: str) -> RoleDefinition | None:
         """Get role definition by name.
         
         Args:
@@ -215,18 +214,18 @@ class RBACManager:
         # Check standard roles
         if role_name in self.ROLES:
             return self.ROLES[role_name]
-        
+
         # Check custom roles
         return self._custom_roles.get(role_name)
-    
-    def list_roles(self) -> List[RoleDefinition]:
+
+    def list_roles(self) -> list[RoleDefinition]:
         """List all available roles.
         
         Returns:
             List of role definitions
         """
         return list(self.ROLES.values()) + list(self._custom_roles.values())
-    
+
     def check_permission(
         self,
         user: User,
@@ -246,35 +245,35 @@ class RBACManager:
         # Admin always has permission
         if Role.ADMIN.value in user.roles or user.role == Role.ADMIN.value:
             return True
-        
+
         # Get required permission for resource-action
         required_permission = self._get_required_permission(resource, action)
         if not required_permission:
             # Unknown resource-action, deny by default
             return False
-        
+
         # Check user's roles for permission
         for role_name in user.roles:
             role = self.get_role(role_name)
             if role and role.has_permission(required_permission):
                 return True
-        
+
         # Check primary role
         role = self.get_role(user.role)
         if role and role.has_permission(required_permission):
             return True
-        
+
         # Check explicit permissions
         if required_permission.value in user.permissions:
             return True
-        
+
         return False
-    
+
     def _get_required_permission(
         self,
         resource: str,
         action: str,
-    ) -> Optional[Permission]:
+    ) -> Permission | None:
         """Get the required permission for a resource action.
         
         Args:
@@ -288,8 +287,8 @@ class RBACManager:
         if resource_perms:
             return resource_perms.get(action.lower())
         return None
-    
-    def get_user_permissions(self, user: User) -> Set[Permission]:
+
+    def get_user_permissions(self, user: User) -> set[Permission]:
         """Get all permissions for a user.
         
         Args:
@@ -298,23 +297,23 @@ class RBACManager:
         Returns:
             Set of all permissions
         """
-        permissions: Set[Permission] = set()
-        
+        permissions: set[Permission] = set()
+
         # Collect from all roles
         for role_name in [user.role] + user.roles:
             role = self.get_role(role_name)
             if role:
                 permissions.update(role.permissions)
-        
+
         # Add explicit permissions
         for perm_str in user.permissions:
             try:
                 permissions.add(Permission(perm_str))
             except ValueError:
                 pass
-        
+
         return permissions
-    
+
     def require_permission(self, resource: str, action: str):
         """Decorator to require permission for a function.
         
@@ -329,24 +328,24 @@ class RBACManager:
             async def wrapper(*args, user: User = None, **kwargs):
                 if user is None:
                     raise PermissionError("Authentication required")
-                
+
                 if not self.check_permission(user, resource, action):
                     raise PermissionError(
                         f"User {user.id} lacks permission to {action} {resource}"
                     )
-                
+
                 return await func(*args, user=user, **kwargs)
-            
+
             return wrapper
         return decorator
-    
+
     def create_custom_role(
         self,
         name: str,
         display_name: str,
         description: str,
-        permissions: List[Permission],
-        inherits_from: Optional[str] = None,
+        permissions: list[Permission],
+        inherits_from: str | None = None,
     ) -> RoleDefinition:
         """Create a custom role.
         
@@ -366,7 +365,7 @@ class RBACManager:
             parent = self.get_role(inherits_from)
             if parent:
                 all_permissions.update(parent.permissions)
-        
+
         role = RoleDefinition(
             name=name,
             display_name=display_name,
@@ -374,10 +373,10 @@ class RBACManager:
             permissions=all_permissions,
             inherits_from=inherits_from,
         )
-        
+
         self._custom_roles[name] = role
         return role
-    
+
     def delete_custom_role(self, name: str) -> bool:
         """Delete a custom role.
         
@@ -389,14 +388,14 @@ class RBACManager:
         """
         if name in self.ROLES:
             return False  # Cannot delete standard roles
-        
+
         if name in self._custom_roles:
             del self._custom_roles[name]
             return True
-        
+
         return False
-    
-    def get_resource_actions(self, resource: str) -> Dict[str, Permission]:
+
+    def get_resource_actions(self, resource: str) -> dict[str, Permission]:
         """Get all actions available for a resource.
         
         Args:
@@ -406,8 +405,8 @@ class RBACManager:
             Dictionary mapping actions to permissions
         """
         return self.RESOURCE_ACTION_PERMISSIONS.get(resource.lower(), {}).copy()
-    
-    def list_resources(self) -> List[str]:
+
+    def list_resources(self) -> list[str]:
         """List all managed resources.
         
         Returns:
@@ -417,7 +416,7 @@ class RBACManager:
 
 
 # Global RBAC manager instance
-_rbac_manager: Optional[RBACManager] = None
+_rbac_manager: RBACManager | None = None
 
 
 def get_rbac_manager() -> RBACManager:

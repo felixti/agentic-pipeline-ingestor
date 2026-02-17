@@ -9,8 +9,8 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
-from uuid import UUID, uuid4
+from typing import Any
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -60,20 +60,20 @@ class Entity:
     id: str
     name: str
     type: EntityType
-    properties: Dict[str, Any] = field(default_factory=dict)
-    source_chunks: List[str] = field(default_factory=list)
+    properties: dict[str, Any] = field(default_factory=dict)
+    source_chunks: list[str] = field(default_factory=list)
     confidence: float = 0.0
     created_at: datetime = field(default_factory=datetime.utcnow)
-    
+
     def __hash__(self):
         return hash(self.id)
-    
+
     def __eq__(self, other):
         if isinstance(other, Entity):
             return self.id == other.id
         return False
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert entity to dictionary."""
         return {
             "id": self.id,
@@ -84,9 +84,9 @@ class Entity:
             "confidence": self.confidence,
             "created_at": self.created_at.isoformat(),
         }
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Entity":
+    def from_dict(cls, data: dict[str, Any]) -> "Entity":
         """Create entity from dictionary."""
         return cls(
             id=data["id"],
@@ -116,19 +116,19 @@ class Relationship:
     source_id: str
     target_id: str
     type: RelationshipType
-    properties: Dict[str, Any] = field(default_factory=dict)
+    properties: dict[str, Any] = field(default_factory=dict)
     confidence: float = 0.0
     created_at: datetime = field(default_factory=datetime.utcnow)
-    
+
     def __hash__(self):
         return hash(self.id)
-    
+
     def __eq__(self, other):
         if isinstance(other, Relationship):
             return self.id == other.id
         return False
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert relationship to dictionary."""
         return {
             "id": self.id,
@@ -139,9 +139,9 @@ class Relationship:
             "confidence": self.confidence,
             "created_at": self.created_at.isoformat(),
         }
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Relationship":
+    def from_dict(cls, data: dict[str, Any]) -> "Relationship":
         """Create relationship from dictionary."""
         return cls(
             id=data["id"],
@@ -169,13 +169,13 @@ class Community:
     """
     id: str
     name: str
-    entity_ids: List[str] = field(default_factory=list)
-    summary: Optional[str] = None
-    key_entities: List[str] = field(default_factory=list)
+    entity_ids: list[str] = field(default_factory=list)
+    summary: str | None = None
+    key_entities: list[str] = field(default_factory=list)
     coherence_score: float = 0.0
     created_at: datetime = field(default_factory=datetime.utcnow)
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert community to dictionary."""
         return {
             "id": self.id,
@@ -204,33 +204,33 @@ class KnowledgeGraph:
     """
     id: str
     name: str
-    entities: Dict[str, Entity] = field(default_factory=dict)
-    relationships: Dict[str, Relationship] = field(default_factory=dict)
-    communities: Dict[str, Community] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    entities: dict[str, Entity] = field(default_factory=dict)
+    relationships: dict[str, Relationship] = field(default_factory=dict)
+    communities: dict[str, Community] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = None
-    
+    updated_at: datetime | None = None
+
     def add_entity(self, entity: Entity) -> None:
         """Add an entity to the graph."""
         self.entities[entity.id] = entity
         self.updated_at = datetime.utcnow()
-    
+
     def add_relationship(self, relationship: Relationship) -> None:
         """Add a relationship to the graph."""
         self.relationships[relationship.id] = relationship
         self.updated_at = datetime.utcnow()
-    
+
     def add_community(self, community: Community) -> None:
         """Add a community to the graph."""
         self.communities[community.id] = community
         self.updated_at = datetime.utcnow()
-    
+
     def get_entity_neighbors(
         self,
         entity_id: str,
-        relationship_type: Optional[RelationshipType] = None,
-    ) -> List[Tuple[Entity, Relationship]]:
+        relationship_type: RelationshipType | None = None,
+    ) -> list[tuple[Entity, Relationship]]:
         """Get neighboring entities connected to the given entity.
         
         Args:
@@ -241,22 +241,22 @@ class KnowledgeGraph:
             List of (entity, relationship) tuples
         """
         neighbors = []
-        
+
         for rel in self.relationships.values():
             if rel.source_id == entity_id or rel.target_id == entity_id:
                 if relationship_type and rel.type != relationship_type:
                     continue
-                
+
                 neighbor_id = rel.target_id if rel.source_id == entity_id else rel.source_id
                 neighbor = self.entities.get(neighbor_id)
                 if neighbor:
                     neighbors.append((neighbor, rel))
-        
+
         return neighbors
-    
+
     def get_subgraph(
         self,
-        entity_ids: List[str],
+        entity_ids: list[str],
         include_relationships: bool = True,
     ) -> "KnowledgeGraph":
         """Extract a subgraph containing specified entities.
@@ -272,23 +272,23 @@ class KnowledgeGraph:
             id=f"{self.id}_subgraph_{uuid4().hex[:8]}",
             name=f"{self.name} (subgraph)",
         )
-        
+
         entity_id_set = set(entity_ids)
-        
+
         # Add entities
         for entity_id in entity_ids:
             if entity_id in self.entities:
                 subgraph.add_entity(self.entities[entity_id])
-        
+
         # Add relationships if both endpoints are in subgraph
         if include_relationships:
             for rel in self.relationships.values():
                 if rel.source_id in entity_id_set and rel.target_id in entity_id_set:
                     subgraph.add_relationship(rel)
-        
+
         return subgraph
-    
-    def get_statistics(self) -> Dict[str, Any]:
+
+    def get_statistics(self) -> dict[str, Any]:
         """Get graph statistics."""
         return {
             "entity_count": len(self.entities),
@@ -305,8 +305,8 @@ class KnowledgeGraph:
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert graph to dictionary."""
         return {
             "id": self.id,
@@ -334,7 +334,7 @@ class KnowledgeGraphBuilder:
         ...     chunks=[{"content": "Apple Inc. was founded by Steve Jobs."}]
         ... )
     """
-    
+
     def __init__(self, entity_extractor=None):
         """Initialize the graph builder.
         
@@ -342,12 +342,12 @@ class KnowledgeGraphBuilder:
             entity_extractor: Optional entity extractor to use
         """
         self._entity_extractor = entity_extractor
-    
+
     async def build_from_document(
         self,
         document_id: str,
-        chunks: List[Dict[str, Any]],
-        metadata: Optional[Dict[str, Any]] = None,
+        chunks: list[dict[str, Any]],
+        metadata: dict[str, Any] | None = None,
     ) -> KnowledgeGraph:
         """Build a knowledge graph from a document.
         
@@ -364,7 +364,7 @@ class KnowledgeGraphBuilder:
             name=f"Knowledge Graph for {document_id}",
             metadata={"source_document": document_id, **(metadata or {})},
         )
-        
+
         # Create document entity
         doc_entity = Entity(
             id=f"doc_{document_id}",
@@ -373,11 +373,11 @@ class KnowledgeGraphBuilder:
             properties=metadata or {},
         )
         graph.add_entity(doc_entity)
-        
+
         # Process each chunk
         for idx, chunk in enumerate(chunks):
             chunk_id = f"{document_id}_chunk_{idx}"
-            
+
             # Create chunk entity
             chunk_entity = Entity(
                 id=chunk_id,
@@ -390,7 +390,7 @@ class KnowledgeGraphBuilder:
                 source_chunks=[chunk_id],
             )
             graph.add_entity(chunk_entity)
-            
+
             # Link chunk to document
             rel = Relationship(
                 id=f"rel_{chunk_id}_part_of_doc",
@@ -399,7 +399,7 @@ class KnowledgeGraphBuilder:
                 type=RelationshipType.PART_OF,
             )
             graph.add_relationship(rel)
-            
+
             # Extract entities from chunk if extractor available
             if self._entity_extractor:
                 entities = await self._extract_entities_from_chunk(
@@ -415,7 +415,7 @@ class KnowledgeGraphBuilder:
                         entity = existing
                     else:
                         graph.add_entity(entity)
-                    
+
                     # Link entity to chunk
                     rel = Relationship(
                         id=f"rel_{entity.id}_appears_in_{chunk_id}",
@@ -425,17 +425,17 @@ class KnowledgeGraphBuilder:
                         properties={"confidence": entity.confidence},
                     )
                     graph.add_relationship(rel)
-        
+
         # Extract relationships between entities
         await self._extract_relationships(graph)
-        
+
         return graph
-    
+
     async def _extract_entities_from_chunk(
         self,
-        chunk: Dict[str, Any],
+        chunk: dict[str, Any],
         chunk_id: str,
-    ) -> List[Entity]:
+    ) -> list[Entity]:
         """Extract entities from a chunk.
         
         Args:
@@ -446,17 +446,17 @@ class KnowledgeGraphBuilder:
             List of extracted entities
         """
         content = chunk.get("content", "")
-        
+
         if not self._entity_extractor or not content:
             return []
-        
+
         try:
             result = await self._entity_extractor.extract_entities(content)
-            
+
             entities = []
             for extracted in result.entities:
                 entity_id = self._generate_entity_id(extracted.text, extracted.type.value)
-                
+
                 entity = Entity(
                     id=entity_id,
                     name=extracted.text,
@@ -466,13 +466,13 @@ class KnowledgeGraphBuilder:
                     confidence=extracted.confidence,
                 )
                 entities.append(entity)
-            
+
             return entities
-            
+
         except Exception as e:
             logger.warning(f"Entity extraction failed for chunk {chunk_id}: {e}")
             return []
-    
+
     async def _extract_relationships(self, graph: KnowledgeGraph) -> None:
         """Extract relationships between entities in the graph.
         
@@ -484,15 +484,15 @@ class KnowledgeGraphBuilder:
         """
         # For now, create simple co-occurrence relationships
         # Entities that appear in the same chunk are related
-        
-        chunk_entities: Dict[str, List[str]] = {}
-        
+
+        chunk_entities: dict[str, list[str]] = {}
+
         for entity in graph.entities.values():
             for chunk_id in entity.source_chunks:
                 if chunk_id not in chunk_entities:
                     chunk_entities[chunk_id] = []
                 chunk_entities[chunk_id].append(entity.id)
-        
+
         # Create relationships for co-occurring entities
         for chunk_id, entity_ids in chunk_entities.items():
             if len(entity_ids) > 1:
@@ -509,12 +509,12 @@ class KnowledgeGraphBuilder:
                                     properties={"basis": "co-occurrence", "chunk_id": chunk_id},
                                 )
                                 graph.add_relationship(rel)
-    
+
     def _find_existing_entity(
         self,
         graph: KnowledgeGraph,
         new_entity: Entity,
-    ) -> Optional[Entity]:
+    ) -> Entity | None:
         """Find an existing entity with the same name and type.
         
         Args:
@@ -525,11 +525,11 @@ class KnowledgeGraphBuilder:
             Existing entity or None
         """
         for entity in graph.entities.values():
-            if (entity.name.lower() == new_entity.name.lower() and 
+            if (entity.name.lower() == new_entity.name.lower() and
                 entity.type == new_entity.type):
                 return entity
         return None
-    
+
     @staticmethod
     def _generate_entity_id(name: str, entity_type: str) -> str:
         """Generate a unique entity ID from name and type.
@@ -544,11 +544,11 @@ class KnowledgeGraphBuilder:
         content = f"{name.lower()}:{entity_type.lower()}"
         hash_val = hashlib.md5(content.encode()).hexdigest()[:12]
         return f"ent_{hash_val}"
-    
+
     async def merge_graphs(
         self,
-        graphs: List[KnowledgeGraph],
-        name: Optional[str] = None,
+        graphs: list[KnowledgeGraph],
+        name: str | None = None,
     ) -> KnowledgeGraph:
         """Merge multiple knowledge graphs into one.
         
@@ -563,15 +563,15 @@ class KnowledgeGraphBuilder:
             id=f"merged_{uuid4().hex[:8]}",
             name=name or "Merged Knowledge Graph",
         )
-        
+
         # Track entity name -> ID mappings for deduplication
-        entity_name_map: Dict[Tuple[str, EntityType], str] = {}
-        
+        entity_name_map: dict[tuple[str, EntityType], str] = {}
+
         for graph in graphs:
             # Merge entities
             for entity in graph.entities.values():
                 key = (entity.name.lower(), entity.type)
-                
+
                 if key in entity_name_map:
                     # Entity exists, merge properties
                     existing_id = entity_name_map[key]
@@ -583,29 +583,29 @@ class KnowledgeGraphBuilder:
                     # New entity
                     merged.add_entity(entity)
                     entity_name_map[key] = entity.id
-            
+
             # Merge relationships
             for rel in graph.relationships.values():
                 # Update relationship endpoints if entities were merged
                 source_key = None
                 target_key = None
-                
+
                 for entity in graph.entities.values():
                     if entity.id == rel.source_id:
                         source_key = (entity.name.lower(), entity.type)
                     if entity.id == rel.target_id:
                         target_key = (entity.name.lower(), entity.type)
-                
+
                 if source_key and target_key:
                     new_source = entity_name_map.get(source_key, rel.source_id)
                     new_target = entity_name_map.get(target_key, rel.target_id)
-                    
+
                     if new_source != rel.source_id or new_target != rel.target_id:
                         rel.source_id = new_source
                         rel.target_id = new_target
                         rel.id = f"rel_{new_source}_{new_target}_{rel.type.value}"
-                
+
                 if rel.id not in merged.relationships:
                     merged.add_relationship(rel)
-        
+
         return merged

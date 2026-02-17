@@ -6,20 +6,17 @@ including tracing, metrics, and logging.
 
 import time
 import uuid
-from typing import Callable, Optional
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
-from src.observability.tracing import get_tracer, start_span
-from src.observability.metrics import get_metrics_manager
 from src.observability.logging import (
     get_logger,
-    set_correlation_id,
-    correlation_id_scope,
     request_context_scope,
+    set_correlation_id,
 )
+from src.observability.metrics import get_metrics_manager
+from src.observability.tracing import get_tracer, start_span
 
 logger = get_logger(__name__)
 
@@ -38,7 +35,7 @@ class ObservabilityMiddleware:
         >>> app = FastAPI()
         >>> app.add_middleware(ObservabilityMiddleware)
     """
-    
+
     def __init__(self, app: FastAPI):
         """Initialize the middleware.
         
@@ -46,7 +43,7 @@ class ObservabilityMiddleware:
             app: FastAPI application
         """
         self.app = app
-    
+
     async def __call__(self, scope, receive, send):
         """ASGI middleware entry point.
         
@@ -58,20 +55,20 @@ class ObservabilityMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        
+
         request = Request(scope, receive)
-        
+
         # Generate or extract correlation ID
         correlation_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         set_correlation_id(correlation_id)
-        
+
         # Start timing
         start_time = time.time()
-        
+
         # Extract route info for metrics
         route = self._get_route_template(request)
         method = request.method
-        
+
         # Create span for the request
         with start_span(
             name=f"{method} {route}",
@@ -101,27 +98,27 @@ class ObservabilityMiddleware:
                         route=route,
                         path=str(request.url.path),
                     )
-                    
+
                     # Track request size
                     request_size = 0
                     if request.headers.get("content-length"):
                         request_size = int(request.headers.get("content-length", 0))
-                    
+
                     # Process request
                     response = await self._handle_request(request, scope, receive, send)
-                    
+
                     # Calculate duration
                     duration = time.time() - start_time
                     status_code = response.status_code
-                    
+
                     # Update span
                     span.set_attribute("http.status_code", status_code)
-                    span.set_attribute("http.response_size", len(response.body) if hasattr(response, 'body') else 0)
+                    span.set_attribute("http.response_size", len(response.body) if hasattr(response, "body") else 0)
                     span.set_attribute("http.duration_ms", duration * 1000)
-                    
+
                     if status_code >= 400:
                         span.set_status(Status(StatusCode.ERROR, f"HTTP {status_code}"))
-                    
+
                     # Record metrics
                     metrics = get_metrics_manager()
                     metrics.record_api_request(
@@ -130,9 +127,9 @@ class ObservabilityMiddleware:
                         status_code=status_code,
                         duration=duration,
                         request_size=request_size,
-                        response_size=len(response.body) if hasattr(response, 'body') else 0,
+                        response_size=len(response.body) if hasattr(response, "body") else 0,
                     )
-                    
+
                     # Log completion
                     logger.info(
                         "http_request_completed",
@@ -141,17 +138,17 @@ class ObservabilityMiddleware:
                         status_code=status_code,
                         duration_ms=round(duration * 1000, 2),
                     )
-                    
+
                     return response
-                    
+
                 except Exception as e:
                     # Calculate duration even for errors
                     duration = time.time() - start_time
-                    
+
                     # Update span with error
                     span.set_status(Status(StatusCode.ERROR, str(e)))
                     span.record_exception(e)
-                    
+
                     # Record error metrics
                     metrics = get_metrics_manager()
                     metrics.record_api_request(
@@ -160,7 +157,7 @@ class ObservabilityMiddleware:
                         status_code=500,
                         duration=duration,
                     )
-                    
+
                     # Log error
                     logger.error(
                         "http_request_failed",
@@ -171,10 +168,10 @@ class ObservabilityMiddleware:
                         duration_ms=round(duration * 1000, 2),
                         exc_info=True,
                     )
-                    
+
                     # Return error response
                     raise
-    
+
     async def _handle_request(
         self,
         request: Request,
@@ -194,22 +191,21 @@ class ObservabilityMiddleware:
             Response object
         """
         response_body = []
-        
+
         async def capture_send(message):
             if message["type"] == "http.response.body":
                 response_body.append(message.get("body", b""))
             await send(message)
-        
+
         # Create a response capture wrapper
-        from starlette.middleware.base import BaseHTTPMiddleware
-        
+
         # For simplicity, we'll just call the app and wrap the response
         await self.app(scope, receive, capture_send)
-        
+
         # Return a mock response - this is simplified
         # In practice, you'd need to capture the actual response
         return Response(status_code=200)
-    
+
     def _get_route_template(self, request: Request) -> str:
         """Get the route template from the request.
         
@@ -224,7 +220,7 @@ class ObservabilityMiddleware:
             route = request.scope["route"]
             if hasattr(route, "path"):
                 return route.path
-        
+
         # Fallback to path
         return str(request.url.path)
 
@@ -237,36 +233,35 @@ def setup_observability(app: FastAPI) -> None:
     Args:
         app: FastAPI application
     """
-    from fastapi.middleware.cors import CORSMiddleware
-    
+
     # Add correlation ID middleware
     @app.middleware("http")
     async def correlation_id_middleware(request: Request, call_next):
         """Middleware to handle correlation IDs."""
         # Get or generate correlation ID
         correlation_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-        
+
         # Set in context
         set_correlation_id(correlation_id)
-        
+
         # Process request
         response = await call_next(request)
-        
+
         # Add correlation ID to response
         response.headers["X-Request-ID"] = correlation_id
-        
+
         return response
-    
+
     # Add tracing and metrics middleware
     @app.middleware("http")
     async def observability_middleware(request: Request, call_next):
         """Middleware for tracing and metrics."""
         start_time = time.time()
-        
+
         # Get route info
         route = _get_route(request)
         method = request.method
-        
+
         # Start span
         tracer = get_tracer()
         with tracer.start_as_current_span(
@@ -282,16 +277,16 @@ def setup_observability(app: FastAPI) -> None:
         ) as span:
             try:
                 response = await call_next(request)
-                
+
                 duration = time.time() - start_time
                 status_code = response.status_code
-                
+
                 # Update span
                 span.set_attribute("http.status_code", status_code)
-                
+
                 if status_code >= 400:
                     span.set_status(Status(StatusCode.ERROR))
-                
+
                 # Record metrics
                 metrics = get_metrics_manager()
                 metrics.record_api_request(
@@ -300,15 +295,15 @@ def setup_observability(app: FastAPI) -> None:
                     status_code=status_code,
                     duration=duration,
                 )
-                
+
                 return response
-                
+
             except Exception as e:
                 duration = time.time() - start_time
-                
+
                 span.set_status(Status(StatusCode.ERROR, str(e)))
                 span.record_exception(e)
-                
+
                 # Record error
                 metrics = get_metrics_manager()
                 metrics.record_api_request(
@@ -317,7 +312,7 @@ def setup_observability(app: FastAPI) -> None:
                     status_code=500,
                     duration=duration,
                 )
-                
+
                 raise
 
 
@@ -342,7 +337,7 @@ class MetricsMiddleware:
     
     This middleware collects request metrics for Prometheus.
     """
-    
+
     def __init__(self, app):
         """Initialize the middleware.
         
@@ -351,7 +346,7 @@ class MetricsMiddleware:
         """
         self.app = app
         self.metrics = get_metrics_manager()
-    
+
     async def __call__(self, scope, receive, send):
         """ASGI entry point.
         
@@ -363,22 +358,22 @@ class MetricsMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        
+
         request = Request(scope, receive)
         start_time = time.time()
-        
+
         route = scope.get("path", "/")
         method = scope.get("method", "GET")
-        
+
         # Capture status code
         status_code = 200
-        
+
         async def wrapped_send(message):
             nonlocal status_code
             if message["type"] == "http.response.start":
                 status_code = message.get("status", 200)
             await send(message)
-        
+
         try:
             await self.app(scope, receive, wrapped_send)
         finally:

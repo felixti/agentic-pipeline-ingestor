@@ -73,7 +73,7 @@ def test_all_endpoints_have_operations():
         # Skip paths that are just parameter definitions
         if not any(op in operations for op in ["get", "post", "put", "delete", "patch"]):
             continue
-        
+
         # Each operation should have a summary or description
         for method in ["get", "post", "put", "delete", "patch"]:
             if method in operations:
@@ -89,16 +89,16 @@ def test_health_response_schema():
     """Validate health endpoint response schema."""
     client = TestClient(app)
     response = client.get("/health")
-    
+
     assert response.status_code == 200
     data = response.json()
-    
+
     # Check required fields
     assert "status" in data
     assert "version" in data
     assert "timestamp" in data
     assert "components" in data
-    
+
     # Check status values
     assert data["status"] in ["healthy", "degraded", "unhealthy"]
 
@@ -106,13 +106,13 @@ def test_health_response_schema():
 def test_error_response_schema():
     """Validate error response follows standard format."""
     client = TestClient(app)
-    
+
     # Trigger a 404 error
     response = client.get("/api/v1/jobs/invalid-uuid")
-    
+
     # Should return standardized error format
     assert response.status_code in [404, 422]
-    
+
     # Error responses should follow standard format
     data = response.json()
     if "error" in data:
@@ -129,7 +129,7 @@ def test_error_response_schema():
 def test_api_returns_json():
     """Verify API returns JSON for API endpoints."""
     client = TestClient(app)
-    
+
     response = client.get("/health")
     assert response.headers["content-type"] == "application/json"
 
@@ -137,7 +137,7 @@ def test_api_returns_json():
 def test_metrics_returns_prometheus_format():
     """Verify metrics endpoint returns Prometheus format."""
     client = TestClient(app)
-    
+
     response = client.get("/metrics")
     assert response.status_code == 200
     assert "text/plain" in response.headers["content-type"]
@@ -150,9 +150,9 @@ def test_metrics_returns_prometheus_format():
 def test_security_headers_present():
     """Verify security headers are present in responses."""
     client = TestClient(app)
-    
+
     response = client.get("/health")
-    
+
     # Check for request ID header
     assert "X-Request-ID" in response.headers
     assert "X-API-Version" in response.headers
@@ -165,6 +165,6 @@ def test_security_headers_present():
 def test_api_version_header():
     """Verify API version header is correct."""
     client = TestClient(app)
-    
+
     response = client.get("/health")
     assert response.headers["X-API-Version"] == "v1"

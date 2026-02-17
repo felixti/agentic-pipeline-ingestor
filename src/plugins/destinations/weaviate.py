@@ -7,7 +7,7 @@ with semantic search, GraphQL queries, and schema-based storage.
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
@@ -42,15 +42,15 @@ class WeaviateDestination(DestinationPlugin):
         >>> conn = await destination.connect({})
         >>> result = await destination.write(conn, transformed_data)
     """
-    
+
     def __init__(self) -> None:
         """Initialize the Weaviate destination."""
-        self._url: Optional[str] = None
-        self._api_key: Optional[str] = None
+        self._url: str | None = None
+        self._api_key: str | None = None
         self._class_name: str = "Document"
-        self._config: Dict[str, Any] = {}
-        self._client: Optional[httpx.AsyncClient] = None
-    
+        self._config: dict[str, Any] = {}
+        self._client: httpx.AsyncClient | None = None
+
     @property
     def metadata(self) -> PluginMetadata:
         """Return plugin metadata."""
@@ -93,8 +93,8 @@ class WeaviateDestination(DestinationPlugin):
                 "required": ["url"],
             },
         )
-    
-    async def initialize(self, config: Dict[str, Any]) -> None:
+
+    async def initialize(self, config: dict[str, Any]) -> None:
         """Initialize the destination with configuration.
         
         Args:
@@ -109,33 +109,33 @@ class WeaviateDestination(DestinationPlugin):
         self._url = config.get("url") or os.getenv("WEAVIATE_URL")
         self._api_key = config.get("api_key") or os.getenv("WEAVIATE_API_KEY")
         self._class_name = config.get("class_name") or os.getenv("WEAVIATE_CLASS_NAME", "Document")
-        
+
         timeout = config.get("timeout", 60)
-        
+
         if not self._url:
             logger.warning(
                 "Weaviate URL not configured. "
                 "Set WEAVIATE_URL environment variable or pass in config."
             )
-        
+
         # Create HTTP client
-        headers: Dict[str, str] = {
+        headers: dict[str, str] = {
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        
+
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
-        
+
         self._client = httpx.AsyncClient(
             base_url=self._url.rstrip("/") if self._url else "",
             headers=headers,
             timeout=timeout,
         )
-        
+
         logger.info("Weaviate destination initialized")
-    
-    async def connect(self, config: Dict[str, Any]) -> Connection:
+
+    async def connect(self, config: dict[str, Any]) -> Connection:
         """Establish a connection to Weaviate.
         
         Args:
@@ -146,7 +146,7 @@ class WeaviateDestination(DestinationPlugin):
         """
         # Ensure schema exists
         await self._ensure_schema()
-        
+
         return Connection(
             id=UUID(int=hash(self._class_name) % (2**32)),
             plugin_id="weaviate",
@@ -155,16 +155,16 @@ class WeaviateDestination(DestinationPlugin):
                 "batch_size": config.get("batch_size", self._config.get("batch_size", 100)),
             },
         )
-    
+
     async def _ensure_schema(self) -> None:
         """Ensure the Weaviate schema exists."""
         if not self._client:
             return
-        
+
         try:
             # Check if class exists
             response = await self._client.get(f"/v1/schema/{self._class_name}")
-            
+
             if response.status_code == 404:
                 # Create class
                 schema = {
@@ -202,14 +202,14 @@ class WeaviateDestination(DestinationPlugin):
                         },
                     ],
                 }
-                
+
                 response = await self._client.post("/v1/schema", json=schema)
                 response.raise_for_status()
                 logger.info(f"Created Weaviate schema: {self._class_name}")
-                
+
         except Exception as e:
             logger.warning(f"Schema creation warning: {e}")
-    
+
     async def write(
         self,
         conn: Connection,
@@ -225,43 +225,43 @@ class WeaviateDestination(DestinationPlugin):
             WriteResult with operation status
         """
         import time
-        
+
         start_time = time.time()
-        
+
         if not self._client:
             return WriteResult(
                 success=False,
                 error="Weaviate client not initialized",
             )
-        
+
         if not data.embeddings:
             return WriteResult(
                 success=False,
                 error="No embeddings provided - Weaviate requires embeddings",
             )
-        
+
         if len(data.embeddings) != len(data.chunks):
             return WriteResult(
                 success=False,
                 error=f"Embeddings count ({len(data.embeddings)}) does not match chunks count ({len(data.chunks)})",
             )
-        
+
         class_name = conn.config.get("class_name", self._class_name)
         batch_size = conn.config.get("batch_size", 100)
-        
+
         try:
             # Import objects
             objects = self._build_objects(data, conn)
-            
+
             # Import in batches
             total_imported = 0
             for i in range(0, len(objects), batch_size):
                 batch = objects[i:i + batch_size]
                 imported = await self._import_batch(class_name, batch)
                 total_imported += imported
-            
+
             processing_time = int((time.time() - start_time) * 1000)
-            
+
             return WriteResult(
                 success=True,
                 destination_id="weaviate",
@@ -275,7 +275,7 @@ class WeaviateDestination(DestinationPlugin):
                     "dimension": len(data.embeddings[0]) if data.embeddings else 0,
                 },
             )
-            
+
         except httpx.HTTPStatusError as e:
             logger.error(f"Weaviate API error: {e.response.status_code} - {e.response.text}")
             return WriteResult(
@@ -286,14 +286,14 @@ class WeaviateDestination(DestinationPlugin):
             logger.error(f"Failed to write to Weaviate: {e}")
             return WriteResult(
                 success=False,
-                error=f"Write failed: {str(e)}",
+                error=f"Write failed: {e!s}",
             )
-    
+
     def _build_objects(
         self,
         data: TransformedData,
         conn: Connection,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Build Weaviate objects from transformed data.
         
         Args:
@@ -304,7 +304,7 @@ class WeaviateDestination(DestinationPlugin):
             List of Weaviate objects
         """
         objects = []
-        
+
         for i, (chunk, embedding) in enumerate(zip(data.chunks, data.embeddings or [])):
             obj = {
                 "id": str(uuid4()),
@@ -317,15 +317,15 @@ class WeaviateDestination(DestinationPlugin):
                     "metadata": json.dumps(chunk.get("metadata", {})),
                 }
             }
-            
+
             objects.append(obj)
-        
+
         return objects
-    
+
     async def _import_batch(
         self,
         class_name: str,
-        objects: List[Dict[str, Any]],
+        objects: list[dict[str, Any]],
     ) -> int:
         """Import a batch of objects to Weaviate.
         
@@ -338,7 +338,7 @@ class WeaviateDestination(DestinationPlugin):
         """
         if not self._client:
             raise RuntimeError("Weaviate client not initialized")
-        
+
         # Use batch endpoint for efficiency
         batch_objects = []
         for obj in objects:
@@ -348,23 +348,23 @@ class WeaviateDestination(DestinationPlugin):
                 "vector": obj["vector"],
                 "properties": obj["properties"],
             })
-        
+
         response = await self._client.post(
             "/v1/batch/objects",
             json={"objects": batch_objects},
         )
         response.raise_for_status()
-        
+
         return len(objects)
-    
+
     async def search(
         self,
         class_name: str,
-        query: Optional[str] = None,
-        vector: Optional[List[float]] = None,
+        query: str | None = None,
+        vector: list[float] | None = None,
         limit: int = 10,
         certainty: float = 0.7,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Search for objects in Weaviate.
         
         Args:
@@ -379,7 +379,7 @@ class WeaviateDestination(DestinationPlugin):
         """
         if not self._client:
             raise RuntimeError("Weaviate client not initialized")
-        
+
         # Build GraphQL query
         if vector:
             # Vector search
@@ -435,19 +435,19 @@ class WeaviateDestination(DestinationPlugin):
             }
         else:
             raise ValueError("Either query or vector must be provided")
-        
+
         response = await self._client.post("/v1/graphql", json=graphql_query)
         response.raise_for_status()
-        
+
         result = response.json()
         data = result.get("data", {}).get("Get", {}).get(class_name, [])
-        
+
         return data
-    
+
     async def delete(
         self,
         class_name: str,
-        where_filter: Optional[Dict[str, Any]] = None,
+        where_filter: dict[str, Any] | None = None,
     ) -> bool:
         """Delete objects from Weaviate.
         
@@ -460,7 +460,7 @@ class WeaviateDestination(DestinationPlugin):
         """
         if not self._client:
             raise RuntimeError("Weaviate client not initialized")
-        
+
         # Build GraphQL delete query
         if where_filter:
             graphql_query = {
@@ -495,13 +495,13 @@ class WeaviateDestination(DestinationPlugin):
                 }}
                 """
             }
-        
+
         response = await self._client.post("/v1/graphql", json=graphql_query)
         response.raise_for_status()
-        
+
         return True
-    
-    async def validate_config(self, config: Dict[str, Any]) -> ValidationResult:
+
+    async def validate_config(self, config: dict[str, Any]) -> ValidationResult:
         """Validate destination configuration.
         
         Args:
@@ -510,23 +510,23 @@ class WeaviateDestination(DestinationPlugin):
         Returns:
             ValidationResult with validation status
         """
-        errors: List[str] = []
-        warnings: List[str] = []
-        
+        errors: list[str] = []
+        warnings: list[str] = []
+
         url = config.get("url") or os.getenv("WEAVIATE_URL")
-        
+
         if not url:
             errors.append("url is required (or set WEAVIATE_URL)")
         elif not url.startswith(("http://", "https://")):
             errors.append("url must be a valid HTTP(S) URL")
-        
+
         return ValidationResult(
             valid=len(errors) == 0,
             errors=errors,
             warnings=warnings,
         )
-    
-    async def health_check(self, config: Optional[Dict[str, Any]] = None) -> HealthStatus:
+
+    async def health_check(self, config: dict[str, Any] | None = None) -> HealthStatus:
         """Check the health of the destination.
         
         Args:
@@ -537,23 +537,23 @@ class WeaviateDestination(DestinationPlugin):
         """
         if not self._client or not self._url:
             return HealthStatus.UNHEALTHY
-        
+
         try:
             response = await self._client.get("/v1/.well-known/live", timeout=10.0)
-            
+
             if response.status_code == 200:
                 return HealthStatus.HEALTHY
             elif response.status_code < 500:
                 return HealthStatus.DEGRADED
             else:
                 return HealthStatus.UNHEALTHY
-                
+
         except httpx.TimeoutException:
             return HealthStatus.DEGRADED
         except Exception as e:
             logger.warning(f"Weaviate health check failed: {e}")
             return HealthStatus.UNHEALTHY
-    
+
     async def shutdown(self) -> None:
         """Shutdown the destination and cleanup resources."""
         if self._client:
@@ -564,29 +564,29 @@ class WeaviateDestination(DestinationPlugin):
 
 class WeaviateMockDestination(WeaviateDestination):
     """Mock Weaviate destination for testing."""
-    
+
     def __init__(self) -> None:
         """Initialize the mock destination."""
         super().__init__()
-        self._storage: Dict[str, List[Dict[str, Any]]] = {}
-    
-    async def initialize(self, config: Dict[str, Any]) -> None:
+        self._storage: dict[str, list[dict[str, Any]]] = {}
+
+    async def initialize(self, config: dict[str, Any]) -> None:
         """Initialize the mock destination."""
         self._config = config
         self._class_name = config.get("class_name", "Document")
         logger.info("Weaviate mock destination initialized")
-    
-    async def connect(self, config: Dict[str, Any]) -> Connection:
+
+    async def connect(self, config: dict[str, Any]) -> Connection:
         """Create a mock connection."""
         if self._class_name not in self._storage:
             self._storage[self._class_name] = []
-        
+
         return Connection(
             id=UUID(int=hash(self._class_name) % (2**32)),
             plugin_id="weaviate_mock",
             config={"class_name": self._class_name},
         )
-    
+
     async def write(
         self,
         conn: Connection,
@@ -594,22 +594,22 @@ class WeaviateMockDestination(WeaviateDestination):
     ) -> WriteResult:
         """Write data to mock storage."""
         import time
-        
+
         start_time = time.time()
-        
+
         if not data.embeddings:
             return WriteResult(
                 success=False,
                 error="No embeddings provided",
             )
-        
+
         objects = self._build_objects(data, conn)
-        
+
         for obj in objects:
             self._storage[self._class_name].append(obj)
-        
+
         processing_time = int((time.time() - start_time) * 1000)
-        
+
         return WriteResult(
             success=True,
             destination_id="weaviate_mock",
@@ -622,18 +622,18 @@ class WeaviateMockDestination(WeaviateDestination):
                 "objects_imported": len(objects),
             },
         )
-    
+
     async def search(
         self,
         class_name: str,
-        query: Optional[str] = None,
-        vector: Optional[List[float]] = None,
+        query: str | None = None,
+        vector: list[float] | None = None,
         limit: int = 10,
         certainty: float = 0.7,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Mock search."""
         objects = self._storage.get(class_name, [])[:limit]
-        
+
         return [
             {
                 "content": obj["properties"].get("content", ""),
@@ -645,11 +645,11 @@ class WeaviateMockDestination(WeaviateDestination):
             }
             for obj in objects
         ]
-    
-    def get_stored_objects(self, class_name: str) -> List[Dict[str, Any]]:
+
+    def get_stored_objects(self, class_name: str) -> list[dict[str, Any]]:
         """Get stored objects for testing."""
         return self._storage.get(class_name, [])
-    
+
     def clear_storage(self) -> None:
         """Clear all stored data."""
         self._storage.clear()

@@ -6,17 +6,17 @@ through the processing pipeline.
 
 from src.lineage.models import (
     DataLineageRecord,
-    LineageNode,
     LineageEdge,
     LineageGraph,
+    LineageNode,
 )
 from src.lineage.tracker import DataLineageTracker, get_lineage_tracker
 
 __all__ = [
     "DataLineageRecord",
-    "LineageNode",
+    "DataLineageTracker",
     "LineageEdge",
     "LineageGraph",
-    "DataLineageTracker",
+    "LineageNode",
     "get_lineage_tracker",
 ]

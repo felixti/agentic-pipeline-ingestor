@@ -10,7 +10,7 @@ import inspect
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, TypeVar
+from typing import Any, TypeVar
 
 from src.plugins.base import BasePlugin, DestinationPlugin, ParserPlugin, SourcePlugin
 from src.plugins.registry import PluginRegistry, get_registry
@@ -34,8 +34,8 @@ class PluginLoader:
         >>> loader.load_builtin_plugins()
         >>> loader.load_from_module("my_package.plugins")
     """
-    
-    def __init__(self, registry: Optional[PluginRegistry] = None) -> None:
+
+    def __init__(self, registry: PluginRegistry | None = None) -> None:
         """Initialize the plugin loader.
         
         Args:
@@ -44,7 +44,7 @@ class PluginLoader:
         """
         self.registry = registry or get_registry()
         self._loaded_modules: set[str] = set()
-    
+
     def load_builtin_plugins(self) -> int:
         """Load all built-in plugins.
         
@@ -56,21 +56,21 @@ class PluginLoader:
         if not builtins_path.exists():
             logger.debug("No builtins directory found")
             return 0
-        
+
         count = 0
         for file_path in builtins_path.glob("*.py"):
             if file_path.name.startswith("_"):
                 continue
-            
+
             try:
                 module = self._load_module_from_file(file_path)
                 count += self._register_plugins_from_module(module)
             except Exception as e:
                 logger.error(f"Failed to load builtin plugin from {file_path}: {e}")
-        
+
         logger.info(f"Loaded {count} built-in plugins")
         return count
-    
+
     def load_from_module(self, module_name: str) -> int:
         """Load plugins from a Python module.
         
@@ -83,7 +83,7 @@ class PluginLoader:
         if module_name in self._loaded_modules:
             logger.debug(f"Module {module_name} already loaded")
             return 0
-        
+
         try:
             module = importlib.import_module(module_name)
             self._loaded_modules.add(module_name)
@@ -93,7 +93,7 @@ class PluginLoader:
         except ImportError as e:
             logger.error(f"Failed to import module {module_name}: {e}")
             return 0
-    
+
     def load_from_file(self, file_path: str) -> int:
         """Load plugins from a Python file.
         
@@ -107,7 +107,7 @@ class PluginLoader:
         if not path.exists():
             logger.error(f"Plugin file not found: {file_path}")
             return 0
-        
+
         try:
             module = self._load_module_from_file(path)
             count = self._register_plugins_from_module(module)
@@ -116,7 +116,7 @@ class PluginLoader:
         except Exception as e:
             logger.error(f"Failed to load plugins from {file_path}: {e}")
             return 0
-    
+
     def load_from_directory(self, directory: str) -> int:
         """Load all plugins from a directory.
         
@@ -130,21 +130,21 @@ class PluginLoader:
         if not path.is_dir():
             logger.error(f"Plugin directory not found: {directory}")
             return 0
-        
+
         count = 0
         for file_path in path.glob("*.py"):
             if file_path.name.startswith("_"):
                 continue
-            
+
             try:
                 module = self._load_module_from_file(file_path)
                 count += self._register_plugins_from_module(module)
             except Exception as e:
                 logger.error(f"Failed to load plugin from {file_path}: {e}")
-        
+
         logger.info(f"Loaded {count} plugins from directory {directory}")
         return count
-    
+
     def load_from_entry_points(self, group: str = "pipeline_ingestor.plugins") -> int:
         """Load plugins from package entry points.
         
@@ -165,7 +165,7 @@ class PluginLoader:
             except ImportError:
                 logger.warning("entry_points not available, skipping entry point plugins")
                 return 0
-        
+
         count = 0
         try:
             # Python 3.10+ uses groups parameter
@@ -174,7 +174,7 @@ class PluginLoader:
             # Older versions
             all_eps = entry_points()
             eps = all_eps.get(group, [])
-        
+
         for ep in eps:
             try:
                 plugin_class = ep.load()
@@ -184,10 +184,10 @@ class PluginLoader:
                     count += 1
             except Exception as e:
                 logger.error(f"Failed to load entry point plugin {ep.name}: {e}")
-        
+
         logger.info(f"Loaded {count} plugins from entry points")
         return count
-    
+
     def _load_module_from_file(self, file_path: Path) -> Any:
         """Load a Python module from a file path.
         
@@ -201,12 +201,12 @@ class PluginLoader:
         spec = importlib.util.spec_from_file_location(module_name, file_path)
         if spec is None or spec.loader is None:
             raise ImportError(f"Cannot load module from {file_path}")
-        
+
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
         return module
-    
+
     def _register_plugins_from_module(self, module: Any) -> int:
         """Find and register all plugin classes from a module.
         
@@ -217,26 +217,26 @@ class PluginLoader:
             Number of plugins registered
         """
         count = 0
-        
+
         for name in dir(module):
             obj = getattr(module, name)
-            
+
             if not inspect.isclass(obj):
                 continue
-            
+
             if not self._is_valid_plugin_class(obj):
                 continue
-            
+
             try:
                 instance = obj()
                 self.registry.register(instance)
                 count += 1
             except Exception as e:
                 logger.error(f"Failed to instantiate plugin {name}: {e}")
-        
+
         return count
-    
-    def _is_valid_plugin_class(self, cls: Type[Any]) -> bool:
+
+    def _is_valid_plugin_class(self, cls: type[Any]) -> bool:
         """Check if a class is a valid plugin class.
         
         Args:
@@ -248,7 +248,7 @@ class PluginLoader:
         # Must be a concrete class (not abstract)
         if inspect.isabstract(cls):
             return False
-        
+
         # Must inherit from one of the base plugin classes
         valid_bases = (SourcePlugin, ParserPlugin, DestinationPlugin)
         return issubclass(cls, valid_bases) and cls not in valid_bases
@@ -262,11 +262,11 @@ class AutoDiscoveryPluginLoader(PluginLoader):
     2. Entry points
     3. Configured plugin directories
     """
-    
+
     def __init__(
         self,
-        registry: Optional[PluginRegistry] = None,
-        plugin_dirs: Optional[List[str]] = None,
+        registry: PluginRegistry | None = None,
+        plugin_dirs: list[str] | None = None,
     ) -> None:
         """Initialize the auto-discovery loader.
         
@@ -276,38 +276,38 @@ class AutoDiscoveryPluginLoader(PluginLoader):
         """
         super().__init__(registry)
         self.plugin_dirs = plugin_dirs or []
-    
-    def load_all(self) -> Dict[str, int]:
+
+    def load_all(self) -> dict[str, int]:
         """Load plugins from all sources.
         
         Returns:
             Dictionary mapping source names to counts
         """
-        results: Dict[str, int] = {}
-        
+        results: dict[str, int] = {}
+
         # Load built-in plugins
         results["builtins"] = self.load_builtin_plugins()
-        
+
         # Load from entry points
         results["entry_points"] = self.load_from_entry_points()
-        
+
         # Load from configured directories
         dir_count = 0
         for directory in self.plugin_dirs:
             dir_count += self.load_from_directory(directory)
         results["directories"] = dir_count
-        
+
         total = sum(results.values())
         logger.info(f"Auto-discovery loaded {total} total plugins")
-        
+
         return results
 
 
 def load_plugins(
-    plugin_dirs: Optional[List[str]] = None,
-    modules: Optional[List[str]] = None,
-    files: Optional[List[str]] = None,
-) -> Dict[str, int]:
+    plugin_dirs: list[str] | None = None,
+    modules: list[str] | None = None,
+    files: list[str] | None = None,
+) -> dict[str, int]:
     """Convenience function to load plugins from multiple sources.
     
     Args:
@@ -320,19 +320,19 @@ def load_plugins(
     """
     loader = AutoDiscoveryPluginLoader(plugin_dirs=plugin_dirs or [])
     results = loader.load_all()
-    
+
     # Load from specified modules
     if modules:
         module_count = 0
         for module in modules:
             module_count += loader.load_from_module(module)
         results["modules"] = module_count
-    
+
     # Load from specified files
     if files:
         file_count = 0
         for file_path in files:
             file_count += loader.load_from_file(file_path)
         results["files"] = file_count
-    
+
     return results

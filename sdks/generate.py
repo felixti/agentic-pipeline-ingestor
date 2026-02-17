@@ -103,16 +103,16 @@ def check_openapi_generator() -> str:
     # Check for openapi-generator command
     if shutil.which("openapi-generator"):
         return "openapi-generator"
-    
+
     # Check for openapi-generator-cli.jar
     jar_path = Path.home() / ".local" / "bin" / "openapi-generator-cli.jar"
     if jar_path.exists():
         return f"java -jar {jar_path}"
-    
+
     # Check for npx
     if shutil.which("npx"):
         return "npx @openapitools/openapi-generator-cli"
-    
+
     raise RuntimeError(
         "OpenAPI Generator not found. Please install it:\n"
         "  - npm: npm install -g @openapitools/openapi-generator-cli\n"
@@ -137,40 +137,40 @@ def generate_sdk(language: str, command: str, dry_run: bool = False) -> bool:
         logger.error(f"Unknown language: {language}")
         logger.info(f"Available languages: {', '.join(CONFIGS.keys())}")
         return False
-    
+
     config = CONFIGS[language]
     output_dir = config["output"]
-    
+
     logger.info(f"Generating {language} SDK to {output_dir}")
-    
+
     # Build command arguments
     cmd_parts = [command, "generate"]
     cmd_parts.extend(["-i", str(OPENAPI_SPEC)])
     cmd_parts.extend(["-g", config["generator"]])
     cmd_parts.extend(["-o", str(output_dir)])
-    
+
     # Add additional properties
     for key, value in config["config"].items():
         cmd_parts.extend(["--additional-properties", f"{key}={value}"])
-    
+
     # Add global properties to skip files we don't need
     cmd_parts.extend([
         "--global-property",
         "skipFormModel=false,modelDocs=false,apiDocs=false",
     ])
-    
+
     cmd = " ".join(cmd_parts)
-    
+
     if dry_run:
         logger.info(f"[DRY RUN] Would execute: {cmd}")
         return True
-    
+
     try:
         # Clean output directory if it exists
         if output_dir.exists():
             logger.info(f"Cleaning existing output directory: {output_dir}")
             shutil.rmtree(output_dir)
-        
+
         # Run generator
         logger.info(f"Running: {cmd}")
         result = subprocess.run(
@@ -180,19 +180,19 @@ def generate_sdk(language: str, command: str, dry_run: bool = False) -> bool:
             text=True,
             check=True,
         )
-        
+
         if result.returncode == 0:
             logger.info(f"Successfully generated {language} SDK")
-            
+
             # Post-processing
             post_process_sdk(language, output_dir)
-            
+
             return True
         else:
             logger.error(f"Failed to generate {language} SDK:")
             logger.error(result.stderr)
             return False
-            
+
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to generate {language} SDK:")
         logger.error(f"Exit code: {e.returncode}")
@@ -212,12 +212,12 @@ def post_process_sdk(language: str, output_dir: Path) -> None:
         output_dir: Output directory of generated SDK
     """
     logger.info(f"Post-processing {language} SDK")
-    
+
     if language == "python":
         # Create pyproject.toml if it doesn't exist
         pyproject_path = output_dir / "pyproject.toml"
         if not pyproject_path.exists():
-            pyproject_content = '''[build-system]
+            pyproject_content = """[build-system]
 requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
 build-backend = "setuptools.build_meta"
 
@@ -247,19 +247,19 @@ dev = [
     "black>=23.0.0",
     "mypy>=1.0.0",
 ]
-'''
+"""
             pyproject_path.write_text(pyproject_content)
             logger.info(f"Created {pyproject_path}")
-    
+
     elif language == "typescript":
         # Ensure package.json has correct fields
         package_json_path = output_dir / "package.json"
         if package_json_path.exists():
             import json
-            
+
             with open(package_json_path) as f:
                 package_data = json.load(f)
-            
+
             # Update package.json
             package_data.setdefault("files", ["dist", "src", "README.md"])
             package_data.setdefault("main", "dist/index.js")
@@ -267,10 +267,10 @@ dev = [
             package_data.setdefault("scripts", {})
             package_data["scripts"].setdefault("build", "tsc")
             package_data["scripts"].setdefault("test", "echo 'No tests configured'")
-            
+
             with open(package_json_path, "w") as f:
                 json.dump(package_data, f, indent=2)
-            
+
             logger.info(f"Updated {package_json_path}")
 
 
@@ -302,22 +302,22 @@ def main() -> int:
         action="store_true",
         help="Check if OpenAPI spec is valid without generating",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Check OpenAPI spec exists
     if not OPENAPI_SPEC.exists():
         logger.error(f"OpenAPI spec not found: {OPENAPI_SPEC}")
         return 1
-    
+
     logger.info(f"Using OpenAPI spec: {OPENAPI_SPEC}")
-    
+
     # Just validate spec if requested
     if args.check:
         logger.info("Validating OpenAPI spec...")
         # Could add validation logic here
         return 0
-    
+
     # Find OpenAPI Generator
     try:
         command = check_openapi_generator()
@@ -325,21 +325,21 @@ def main() -> int:
     except RuntimeError as e:
         logger.error(e)
         return 1
-    
+
     # Determine languages to generate
     if args.language == "all":
         languages = ["python", "typescript"]  # Default to main languages
     else:
         languages = [args.language]
-    
+
     # Generate SDKs
     success_count = 0
     for language in languages:
         if generate_sdk(language, command, args.dry_run):
             success_count += 1
-    
+
     logger.info(f"Generated {success_count}/{len(languages)} SDKs")
-    
+
     return 0 if success_count == len(languages) else 1
 
 

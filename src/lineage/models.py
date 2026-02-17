@@ -7,7 +7,7 @@ through the processing pipeline.
 import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -34,28 +34,28 @@ class DataLineageRecord(BaseModel):
         input_size_bytes: Input data size
         output_size_bytes: Output data size
     """
-    
+
     id: UUID = Field(default_factory=UUID)
     job_id: UUID
     stage: str
     step_order: int
-    input_hash: Optional[str] = None
-    output_hash: Optional[str] = None
+    input_hash: str | None = None
+    output_hash: str | None = None
     transformation: str = ""
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    duration_ms: Optional[int] = None
-    input_size_bytes: Optional[int] = None
-    output_size_bytes: Optional[int] = None
-    
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    duration_ms: int | None = None
+    input_size_bytes: int | None = None
+    output_size_bytes: int | None = None
+
     class Config:
         """Pydantic configuration."""
         json_encoders = {
             datetime: lambda v: v.isoformat(),
             UUID: lambda v: str(v),
         }
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert record to dictionary."""
         return {
             "id": str(self.id),
@@ -71,7 +71,7 @@ class DataLineageRecord(BaseModel):
             "input_size_bytes": self.input_size_bytes,
             "output_size_bytes": self.output_size_bytes,
         }
-    
+
     @classmethod
     def from_stage(
         cls,
@@ -79,9 +79,9 @@ class DataLineageRecord(BaseModel):
         stage: str,
         step_order: int,
         transformation: str,
-        input_data: Optional[bytes] = None,
-        output_data: Optional[bytes] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        input_data: bytes | None = None,
+        output_data: bytes | None = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs,
     ) -> "DataLineageRecord":
         """Create a lineage record for a pipeline stage.
@@ -101,10 +101,10 @@ class DataLineageRecord(BaseModel):
         """
         input_hash = cls._compute_hash(input_data) if input_data else None
         output_hash = cls._compute_hash(output_data) if output_data else None
-        
+
         input_size = len(input_data) if input_data else None
         output_size = len(output_data) if output_data else None
-        
+
         return cls(
             job_id=job_id,
             stage=stage,
@@ -117,7 +117,7 @@ class DataLineageRecord(BaseModel):
             output_size_bytes=output_size,
             **kwargs,
         )
-    
+
     @staticmethod
     def _compute_hash(data: bytes) -> str:
         """Compute SHA-256 hash of data.
@@ -129,7 +129,7 @@ class DataLineageRecord(BaseModel):
             Hex digest of hash
         """
         return hashlib.sha256(data).hexdigest()
-    
+
     def verify_integrity(self, current_data: bytes) -> bool:
         """Verify data integrity against stored hash.
         
@@ -141,7 +141,7 @@ class DataLineageRecord(BaseModel):
         """
         if not self.output_hash:
             return True  # No hash to verify
-        
+
         current_hash = self._compute_hash(current_data)
         return current_hash == self.output_hash
 
@@ -163,9 +163,9 @@ class LineageNode:
     id: str
     job_id: UUID
     stage: str
-    data_hash: Optional[str]
+    data_hash: str | None
     timestamp: datetime
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -184,8 +184,8 @@ class LineageEdge:
     from_node: str
     to_node: str
     transformation: str
-    duration_ms: Optional[int] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    duration_ms: int | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -202,12 +202,12 @@ class LineageGraph:
         end_time: Pipeline end time
     """
     job_id: UUID
-    nodes: List[LineageNode] = field(default_factory=list)
-    edges: List[LineageEdge] = field(default_factory=list)
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
+    nodes: list[LineageNode] = field(default_factory=list)
+    edges: list[LineageEdge] = field(default_factory=list)
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert graph to dictionary."""
         return {
             "job_id": str(self.job_id),
@@ -246,11 +246,11 @@ class LineageQuery(BaseModel):
         end_time: Filter by end time
         include_metadata: Include metadata in results
     """
-    
-    job_id: Optional[UUID] = None
-    stage: Optional[str] = None
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
+
+    job_id: UUID | None = None
+    stage: str | None = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
     include_metadata: bool = True
 
 
@@ -266,11 +266,11 @@ class LineageSummary(BaseModel):
         total_duration_ms: Total processing duration
         stages: List of stage names
     """
-    
+
     job_id: UUID
     total_stages: int
     total_transformations: int
-    start_time: Optional[datetime]
-    end_time: Optional[datetime]
-    total_duration_ms: Optional[int]
-    stages: List[str]
+    start_time: datetime | None
+    end_time: datetime | None
+    total_duration_ms: int | None
+    stages: list[str]

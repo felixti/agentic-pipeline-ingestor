@@ -6,18 +6,19 @@ request context, and integration with OpenTelemetry trace context.
 
 import logging
 import sys
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Dict, Generator, Optional, Union
+from typing import Any
 
 import structlog
 from structlog.types import FilteringBoundLogger
 
 # Context variables for request tracking
-_correlation_id: ContextVar[Optional[str]] = ContextVar("correlation_id", default=None)
-_trace_id: ContextVar[Optional[str]] = ContextVar("trace_id", default=None)
-_span_id: ContextVar[Optional[str]] = ContextVar("span_id", default=None)
-_request_context: ContextVar[Dict[str, Any]] = ContextVar("request_context", default={})
+_correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
+_trace_id: ContextVar[str | None] = ContextVar("trace_id", default=None)
+_span_id: ContextVar[str | None] = ContextVar("span_id", default=None)
+_request_context: ContextVar[dict[str, Any]] = ContextVar("request_context", default={})
 
 
 class StructuredLogger:
@@ -32,18 +33,18 @@ class StructuredLogger:
         >>> log = logger.get_logger("my_module")
         >>> log.info("event_occurred", key="value")
     """
-    
+
     def __init__(self):
         """Initialize the structured logger."""
         self._configured = False
-    
+
     def setup_logging(
         self,
         json_format: bool = True,
         log_level: str = "INFO",
-        log_file: Optional[str] = None,
+        log_file: str | None = None,
         include_trace_context: bool = True,
-        extra_processors: Optional[list] = None,
+        extra_processors: list | None = None,
     ) -> None:
         """Setup structured logging configuration.
         
@@ -56,14 +57,14 @@ class StructuredLogger:
         """
         if self._configured:
             return
-        
+
         # Configure standard library logging
         logging.basicConfig(
             format="%(message)s",
             stream=sys.stdout,
             level=getattr(logging, log_level.upper()),
         )
-        
+
         # Build processor chain
         processors = [
             structlog.stdlib.filter_by_level,
@@ -72,34 +73,34 @@ class StructuredLogger:
             structlog.stdlib.PositionalArgumentsFormatter(),
             structlog.processors.TimeStamper(fmt="iso"),
         ]
-        
+
         # Add trace context processor if enabled
         if include_trace_context:
             processors.append(self._add_trace_context)
-        
+
         # Add correlation ID processor
         processors.append(self._add_correlation_id)
-        
+
         # Add request context processor
         processors.append(self._add_request_context)
-        
+
         # Add extra processors
         if extra_processors:
             processors.extend(extra_processors)
-        
+
         # Add common processors
         processors.extend([
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.UnicodeDecoder(),
         ])
-        
+
         # Add formatter
         if json_format:
             processors.append(structlog.processors.JSONRenderer())
         else:
             processors.append(structlog.dev.ConsoleRenderer())
-        
+
         # Configure structlog
         structlog.configure(
             processors=processors,
@@ -108,15 +109,15 @@ class StructuredLogger:
             wrapper_class=structlog.stdlib.BoundLogger,
             cache_logger_on_first_use=True,
         )
-        
+
         self._configured = True
-    
+
     def _add_trace_context(
         self,
         logger: FilteringBoundLogger,
         method_name: str,
-        event_dict: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        event_dict: dict[str, Any],
+    ) -> dict[str, Any]:
         """Add OpenTelemetry trace context to log events.
         
         Args:
@@ -129,7 +130,7 @@ class StructuredLogger:
         """
         try:
             from opentelemetry import trace
-            
+
             current_span = trace.get_current_span()
             if current_span:
                 span_context = current_span.get_span_context()
@@ -139,7 +140,7 @@ class StructuredLogger:
                     event_dict["trace_flags"] = str(span_context.trace_flags)
         except ImportError:
             pass
-        
+
         # Also add from context vars as fallback
         trace_id = _trace_id.get()
         span_id = _span_id.get()
@@ -147,15 +148,15 @@ class StructuredLogger:
             event_dict["trace_id"] = trace_id
         if span_id and "span_id" not in event_dict:
             event_dict["span_id"] = span_id
-        
+
         return event_dict
-    
+
     def _add_correlation_id(
         self,
         logger: FilteringBoundLogger,
         method_name: str,
-        event_dict: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        event_dict: dict[str, Any],
+    ) -> dict[str, Any]:
         """Add correlation ID to log events.
         
         Args:
@@ -170,13 +171,13 @@ class StructuredLogger:
         if corr_id:
             event_dict["correlation_id"] = corr_id
         return event_dict
-    
+
     def _add_request_context(
         self,
         logger: FilteringBoundLogger,
         method_name: str,
-        event_dict: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        event_dict: dict[str, Any],
+    ) -> dict[str, Any]:
         """Add request context to log events.
         
         Args:
@@ -191,7 +192,7 @@ class StructuredLogger:
         if context:
             event_dict.update(context)
         return event_dict
-    
+
     def get_logger(self, name: str) -> FilteringBoundLogger:
         """Get a logger instance.
         
@@ -207,7 +208,7 @@ class StructuredLogger:
 
 
 # Global logger instance
-_structured_logger: Optional[StructuredLogger] = None
+_structured_logger: StructuredLogger | None = None
 
 
 def get_logger(name: str) -> FilteringBoundLogger:
@@ -261,7 +262,7 @@ def set_correlation_id(correlation_id: str) -> None:
     _correlation_id.set(correlation_id)
 
 
-def get_correlation_id() -> Optional[str]:
+def get_correlation_id() -> str | None:
     """Get the current correlation ID.
     
     Returns:
@@ -287,7 +288,7 @@ def clear_trace_context() -> None:
     _span_id.set(None)
 
 
-def set_request_context(context: Dict[str, Any]) -> None:
+def set_request_context(context: dict[str, Any]) -> None:
     """Set request context for logging.
     
     Args:
@@ -368,12 +369,12 @@ class LogContext:
         ... ):
         ...     logger.info("processing_request")
     """
-    
+
     def __init__(
         self,
-        correlation_id: Optional[str] = None,
-        trace_id: Optional[str] = None,
-        span_id: Optional[str] = None,
+        correlation_id: str | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
         **context: Any,
     ):
         """Initialize log context.
@@ -389,7 +390,7 @@ class LogContext:
         self.span_id = span_id
         self.context = context
         self.tokens = []
-    
+
     def __enter__(self) -> "LogContext":
         """Enter the context."""
         if self.correlation_id:
@@ -401,7 +402,7 @@ class LogContext:
         if self.context:
             self.tokens.append(("ctx", _request_context.set(self.context)))
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit the context."""
         for name, token in reversed(self.tokens):

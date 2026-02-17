@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 
@@ -60,18 +60,18 @@ class User:
         is_service_account: Whether this is a service account (API key)
     """
     id: UUID
-    email: Optional[str] = None
-    username: Optional[str] = None
+    email: str | None = None
+    username: str | None = None
     role: str = "viewer"
-    roles: List[str] = field(default_factory=list)
+    roles: list[str] = field(default_factory=list)
     auth_provider: AuthProvider = AuthProvider.JWT
-    permissions: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    created_at: Optional[datetime] = None
-    last_login_at: Optional[datetime] = None
+    permissions: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime | None = None
+    last_login_at: datetime | None = None
     is_active: bool = True
     is_service_account: bool = False
-    
+
     def has_permission(self, permission: str) -> bool:
         """Check if user has a specific permission.
         
@@ -85,7 +85,7 @@ class User:
         if "admin" in self.roles or Permission.ADMIN in self.permissions:
             return True
         return permission in self.permissions
-    
+
     def has_role(self, role: str) -> bool:
         """Check if user has a specific role.
         
@@ -96,8 +96,8 @@ class User:
             True if user has the role
         """
         return role in self.roles or self.role == role
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert user to dictionary representation."""
         return {
             "id": str(self.id),
@@ -127,11 +127,11 @@ class Credentials:
         extra: Additional provider-specific credentials
     """
     provider: AuthProvider
-    token: Optional[str] = None
-    api_key: Optional[str] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    extra: Dict[str, Any] = field(default_factory=dict)
+    token: str | None = None
+    api_key: str | None = None
+    username: str | None = None
+    password: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -146,16 +146,16 @@ class AuthResult:
         metadata: Additional authentication metadata
     """
     success: bool
-    user: Optional[User] = None
-    error: Optional[str] = None
-    error_code: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    
+    user: User | None = None
+    error: str | None = None
+    error_code: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
     @classmethod
-    def success_result(cls, user: User, metadata: Optional[Dict[str, Any]] = None) -> "AuthResult":
+    def success_result(cls, user: User, metadata: dict[str, Any] | None = None) -> "AuthResult":
         """Create a successful authentication result."""
         return cls(success=True, user=user, metadata=metadata or {})
-    
+
     @classmethod
     def failure_result(cls, error: str, error_code: str = "AUTH_FAILED") -> "AuthResult":
         """Create a failed authentication result."""
@@ -168,13 +168,13 @@ class AuthenticationBackend(ABC):
     All authentication backends must inherit from this class and implement
     the authenticate method.
     """
-    
+
     @property
     @abstractmethod
     def provider_type(self) -> AuthProvider:
         """Return the authentication provider type."""
         ...
-    
+
     @abstractmethod
     async def authenticate(self, credentials: Credentials) -> AuthResult:
         """Authenticate using the provided credentials.
@@ -186,7 +186,7 @@ class AuthenticationBackend(ABC):
             AuthResult containing authentication outcome
         """
         ...
-    
+
     async def validate_token(self, token: str) -> AuthResult:
         """Validate an existing token.
         
@@ -199,7 +199,7 @@ class AuthenticationBackend(ABC):
         # Default implementation: create credentials and authenticate
         credentials = Credentials(provider=self.provider_type, token=token)
         return await self.authenticate(credentials)
-    
+
     async def refresh_token(self, refresh_token: str) -> AuthResult:
         """Refresh an expired token.
         

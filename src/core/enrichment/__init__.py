@@ -15,7 +15,7 @@ from src.core.enrichment.advanced import (
 __all__ = [
     "AdvancedEnricher",
     "EnrichmentResult",
-    "SummarizationResult",
     "SentimentResult",
+    "SummarizationResult",
     "TopicClassificationResult",
 ]

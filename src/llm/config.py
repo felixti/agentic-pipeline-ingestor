@@ -8,7 +8,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -30,32 +30,32 @@ class ModelConfig:
         additional_params: Additional provider-specific parameters
     """
     model: str
-    api_key: Optional[str] = None
-    api_base: Optional[str] = None
-    api_version: Optional[str] = None
-    tpm: Optional[int] = None
-    rpm: Optional[int] = None
+    api_key: str | None = None
+    api_base: str | None = None
+    api_version: str | None = None
+    tpm: int | None = None
+    rpm: int | None = None
     timeout: int = 30
-    additional_params: Dict[str, Any] = field(default_factory=dict)
-    
-    def to_litellm_params(self) -> Dict[str, Any]:
+    additional_params: dict[str, Any] = field(default_factory=dict)
+
+    def to_litellm_params(self) -> dict[str, Any]:
         """Convert to litellm-compatible parameters.
         
         Returns:
             Dictionary of parameters for litellm
         """
-        params: Dict[str, Any] = {"model": self.model}
-        
+        params: dict[str, Any] = {"model": self.model}
+
         if self.api_key:
             params["api_key"] = self._resolve_env_vars(self.api_key)
         if self.api_base:
             params["api_base"] = self._resolve_env_vars(self.api_base)
         if self.api_version:
             params["api_version"] = self.api_version
-        
+
         params.update(self.additional_params)
         return params
-    
+
     @staticmethod
     def _resolve_env_vars(value: str) -> str:
         """Resolve environment variables in a string value.
@@ -68,17 +68,17 @@ class ModelConfig:
         """
         if not isinstance(value, str):
             return value
-        
+
         import re
-        pattern = r'\$\{([^}]+)\}'
-        
+        pattern = r"\$\{([^}]+)\}"
+
         def replace_env_var(match: Any) -> str:
             env_var = match.group(1)
             env_value = os.getenv(env_var, "")
             if not env_value:
                 logger.warning(f"Environment variable {env_var} not set")
             return env_value
-        
+
         return re.sub(pattern, replace_env_var, value)
 
 
@@ -93,23 +93,23 @@ class RouterConfig:
     """
     model_name: str
     litellm_params: ModelConfig
-    fallback_models: List[ModelConfig] = field(default_factory=list)
-    
-    def to_litellm_router_format(self) -> List[Dict[str, Any]]:
+    fallback_models: list[ModelConfig] = field(default_factory=list)
+
+    def to_litellm_router_format(self) -> list[dict[str, Any]]:
         """Convert to litellm router format.
         
         Returns:
             List of router entries for litellm
         """
-        entries: List[Dict[str, Any]] = []
-        
+        entries: list[dict[str, Any]] = []
+
         # Primary model
         primary_entry = {
             "model_name": self.model_name,
             "litellm_params": self.litellm_params.to_litellm_params(),
         }
         entries.append(primary_entry)
-        
+
         # Fallback models
         for i, fallback in enumerate(self.fallback_models):
             fallback_entry = {
@@ -117,7 +117,7 @@ class RouterConfig:
                 "litellm_params": fallback.to_litellm_params(),
             }
             entries.append(fallback_entry)
-        
+
         return entries
 
 
@@ -136,7 +136,7 @@ class LLMConfig:
         default_max_tokens: Default max tokens for completions
         provider_settings: Provider-specific settings
     """
-    routers: List[RouterConfig] = field(default_factory=list)
+    routers: list[RouterConfig] = field(default_factory=list)
     proxy_host: str = "0.0.0.0"
     proxy_port: int = 4000
     retry_attempts: int = 3
@@ -144,8 +144,8 @@ class LLMConfig:
     backoff_factor: float = 2.0
     default_temperature: float = 0.3
     default_max_tokens: int = 2000
-    provider_settings: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    
+    provider_settings: dict[str, dict[str, Any]] = field(default_factory=dict)
+
     @classmethod
     def from_yaml(cls, config_path: str) -> "LLMConfig":
         """Load configuration from YAML file.
@@ -164,33 +164,33 @@ class LLMConfig:
         if not path.exists():
             logger.warning(f"Config file not found: {config_path}, using defaults")
             return cls._default_config()
-        
-        with open(path, "r") as f:
+
+        with open(path) as f:
             data = yaml.safe_load(f)
-        
+
         if not data or "llm" not in data:
             logger.warning("Invalid config format, using defaults")
             return cls._default_config()
-        
+
         llm_data = data["llm"]
-        
+
         # Parse routers
         routers = []
         for router_data in llm_data.get("router", []):
             routers.append(cls._parse_router_config(router_data))
-        
+
         # Parse proxy settings
         proxy = llm_data.get("proxy", {})
-        
+
         # Parse retry settings
         retry = llm_data.get("retry", {})
-        
+
         # Parse defaults
         defaults = llm_data.get("defaults", {})
-        
+
         # Parse provider settings
         providers = llm_data.get("providers", {})
-        
+
         return cls(
             routers=routers,
             proxy_host=proxy.get("host", "0.0.0.0"),
@@ -202,9 +202,9 @@ class LLMConfig:
             default_max_tokens=defaults.get("max_tokens", 2000),
             provider_settings=providers,
         )
-    
+
     @classmethod
-    def _parse_router_config(cls, data: Dict[str, Any]) -> RouterConfig:
+    def _parse_router_config(cls, data: dict[str, Any]) -> RouterConfig:
         """Parse router configuration from YAML data.
         
         Args:
@@ -228,7 +228,7 @@ class LLMConfig:
                 if k not in ["model", "api_key", "api_base", "api_version", "tpm", "rpm", "timeout"]
             },
         )
-        
+
         # Parse fallback models
         fallback_models = []
         for fallback_data in data.get("fallback_models", []):
@@ -241,13 +241,13 @@ class LLMConfig:
                 rpm=fallback_data.get("rpm"),
                 timeout=fallback_data.get("timeout", 30),
             ))
-        
+
         return RouterConfig(
             model_name=data["model_name"],
             litellm_params=primary_model,
             fallback_models=fallback_models,
         )
-    
+
     @classmethod
     def _default_config(cls) -> "LLMConfig":
         """Create default configuration.
@@ -295,19 +295,19 @@ class LLMConfig:
                 ),
             ],
         )
-    
-    def to_litellm_model_list(self) -> List[Dict[str, Any]]:
+
+    def to_litellm_model_list(self) -> list[dict[str, Any]]:
         """Convert to litellm model list format.
         
         Returns:
             List of model configurations for litellm Router
         """
-        model_list: List[Dict[str, Any]] = []
+        model_list: list[dict[str, Any]] = []
         for router in self.routers:
             model_list.extend(router.to_litellm_router_format())
         return model_list
-    
-    def get_router_for_model(self, model_name: str) -> Optional[RouterConfig]:
+
+    def get_router_for_model(self, model_name: str) -> RouterConfig | None:
         """Get router configuration for a model name.
         
         Args:
@@ -322,7 +322,7 @@ class LLMConfig:
         return None
 
 
-def load_llm_config(config_path: Optional[str] = None) -> LLMConfig:
+def load_llm_config(config_path: str | None = None) -> LLMConfig:
     """Load LLM configuration from file or return defaults.
     
     Args:
@@ -334,5 +334,5 @@ def load_llm_config(config_path: Optional[str] = None) -> LLMConfig:
     """
     if config_path is None:
         config_path = "config/llm.yaml"
-    
+
     return LLMConfig.from_yaml(config_path)

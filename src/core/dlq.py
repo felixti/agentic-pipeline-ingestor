@@ -8,10 +8,10 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
-from src.api.models import Job, JobError, JobStatus, PipelineConfig, RetryRecord
+from src.api.models import Job, JobError, PipelineConfig, RetryRecord
 
 logger = logging.getLogger(__name__)
 
@@ -52,13 +52,13 @@ class DLQFilters:
         file_name_pattern: Pattern to match file names
         search: Free text search
     """
-    status: Optional[DLQEntryStatus] = None
-    failure_category: Optional[DLQFailureCategory] = None
-    source_type: Optional[str] = None
-    date_from: Optional[datetime] = None
-    date_to: Optional[datetime] = None
-    file_name_pattern: Optional[str] = None
-    search: Optional[str] = None
+    status: DLQEntryStatus | None = None
+    failure_category: DLQFailureCategory | None = None
+    source_type: str | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    file_name_pattern: str | None = None
+    search: str | None = None
 
 
 @dataclass
@@ -88,28 +88,28 @@ class DLQEntry:
     job: Job
     error: JobError
     failure_category: DLQFailureCategory
-    retry_history: List[RetryRecord]
+    retry_history: list[RetryRecord]
     status: DLQEntryStatus = DLQEntryStatus.PENDING
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
-    reviewed_at: Optional[datetime] = None
-    reviewed_by: Optional[str] = None
+    reviewed_at: datetime | None = None
+    reviewed_by: str | None = None
     retry_count: int = 0
     max_retries_reached: bool = False
-    resolution_notes: Optional[str] = None
-    archived_at: Optional[datetime] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    
-    def to_dict(self) -> Dict[str, Any]:
+    resolution_notes: str | None = None
+    archived_at: datetime | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert entry to dictionary."""
         return {
             "id": str(self.id),
             "job_id": str(self.job_id),
-            "job": self.job.model_dump() if hasattr(self.job, 'model_dump') else str(self.job),
-            "error": self.error.model_dump() if hasattr(self.error, 'model_dump') else str(self.error),
+            "job": self.job.model_dump() if hasattr(self.job, "model_dump") else str(self.job),
+            "error": self.error.model_dump() if hasattr(self.error, "model_dump") else str(self.error),
             "failure_category": self.failure_category.value,
             "retry_history": [
-                r.model_dump() if hasattr(r, 'model_dump') else str(r)
+                r.model_dump() if hasattr(r, "model_dump") else str(r)
                 for r in self.retry_history
             ],
             "status": self.status.value,
@@ -138,9 +138,9 @@ class DLQRetryResult:
     """
     success: bool
     entry_id: UUID
-    new_job_id: Optional[UUID] = None
+    new_job_id: UUID | None = None
     message: str = ""
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class DeadLetterQueue:
@@ -152,7 +152,7 @@ class DeadLetterQueue:
     - Browsing and filtering of failed jobs
     - Analytics on failure patterns
     """
-    
+
     def __init__(self, max_age_days: int = 30) -> None:
         """Initialize the DLQ.
         
@@ -161,10 +161,10 @@ class DeadLetterQueue:
         """
         self.logger = logger
         self.max_age_days = max_age_days
-        self._entries: Dict[UUID, DLQEntry] = {}
-        self._job_id_to_entry: Dict[UUID, UUID] = {}  # job_id -> entry_id
-    
-    def _categorize_failure(self, error: JobError, retry_history: List[RetryRecord]) -> DLQFailureCategory:
+        self._entries: dict[UUID, DLQEntry] = {}
+        self._job_id_to_entry: dict[UUID, UUID] = {}  # job_id -> entry_id
+
+    def _categorize_failure(self, error: JobError, retry_history: list[RetryRecord]) -> DLQFailureCategory:
         """Categorize a failure based on error and history.
         
         Args:
@@ -176,44 +176,44 @@ class DeadLetterQueue:
         """
         error_code = (error.code or "").lower()
         error_message = (error.message or "").lower()
-        
+
         # Check error code patterns
         if any(code in error_code for code in ["parsing", "parse", "format", "corrupt"]):
             return DLQFailureCategory.PARSING_ERROR
-        
+
         if any(code in error_code for code in ["quality", "threshold", "score"]):
             return DLQFailureCategory.QUALITY_THRESHOLD
-        
+
         if any(code in error_code for code in ["timeout", "timed out"]):
             return DLQFailureCategory.TIMEOUT
-        
+
         if any(code in error_code for code in ["memory", "resource", "oom", "quota"]):
             return DLQFailureCategory.RESOURCE_EXHAUSTED
-        
+
         if any(code in error_code for code in ["network", "connection", "unreachable", "dns"]):
             return DLQFailureCategory.NETWORK_ERROR
-        
+
         if any(code in error_code for code in ["auth", "unauthorized", "forbidden", "credential"]):
             return DLQFailureCategory.AUTHENTICATION_ERROR
-        
+
         if any(code in error_code for code in ["validation", "invalid", "schema"]):
             return DLQFailureCategory.VALIDATION_ERROR
-        
+
         # Check error message patterns as fallback
         if "quality" in error_message or "score" in error_message:
             return DLQFailureCategory.QUALITY_THRESHOLD
-        
+
         if "timeout" in error_message:
             return DLQFailureCategory.TIMEOUT
-        
+
         return DLQFailureCategory.UNKNOWN_ERROR
-    
+
     async def enqueue(
         self,
         job: Job,
         error: Exception,
-        retry_history: List[RetryRecord],
-        metadata: Optional[Dict[str, Any]] = None,
+        retry_history: list[RetryRecord],
+        metadata: dict[str, Any] | None = None,
     ) -> DLQEntry:
         """Add a failed job to the DLQ.
         
@@ -227,9 +227,9 @@ class DeadLetterQueue:
             Created DLQ entry
         """
         from uuid import uuid4
-        
+
         entry_id = uuid4()
-        
+
         # Convert exception to JobError
         if isinstance(error, JobError):
             job_error = error
@@ -240,10 +240,10 @@ class DeadLetterQueue:
                 details={"traceback": getattr(error, "__traceback__", None)},
                 failed_stage=job.current_stage,
             )
-        
+
         # Categorize the failure
         failure_category = self._categorize_failure(job_error, retry_history)
-        
+
         # Create entry
         entry = DLQEntry(
             id=entry_id,
@@ -257,11 +257,11 @@ class DeadLetterQueue:
             status=DLQEntryStatus.PENDING,
             metadata=metadata or {},
         )
-        
+
         # Store entry
         self._entries[entry_id] = entry
         self._job_id_to_entry[job.id] = entry_id
-        
+
         self.logger.warning(
             "job_moved_to_dlq",
             entry_id=str(entry_id),
@@ -269,10 +269,10 @@ class DeadLetterQueue:
             failure_category=failure_category.value,
             retry_count=job.retry_count,
         )
-        
+
         return entry
-    
-    async def dequeue(self, entry_id: UUID) -> Optional[DLQEntry]:
+
+    async def dequeue(self, entry_id: UUID) -> DLQEntry | None:
         """Remove an entry from the DLQ.
         
         Args:
@@ -286,8 +286,8 @@ class DeadLetterQueue:
             del self._job_id_to_entry[entry.job_id]
             self.logger.info("entry_removed_from_dlq", entry_id=str(entry_id))
         return entry
-    
-    async def get_entry(self, entry_id: UUID) -> Optional[DLQEntry]:
+
+    async def get_entry(self, entry_id: UUID) -> DLQEntry | None:
         """Get a DLQ entry by ID.
         
         Args:
@@ -297,8 +297,8 @@ class DeadLetterQueue:
             DLQ entry or None
         """
         return self._entries.get(entry_id)
-    
-    async def get_entry_by_job(self, job_id: UUID) -> Optional[DLQEntry]:
+
+    async def get_entry_by_job(self, job_id: UUID) -> DLQEntry | None:
         """Get a DLQ entry by job ID.
         
         Args:
@@ -311,15 +311,15 @@ class DeadLetterQueue:
         if entry_id:
             return self._entries.get(entry_id)
         return None
-    
+
     async def list_entries(
         self,
-        filters: Optional[DLQFilters] = None,
+        filters: DLQFilters | None = None,
         limit: int = 100,
         offset: int = 0,
         sort_by: str = "created_at",
         sort_order: str = "desc",
-    ) -> List[DLQEntry]:
+    ) -> list[DLQEntry]:
         """List DLQ entries with filtering.
         
         Args:
@@ -333,32 +333,32 @@ class DeadLetterQueue:
             List of DLQ entries
         """
         filters = filters or DLQFilters()
-        
+
         entries = list(self._entries.values())
-        
+
         # Apply filters
         if filters.status:
             entries = [e for e in entries if e.status == filters.status]
-        
+
         if filters.failure_category:
             entries = [e for e in entries if e.failure_category == filters.failure_category]
-        
+
         if filters.source_type:
             entries = [e for e in entries if e.job.source_type.value == filters.source_type]
-        
+
         if filters.date_from:
             entries = [e for e in entries if e.created_at >= filters.date_from]
-        
+
         if filters.date_to:
             entries = [e for e in entries if e.created_at <= filters.date_to]
-        
+
         if filters.file_name_pattern:
             import fnmatch
             entries = [
                 e for e in entries
                 if fnmatch.fnmatch(e.job.file_name.lower(), filters.file_name_pattern.lower())
             ]
-        
+
         if filters.search:
             search_lower = filters.search.lower()
             entries = [
@@ -367,7 +367,7 @@ class DeadLetterQueue:
                     search_lower in e.error.message.lower() or
                     search_lower in str(e.error.code).lower())
             ]
-        
+
         # Sort entries
         reverse = sort_order.lower() == "desc"
         if sort_by == "created_at":
@@ -378,11 +378,11 @@ class DeadLetterQueue:
             entries.sort(key=lambda e: e.retry_count, reverse=reverse)
         elif sort_by == "file_name":
             entries.sort(key=lambda e: e.job.file_name, reverse=reverse)
-        
+
         # Apply pagination
         return entries[offset:offset + limit]
-    
-    async def count_entries(self, filters: Optional[DLQFilters] = None) -> int:
+
+    async def count_entries(self, filters: DLQFilters | None = None) -> int:
         """Count DLQ entries matching filters.
         
         Args:
@@ -393,13 +393,13 @@ class DeadLetterQueue:
         """
         entries = await self.list_entries(filters, limit=10000)
         return len(entries)
-    
+
     async def retry_from_dlq(
         self,
         entry_id: UUID,
-        new_config: Optional[PipelineConfig] = None,
-        reviewed_by: Optional[str] = None,
-        resolution_notes: Optional[str] = None,
+        new_config: PipelineConfig | None = None,
+        reviewed_by: str | None = None,
+        resolution_notes: str | None = None,
     ) -> DLQRetryResult:
         """Retry a job from the DLQ.
         
@@ -419,16 +419,16 @@ class DeadLetterQueue:
                 entry_id=entry_id,
                 error=f"DLQ entry not found: {entry_id}",
             )
-        
+
         # Update entry status
         entry.status = DLQEntryStatus.RETRY_SCHEDULED
         entry.updated_at = datetime.utcnow()
         entry.reviewed_by = reviewed_by
         entry.resolution_notes = resolution_notes
-        
+
         from uuid import uuid4
         new_job_id = uuid4()
-        
+
         self.logger.info(
             "dlq_retry_initiated",
             entry_id=str(entry_id),
@@ -436,7 +436,7 @@ class DeadLetterQueue:
             new_job_id=str(new_job_id),
             reviewed_by=reviewed_by,
         )
-        
+
         # Create result
         result = DLQRetryResult(
             success=True,
@@ -444,18 +444,18 @@ class DeadLetterQueue:
             new_job_id=new_job_id,
             message=f"Job retry scheduled with new ID: {new_job_id}",
         )
-        
+
         # Note: The actual job creation and queueing would be handled
         # by the orchestration engine using the new_config
-        
+
         return result
-    
+
     async def mark_reviewed(
         self,
         entry_id: UUID,
         reviewed_by: str,
-        notes: Optional[str] = None,
-    ) -> Optional[DLQEntry]:
+        notes: str | None = None,
+    ) -> DLQEntry | None:
         """Mark a DLQ entry as reviewed.
         
         Args:
@@ -469,27 +469,27 @@ class DeadLetterQueue:
         entry = self._entries.get(entry_id)
         if not entry:
             return None
-        
+
         entry.status = DLQEntryStatus.UNDER_REVIEW
         entry.reviewed_at = datetime.utcnow()
         entry.reviewed_by = reviewed_by
         entry.updated_at = datetime.utcnow()
         if notes:
             entry.resolution_notes = notes
-        
+
         self.logger.info(
             "dlq_entry_reviewed",
             entry_id=str(entry_id),
             reviewed_by=reviewed_by,
         )
-        
+
         return entry
-    
+
     async def mark_resolved(
         self,
         entry_id: UUID,
-        resolution_notes: Optional[str] = None,
-    ) -> Optional[DLQEntry]:
+        resolution_notes: str | None = None,
+    ) -> DLQEntry | None:
         """Mark a DLQ entry as resolved.
         
         Args:
@@ -502,22 +502,22 @@ class DeadLetterQueue:
         entry = self._entries.get(entry_id)
         if not entry:
             return None
-        
+
         entry.status = DLQEntryStatus.RESOLVED
         entry.updated_at = datetime.utcnow()
         if resolution_notes:
             entry.resolution_notes = resolution_notes
-        
+
         self.logger.info("dlq_entry_resolved", entry_id=str(entry_id))
-        
+
         return entry
-    
+
     async def discard_entry(
         self,
         entry_id: UUID,
         reason: str,
-        discarded_by: Optional[str] = None,
-    ) -> Optional[DLQEntry]:
+        discarded_by: str | None = None,
+    ) -> DLQEntry | None:
         """Discard a DLQ entry (mark as permanently failed).
         
         Args:
@@ -531,21 +531,21 @@ class DeadLetterQueue:
         entry = self._entries.get(entry_id)
         if not entry:
             return None
-        
+
         entry.status = DLQEntryStatus.DISCARDED
         entry.updated_at = datetime.utcnow()
         entry.reviewed_by = discarded_by
         entry.resolution_notes = f"Discarded: {reason}"
-        
+
         self.logger.info(
             "dlq_entry_discarded",
             entry_id=str(entry_id),
             reason=reason,
             discarded_by=discarded_by,
         )
-        
+
         return entry
-    
+
     async def archive_old_entries(self) -> int:
         """Archive entries older than max_age_days.
         
@@ -554,40 +554,40 @@ class DeadLetterQueue:
         """
         cutoff_date = datetime.utcnow() - timedelta(days=self.max_age_days)
         archived_count = 0
-        
+
         for entry in self._entries.values():
             if entry.created_at < cutoff_date and entry.status != DLQEntryStatus.ARCHIVED:
                 entry.status = DLQEntryStatus.ARCHIVED
                 entry.archived_at = datetime.utcnow()
                 entry.updated_at = datetime.utcnow()
                 archived_count += 1
-        
+
         if archived_count > 0:
             self.logger.info("dlq_entries_archived", count=archived_count, cutoff=cutoff_date)
-        
+
         return archived_count
-    
-    async def get_statistics(self) -> Dict[str, Any]:
+
+    async def get_statistics(self) -> dict[str, Any]:
         """Get DLQ statistics.
         
         Returns:
             Dictionary with statistics
         """
         entries = list(self._entries.values())
-        
+
         total = len(entries)
         by_status = {}
         by_category = {}
-        
+
         for entry in entries:
             # Count by status
             status = entry.status.value
             by_status[status] = by_status.get(status, 0) + 1
-            
+
             # Count by category
             category = entry.failure_category.value
             by_category[category] = by_category.get(category, 0) + 1
-        
+
         # Calculate age distribution
         now = datetime.utcnow()
         age_distribution = {
@@ -596,7 +596,7 @@ class DeadLetterQueue:
             "7_to_30_days": 0,
             "more_than_30_days": 0,
         }
-        
+
         for entry in entries:
             age_days = (now - entry.created_at).days
             if age_days < 1:
@@ -607,7 +607,7 @@ class DeadLetterQueue:
                 age_distribution["7_to_30_days"] += 1
             else:
                 age_distribution["more_than_30_days"] += 1
-        
+
         return {
             "total_entries": total,
             "by_status": by_status,
@@ -618,7 +618,7 @@ class DeadLetterQueue:
 
 
 # Global DLQ instance
-_dlq: Optional[DeadLetterQueue] = None
+_dlq: DeadLetterQueue | None = None
 
 
 def get_dlq(max_age_days: int = 30) -> DeadLetterQueue:

@@ -6,12 +6,11 @@ This module provides JWT token creation, validation, and refresh functionality.
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 from jose import JWTError, jwt
 from jose.exceptions import ExpiredSignatureError
-
 
 # Configuration constants - in production, these would come from environment/settings
 DEFAULT_ALGORITHM = "HS256"
@@ -36,16 +35,16 @@ class TokenPayload:
         extra: Additional claims
     """
     sub: UUID
-    email: Optional[str] = None
-    username: Optional[str] = None
-    roles: List[str] = None
-    permissions: List[str] = None
+    email: str | None = None
+    username: str | None = None
+    roles: list[str] = None
+    permissions: list[str] = None
     type: str = "access"
-    iat: Optional[datetime] = None
-    exp: Optional[datetime] = None
-    jti: Optional[str] = None
-    extra: Dict[str, Any] = None
-    
+    iat: datetime | None = None
+    exp: datetime | None = None
+    jti: str | None = None
+    extra: dict[str, Any] = None
+
     def __post_init__(self):
         if self.roles is None:
             self.roles = []
@@ -53,8 +52,8 @@ class TokenPayload:
             self.permissions = []
         if self.extra is None:
             self.extra = {}
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert payload to dictionary for JWT encoding."""
         return {
             "sub": str(self.sub),
@@ -68,24 +67,24 @@ class TokenPayload:
             "jti": self.jti,
             **self.extra,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TokenPayload":
+    def from_dict(cls, data: dict[str, Any]) -> "TokenPayload":
         """Create payload from decoded JWT dictionary."""
         # Handle timestamp conversion
         iat = data.get("iat")
         exp = data.get("exp")
-        
+
         if isinstance(iat, (int, float)):
             iat = datetime.utcfromtimestamp(iat)
         if isinstance(exp, (int, float)):
             exp = datetime.utcfromtimestamp(exp)
-        
+
         # Extract extra fields
-        known_fields = {"sub", "email", "username", "roles", "permissions", 
+        known_fields = {"sub", "email", "username", "roles", "permissions",
                        "type", "iat", "exp", "jti"}
         extra = {k: v for k, v in data.items() if k not in known_fields}
-        
+
         return cls(
             sub=UUID(data["sub"]) if "sub" in data else None,
             email=data.get("email"),
@@ -98,17 +97,17 @@ class TokenPayload:
             jti=data.get("jti"),
             extra=extra,
         )
-    
+
     def is_expired(self) -> bool:
         """Check if token is expired."""
         if not self.exp:
             return False
         return datetime.utcnow() > self.exp
-    
+
     def is_refresh_token(self) -> bool:
         """Check if this is a refresh token."""
         return self.type == "refresh"
-    
+
     def is_access_token(self) -> bool:
         """Check if this is an access token."""
         return self.type == "access"
@@ -120,7 +119,7 @@ class JWTHandler:
     This class provides methods for creating, validating, and refreshing
     JWT tokens for authentication.
     """
-    
+
     def __init__(
         self,
         secret_key: str,
@@ -140,17 +139,17 @@ class JWTHandler:
         self.algorithm = algorithm
         self.access_token_expire_minutes = access_token_expire_minutes
         self.refresh_token_expire_days = refresh_token_expire_days
-    
+
     def create_token(
         self,
         user_id: UUID,
-        email: Optional[str] = None,
-        username: Optional[str] = None,
-        roles: Optional[List[str]] = None,
-        permissions: Optional[List[str]] = None,
+        email: str | None = None,
+        username: str | None = None,
+        roles: list[str] | None = None,
+        permissions: list[str] | None = None,
         token_type: str = "access",
-        expires: Optional[timedelta] = None,
-        extra_claims: Optional[Dict[str, Any]] = None,
+        expires: timedelta | None = None,
+        extra_claims: dict[str, Any] | None = None,
     ) -> str:
         """Create a JWT token.
         
@@ -168,16 +167,16 @@ class JWTHandler:
             Encoded JWT token string
         """
         now = datetime.utcnow()
-        
+
         # Determine expiration
         if expires is None:
             if token_type == "refresh":
                 expires = timedelta(days=self.refresh_token_expire_days)
             else:
                 expires = timedelta(minutes=self.access_token_expire_minutes)
-        
+
         exp = now + expires
-        
+
         # Create payload
         payload = TokenPayload(
             sub=user_id,
@@ -191,14 +190,14 @@ class JWTHandler:
             jti=secrets.token_hex(16),
             extra=extra_claims or {},
         )
-        
+
         # Encode token
         return jwt.encode(
             payload.to_dict(),
             self.secret_key,
             algorithm=self.algorithm,
         )
-    
+
     def verify_token(self, token: str) -> TokenPayload:
         """Verify and decode a JWT token.
         
@@ -222,15 +221,15 @@ class JWTHandler:
             raise JWTError("Token has expired") from e
         except JWTError:
             raise
-    
+
     def create_access_token(
         self,
         user_id: UUID,
-        email: Optional[str] = None,
-        username: Optional[str] = None,
-        roles: Optional[List[str]] = None,
-        permissions: Optional[List[str]] = None,
-        extra_claims: Optional[Dict[str, Any]] = None,
+        email: str | None = None,
+        username: str | None = None,
+        roles: list[str] | None = None,
+        permissions: list[str] | None = None,
+        extra_claims: dict[str, Any] | None = None,
     ) -> str:
         """Create an access token.
         
@@ -254,11 +253,11 @@ class JWTHandler:
             token_type="access",
             extra_claims=extra_claims,
         )
-    
+
     def create_refresh_token(
         self,
         user_id: UUID,
-        extra_claims: Optional[Dict[str, Any]] = None,
+        extra_claims: dict[str, Any] | None = None,
     ) -> str:
         """Create a refresh token.
         
@@ -274,14 +273,14 @@ class JWTHandler:
             token_type="refresh",
             extra_claims=extra_claims,
         )
-    
+
     def refresh_access_token(
         self,
         refresh_token: str,
-        email: Optional[str] = None,
-        username: Optional[str] = None,
-        roles: Optional[List[str]] = None,
-        permissions: Optional[List[str]] = None,
+        email: str | None = None,
+        username: str | None = None,
+        roles: list[str] | None = None,
+        permissions: list[str] | None = None,
     ) -> str:
         """Create a new access token from a refresh token.
         
@@ -299,10 +298,10 @@ class JWTHandler:
             JWTError: If refresh token is invalid or expired
         """
         payload = self.verify_token(refresh_token)
-        
+
         if not payload.is_refresh_token():
             raise JWTError("Invalid token type: expected refresh token")
-        
+
         return self.create_access_token(
             user_id=payload.sub,
             email=email or payload.email,
@@ -310,7 +309,7 @@ class JWTHandler:
             roles=roles or payload.roles,
             permissions=permissions or payload.permissions,
         )
-    
+
     def generate_secret_key(self) -> str:
         """Generate a new random secret key.
         

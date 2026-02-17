@@ -4,14 +4,13 @@ This module provides OAuth2 and OpenID Connect authentication
 for user authentication via external identity providers.
 """
 
-from datetime import datetime
-from typing import Any, Dict, List, Optional
-from uuid import UUID, uuid4
+from typing import Any
+from uuid import UUID
 
 import httpx
 
-from src.auth.base import AuthProvider, AuthResult, AuthenticationBackend, Credentials, User
-from src.auth.jwt import JWTHandler, TokenPayload
+from src.auth.base import AuthenticationBackend, AuthProvider, AuthResult, Credentials, User
+from src.auth.jwt import JWTHandler
 
 
 class OAuth2Config:
@@ -27,7 +26,7 @@ class OAuth2Config:
         scopes: Requested OAuth2 scopes
         issuer: Expected token issuer (OIDC)
     """
-    
+
     def __init__(
         self,
         client_id: str,
@@ -35,9 +34,9 @@ class OAuth2Config:
         authorization_endpoint: str,
         token_endpoint: str,
         userinfo_endpoint: str,
-        jwks_uri: Optional[str] = None,
-        scopes: Optional[List[str]] = None,
-        issuer: Optional[str] = None,
+        jwks_uri: str | None = None,
+        scopes: list[str] | None = None,
+        issuer: str | None = None,
     ):
         self.client_id = client_id
         self.client_secret = client_secret
@@ -70,11 +69,11 @@ class OAuth2Auth(AuthenticationBackend):
         )
         result = await auth.authenticate(credentials)
     """
-    
+
     def __init__(
         self,
         config: OAuth2Config,
-        jwt_handler: Optional[JWTHandler] = None,
+        jwt_handler: JWTHandler | None = None,
     ):
         """Initialize OAuth2 authentication.
         
@@ -84,20 +83,20 @@ class OAuth2Auth(AuthenticationBackend):
         """
         self.config = config
         self.jwt_handler = jwt_handler
-        self._http_client: Optional[httpx.AsyncClient] = None
-    
+        self._http_client: httpx.AsyncClient | None = None
+
     @property
     def provider_type(self) -> AuthProvider:
         """Return the authentication provider type."""
         return AuthProvider.OAUTH2
-    
+
     @property
     def http_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._http_client is None:
             self._http_client = httpx.AsyncClient(timeout=30.0)
         return self._http_client
-    
+
     async def authenticate(self, credentials: Credentials) -> AuthResult:
         """Authenticate using OAuth2 token.
         
@@ -112,9 +111,9 @@ class OAuth2Auth(AuthenticationBackend):
                 "OAuth2 token is required",
                 "MISSING_TOKEN"
             )
-        
+
         token = credentials.token
-        
+
         # Validate token by fetching user info
         try:
             userinfo = await self._fetch_userinfo(token)
@@ -133,10 +132,10 @@ class OAuth2Auth(AuthenticationBackend):
                 f"Failed to validate token: {e}",
                 "VALIDATION_ERROR"
             )
-        
+
         # Extract user information from userinfo
         user = self._create_user_from_userinfo(userinfo)
-        
+
         # Generate session token if JWT handler is configured
         session_token = None
         if self.jwt_handler:
@@ -151,7 +150,7 @@ class OAuth2Auth(AuthenticationBackend):
                     "external_id": userinfo.get("sub"),
                 },
             )
-        
+
         return AuthResult.success_result(
             user=user,
             metadata={
@@ -160,8 +159,8 @@ class OAuth2Auth(AuthenticationBackend):
                 "session_token": session_token,
             }
         )
-    
-    async def _fetch_userinfo(self, token: str) -> Dict[str, Any]:
+
+    async def _fetch_userinfo(self, token: str) -> dict[str, Any]:
         """Fetch user info from OAuth2 provider.
         
         Args:
@@ -177,8 +176,8 @@ class OAuth2Auth(AuthenticationBackend):
         )
         response.raise_for_status()
         return response.json()
-    
-    def _create_user_from_userinfo(self, userinfo: Dict[str, Any]) -> User:
+
+    def _create_user_from_userinfo(self, userinfo: dict[str, Any]) -> User:
         """Create User object from OAuth2 userinfo.
         
         Args:
@@ -194,20 +193,20 @@ class OAuth2Auth(AuthenticationBackend):
         name = userinfo.get("name", "")
         given_name = userinfo.get("given_name", "")
         family_name = userinfo.get("family_name", "")
-        
+
         # Map roles from token if available
         roles = userinfo.get("roles", [])
         if not roles:
             # Default role based on email domain or other logic
             roles = ["viewer"]
-        
+
         # Determine primary role
         primary_role = roles[0] if roles else "viewer"
-        
+
         # Generate deterministic UUID from subject
         # This ensures the same external user always gets the same internal ID
         user_id = UUID(bytes=bytes.fromhex(sub.replace("-", "")[:32].ljust(32, "0")[:32]))
-        
+
         return User(
             id=user_id,
             email=email,
@@ -223,13 +222,13 @@ class OAuth2Auth(AuthenticationBackend):
                 "external_sub": sub,
             },
         )
-    
+
     async def exchange_code(
         self,
         code: str,
         redirect_uri: str,
-        code_verifier: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        code_verifier: str | None = None,
+    ) -> dict[str, Any]:
         """Exchange authorization code for tokens.
         
         Args:
@@ -247,23 +246,23 @@ class OAuth2Auth(AuthenticationBackend):
             "code": code,
             "redirect_uri": redirect_uri,
         }
-        
+
         if code_verifier:
             data["code_verifier"] = code_verifier
-        
+
         response = await self.http_client.post(
             self.config.token_endpoint,
             data=data,
         )
         response.raise_for_status()
         return response.json()
-    
+
     def get_authorization_url(
         self,
         redirect_uri: str,
         state: str,
-        code_challenge: Optional[str] = None,
-        code_challenge_method: Optional[str] = None,
+        code_challenge: str | None = None,
+        code_challenge_method: str | None = None,
     ) -> str:
         """Build authorization URL for OAuth2 flow.
         
@@ -283,14 +282,14 @@ class OAuth2Auth(AuthenticationBackend):
             "scope": " ".join(self.config.scopes),
             "state": state,
         }
-        
+
         if code_challenge:
             params["code_challenge"] = code_challenge
             params["code_challenge_method"] = code_challenge_method or "S256"
-        
+
         query = "&".join(f"{k}={v}" for k, v in params.items())
         return f"{self.config.authorization_endpoint}?{query}"
-    
+
     async def validate_token(self, token: str) -> AuthResult:
         """Validate an OAuth2 token.
         
@@ -305,7 +304,7 @@ class OAuth2Auth(AuthenticationBackend):
             token=token,
         )
         return await self.authenticate(credentials)
-    
+
     async def close(self) -> None:
         """Close HTTP client."""
         if self._http_client:

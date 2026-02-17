@@ -4,43 +4,19 @@ This module provides dependency injection functions for FastAPI routes,
 including database sessions, authentication, and service instances.
 """
 
-from typing import AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Header, Request, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+# Re-export auth dependencies from the auth module
+from src.audit.logger import get_audit_logger
 from src.config import Settings, get_settings
+from src.core.engine import OrchestrationEngine, get_engine
 from src.db.models import AsyncSession, get_session
 from src.llm.provider import LLMProvider
 from src.plugins.registry import PluginRegistry, get_registry
-from src.core.engine import OrchestrationEngine, get_engine
-
-# Re-export auth dependencies from the auth module
-from src.auth.dependencies import (
-    get_current_user,
-    get_optional_user,
-    require_admin,
-    require_operator,
-    require_developer,
-    require_role,
-    require_permissions,
-    PermissionChecker,
-    # Permission-based dependencies
-    require_read_jobs,
-    require_create_jobs,
-    require_cancel_jobs,
-    require_retry_jobs,
-    require_read_sources,
-    require_manage_sources,
-    require_read_audit,
-    require_export_audit,
-    require_read_lineage,
-    require_manage_users,
-    require_manage_api_keys,
-)
-from src.auth.base import User
-from src.audit.logger import get_audit_logger
 
 # Security scheme
 security = HTTPBearer(auto_error=False)
@@ -93,7 +69,7 @@ def get_llm_provider(config: Settings = Depends(get_config)) -> LLMProvider:
         LLM provider instance
     """
     from src.llm.config import load_llm_config
-    
+
     llm_config = load_llm_config(str(config.llm_yaml.config_path))
     return LLMProvider(llm_config)
 
@@ -121,7 +97,7 @@ def parse_uuid(uuid_str: str) -> UUID:
 
 class CommonQueryParams:
     """Common query parameters for list endpoints."""
-    
+
     def __init__(
         self,
         page: int = 1,
@@ -135,7 +111,7 @@ class CommonQueryParams:
         """
         self.page = page
         self.limit = limit
-    
+
     @property
     def offset(self) -> int:
         """Calculate database offset."""
@@ -172,8 +148,8 @@ async def get_audit_logger_dependency():
 # ============================================================================
 
 async def get_current_user_legacy(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
     settings: Settings = Depends(get_config),
 ) -> dict:
     """Legacy user dependency for backward compatibility.
@@ -191,7 +167,7 @@ async def get_current_user_legacy(
     """
     # Try new auth system first
     from src.auth.dependencies import get_auth_manager
-    
+
     try:
         auth_manager = get_auth_manager()
         result = await auth_manager.authenticate_request(
@@ -199,7 +175,7 @@ async def get_current_user_legacy(
             credentials=credentials,
             api_key=x_api_key,
         )
-        
+
         if result.success and result.user:
             return {
                 "id": str(result.user.id),
@@ -211,7 +187,7 @@ async def get_current_user_legacy(
             }
     except Exception:
         pass
-    
+
     # Fallback to legacy mock auth for development
     if x_api_key:
         if x_api_key == "test-api-key":
@@ -220,14 +196,14 @@ async def get_current_user_legacy(
                 "type": "service_account",
                 "roles": ["operator"],
             }
-    
+
     if credentials:
         return {
             "id": "jwt-user",
             "type": "user",
             "roles": ["developer"],
         }
-    
+
     # For development, allow unauthenticated requests
     if settings.env == "development":
         return {
@@ -235,7 +211,7 @@ async def get_current_user_legacy(
             "type": "anonymous",
             "roles": ["viewer"],
         }
-    
+
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Authentication required",

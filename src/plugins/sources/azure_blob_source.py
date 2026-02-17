@@ -13,8 +13,8 @@ import logging
 import mimetypes
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from uuid import UUID, uuid4
+from typing import Any
+from uuid import uuid4
 
 from src.plugins.base import (
     Connection,
@@ -47,11 +47,11 @@ class AzureBlobConfig:
     """
     account_name: str
     container: str
-    connection_string: Optional[str] = None
-    account_key: Optional[str] = None
-    sas_token: Optional[str] = None
-    tenant_id: Optional[str] = None
-    client_id: Optional[str] = None
+    connection_string: str | None = None
+    account_key: str | None = None
+    sas_token: str | None = None
+    tenant_id: str | None = None
+    client_id: str | None = None
     prefix: str = ""
     endpoint_suffix: str = "core.windows.net"
 
@@ -66,12 +66,12 @@ class AzureBlobSourcePlugin(SourcePlugin):
     - Managed Identity authentication
     - Event Grid event handling
     """
-    
+
     def __init__(self) -> None:
         """Initialize the Azure Blob source plugin."""
         self.logger = logger
         self._blob_service = None
-    
+
     @property
     def metadata(self) -> PluginMetadata:
         """Return plugin metadata."""
@@ -100,7 +100,7 @@ class AzureBlobSourcePlugin(SourcePlugin):
                 },
             },
         )
-    
+
     def _get_blob_service(self, config: AzureBlobConfig):
         """Get or create BlobServiceClient.
         
@@ -112,9 +112,9 @@ class AzureBlobSourcePlugin(SourcePlugin):
         """
         if self._blob_service is None:
             try:
-                from azure.storage.blob import BlobServiceClient
                 from azure.identity import DefaultAzureCredential
-                
+                from azure.storage.blob import BlobServiceClient
+
                 # Build connection
                 if config.connection_string:
                     # Use connection string
@@ -150,15 +150,15 @@ class AzureBlobSourcePlugin(SourcePlugin):
                         account_url=account_url,
                         credential=credential,
                     )
-                
+
             except ImportError:
                 raise RuntimeError(
                     "azure-storage-blob and azure-identity are required. "
                     "Install with: pip install azure-storage-blob azure-identity"
                 )
-        
+
         return self._blob_service
-    
+
     def _get_container_client(self, config: AzureBlobConfig):
         """Get container client.
         
@@ -170,8 +170,8 @@ class AzureBlobSourcePlugin(SourcePlugin):
         """
         blob_service = self._get_blob_service(config)
         return blob_service.get_container_client(config.container)
-    
-    async def connect(self, config: Dict[str, Any]) -> Connection:
+
+    async def connect(self, config: dict[str, Any]) -> Connection:
         """Establish connection to Azure Blob Storage.
         
         Args:
@@ -181,7 +181,7 @@ class AzureBlobSourcePlugin(SourcePlugin):
             Connection handle
         """
         blob_config = AzureBlobConfig(**config)
-        
+
         # Test connection by getting container properties
         try:
             container_client = self._get_container_client(blob_config)
@@ -190,7 +190,7 @@ class AzureBlobSourcePlugin(SourcePlugin):
             raise ConnectionError(
                 f"Failed to connect to Azure Blob container {blob_config.container}: {e}"
             )
-        
+
         return Connection(
             id=uuid4(),
             plugin_id=self.metadata.id,
@@ -202,14 +202,14 @@ class AzureBlobSourcePlugin(SourcePlugin):
                 "endpoint_suffix": blob_config.endpoint_suffix,
             },
         )
-    
+
     async def list_files(
         self,
         conn: Connection,
         path: str,
         recursive: bool = False,
-        pattern: Optional[str] = None,
-    ) -> List[SourceFile]:
+        pattern: str | None = None,
+    ) -> list[SourceFile]:
         """List files in Azure Blob container.
         
         Args:
@@ -223,37 +223,36 @@ class AzureBlobSourcePlugin(SourcePlugin):
         """
         config = AzureBlobConfig(**conn.config)
         container_client = self._get_container_client(config)
-        
+
         # Build prefix
-        prefix = path if path else config.prefix
+        prefix = path or config.prefix
         if config.prefix and not prefix.startswith(config.prefix):
             prefix = f"{config.prefix}/{prefix}".strip("/")
-        
-        files: List[SourceFile] = []
-        
+
+        files: list[SourceFile] = []
+
         try:
             if recursive:
                 # List all blobs with prefix
                 blob_list = container_client.list_blobs(name_starts_with=prefix)
             else:
                 # List only direct children
-                from azure.storage.blob import BlobPrefix
                 blob_list = container_client.walk_blobs(name_starts_with=prefix)
-            
+
             for blob in blob_list:
                 # Skip directories
                 if blob.name.endswith("/"):
                     continue
-                
+
                 # Apply pattern filter
                 if pattern:
                     import fnmatch
                     if not fnmatch.fnmatch(blob.name, pattern):
                         continue
-                
+
                 # Determine MIME type
                 mime_type, _ = mimetypes.guess_type(blob.name)
-                
+
                 files.append(SourceFile(
                     path=blob.name,
                     name=blob.name.split("/")[-1],
@@ -265,18 +264,18 @@ class AzureBlobSourcePlugin(SourcePlugin):
                         "content_type": blob.content_settings.content_type if blob.content_settings else None,
                     },
                 ))
-        
+
         except Exception as e:
             self.logger.error(f"Failed to list Azure Blob files: {e}")
             raise
-        
+
         return files
-    
+
     async def get_file(
         self,
         conn: Connection,
         path: str,
-        download_to: Optional[str] = None,
+        download_to: str | None = None,
     ) -> RetrievedFile:
         """Retrieve a file from Azure Blob Storage.
         
@@ -291,11 +290,11 @@ class AzureBlobSourcePlugin(SourcePlugin):
         config = AzureBlobConfig(**conn.config)
         container_client = self._get_container_client(config)
         blob_client = container_client.get_blob_client(path)
-        
+
         try:
             # Get blob properties
             properties = blob_client.get_blob_properties()
-            
+
             # Build source file info
             mime_type, _ = mimetypes.guess_type(path)
             source_file = SourceFile(
@@ -310,21 +309,21 @@ class AzureBlobSourcePlugin(SourcePlugin):
                     "tags": properties.tags,
                 },
             )
-            
+
             # Download content
             if download_to:
                 # Download to file
                 with open(download_to, "wb") as file:
                     download_stream = blob_client.download_blob()
                     file.write(download_stream.readall())
-                
+
                 # Calculate hash
                 import hashlib
                 sha256 = hashlib.sha256()
                 with open(download_to, "rb") as f:
                     for chunk in iter(lambda: f.read(8192), b""):
                         sha256.update(chunk)
-                
+
                 return RetrievedFile(
                     source_file=source_file,
                     content=b"",  # Content is on disk
@@ -335,23 +334,23 @@ class AzureBlobSourcePlugin(SourcePlugin):
                 # Download to memory
                 download_stream = blob_client.download_blob()
                 content = download_stream.readall()
-                
+
                 # Calculate hash
                 import hashlib
                 content_hash = hashlib.sha256(content).hexdigest()
-                
+
                 return RetrievedFile(
                     source_file=source_file,
                     content=content,
                     content_hash=content_hash,
                 )
-        
+
         except Exception as e:
             if "BlobNotFound" in str(e):
                 raise FileNotFoundError(f"Azure Blob not found: {path}")
             self.logger.error(f"Failed to get Azure Blob {path}: {e}")
             raise
-    
+
     async def stream_file(
         self,
         conn: Connection,
@@ -371,18 +370,18 @@ class AzureBlobSourcePlugin(SourcePlugin):
         config = AzureBlobConfig(**conn.config)
         container_client = self._get_container_client(config)
         blob_client = container_client.get_blob_client(path)
-        
+
         try:
             download_stream = blob_client.download_blob()
-            
+
             for chunk in download_stream.chunks():
                 yield chunk
-                
+
         except Exception as e:
             self.logger.error(f"Failed to stream Azure Blob {path}: {e}")
             raise
-    
-    async def validate_config(self, config: Dict[str, Any]) -> ValidationResult:
+
+    async def validate_config(self, config: dict[str, Any]) -> ValidationResult:
         """Validate Azure Blob configuration.
         
         Args:
@@ -393,25 +392,25 @@ class AzureBlobSourcePlugin(SourcePlugin):
         """
         errors = []
         warnings = []
-        
+
         # Check required fields
         if not config.get("account_name"):
             errors.append("account_name is required")
-        
+
         if not config.get("container"):
             errors.append("container is required")
-        
+
         # Validate credentials
         has_connection_string = bool(config.get("connection_string"))
         has_account_key = bool(config.get("account_key"))
         has_sas = bool(config.get("sas_token"))
-        
+
         if not (has_connection_string or has_account_key or has_sas):
             warnings.append(
                 "No explicit credentials provided. Will attempt to use "
                 "DefaultAzureCredential (managed identity or Azure CLI)."
             )
-        
+
         # Check for container name validity
         container = config.get("container", "")
         if container:
@@ -422,14 +421,14 @@ class AzureBlobSourcePlugin(SourcePlugin):
                 )
             if len(container) < 3 or len(container) > 63:
                 errors.append("Container name must be 3-63 characters")
-        
+
         return ValidationResult(
             valid=len(errors) == 0,
             errors=errors,
             warnings=warnings,
         )
-    
-    async def health_check(self, config: Optional[Dict[str, Any]] = None) -> HealthStatus:
+
+    async def health_check(self, config: dict[str, Any] | None = None) -> HealthStatus:
         """Check Azure Blob Storage health.
         
         Args:
@@ -440,28 +439,28 @@ class AzureBlobSourcePlugin(SourcePlugin):
         """
         if config is None:
             return HealthStatus.UNKNOWN
-        
+
         try:
             blob_config = AzureBlobConfig(**config)
             container_client = self._get_container_client(blob_config)
-            
+
             # Try to get container properties
             container_client.get_container_properties()
-            
+
             # Try to list one blob to verify read permissions
             blobs = list(container_client.list_blobs(max_results=1))
-            
+
             return HealthStatus.HEALTHY
-            
+
         except Exception as e:
             self.logger.warning(f"Azure Blob health check failed: {e}")
             return HealthStatus.UNHEALTHY
-    
+
     async def handle_event_grid_notification(
         self,
-        event: Dict[str, Any],
-        config: Dict[str, Any],
-    ) -> List[SourceFile]:
+        event: dict[str, Any],
+        config: dict[str, Any],
+    ) -> list[SourceFile]:
         """Handle Event Grid notification.
         
         Processes Event Grid events for blob storage changes.
@@ -473,16 +472,16 @@ class AzureBlobSourcePlugin(SourcePlugin):
         Returns:
             List of affected SourceFiles
         """
-        files: List[SourceFile] = []
-        
+        files: list[SourceFile] = []
+
         try:
             event_type = event.get("eventType", "")
-            
+
             # Only process blob created events
             if "BlobCreated" in event_type:
                 data = event.get("data", {})
                 url = data.get("url", "")
-                
+
                 # Parse URL to get blob path
                 # URL format: https://account.blob.core.windows.net/container/path
                 if "/" in url:
@@ -490,13 +489,13 @@ class AzureBlobSourcePlugin(SourcePlugin):
                     if len(parts) >= 5:
                         # Reconstruct blob path from URL
                         blob_path = "/".join(parts[5:])  # Skip protocol, account, 'blob', endpoint, container
-                        
+
                         # URL decode
                         from urllib.parse import unquote
                         blob_path = unquote(blob_path)
-                        
+
                         mime_type, _ = mimetypes.guess_type(blob_path)
-                        
+
                         files.append(SourceFile(
                             path=blob_path,
                             name=blob_path.split("/")[-1],
@@ -507,8 +506,8 @@ class AzureBlobSourcePlugin(SourcePlugin):
                                 "url": url,
                             },
                         ))
-        
+
         except Exception as e:
             self.logger.error(f"Failed to process Event Grid event: {e}")
-        
+
         return files

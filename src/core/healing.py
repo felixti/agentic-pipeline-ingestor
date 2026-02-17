@@ -7,13 +7,13 @@ This module provides:
 - Health check recovery
 """
 
-import asyncio
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Optional
 from uuid import UUID
 
 from src.plugins.base import HealthStatus
@@ -73,12 +73,12 @@ class Anomaly:
     description: str
     detected_at: datetime
     source_component: str
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    context: Dict[str, Any] = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
     auto_remediated: bool = False
     remediation_result: Optional["RemediationResult"] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert anomaly to dictionary."""
         return {
             "id": str(self.id),
@@ -115,11 +115,11 @@ class RemediationResult:
     success: bool
     message: str = ""
     executed_at: datetime = field(default_factory=datetime.utcnow)
-    error: Optional[str] = None
-    metrics_before: Dict[str, Any] = field(default_factory=dict)
-    metrics_after: Dict[str, Any] = field(default_factory=dict)
-    
-    def to_dict(self) -> Dict[str, Any]:
+    error: str | None = None
+    metrics_before: dict[str, Any] = field(default_factory=dict)
+    metrics_after: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert result to dictionary."""
         return {
             "anomaly_id": str(self.anomaly_id),
@@ -158,13 +158,13 @@ class HealthMetrics:
     memory_usage_mb: float = 0.0
     cpu_usage_percent: float = 0.0
     active_jobs: int = 0
-    parser_health: Dict[str, HealthStatus] = field(default_factory=dict)
-    destination_health: Dict[str, HealthStatus] = field(default_factory=dict)
+    parser_health: dict[str, HealthStatus] = field(default_factory=dict)
+    destination_health: dict[str, HealthStatus] = field(default_factory=dict)
 
 
 class RemediationAction(ABC):
     """Abstract base class for remediation actions."""
-    
+
     def __init__(self, name: str) -> None:
         """Initialize the remediation action.
         
@@ -173,7 +173,7 @@ class RemediationAction(ABC):
         """
         self.name = name
         self.logger = logging.getLogger(f"{self.__class__.__name__}.{name}")
-    
+
     @abstractmethod
     async def can_remediate(self, anomaly: Anomaly) -> bool:
         """Check if this action can remediate the anomaly.
@@ -185,7 +185,7 @@ class RemediationAction(ABC):
             True if this action can remediate
         """
         ...
-    
+
     @abstractmethod
     async def execute(self, anomaly: Anomaly) -> RemediationResult:
         """Execute the remediation action.
@@ -201,25 +201,25 @@ class RemediationAction(ABC):
 
 class ScaleWorkersAction(RemediationAction):
     """Remediation action to scale worker capacity."""
-    
+
     def __init__(self) -> None:
         """Initialize the scale workers action."""
         super().__init__("scale_workers")
-    
+
     async def can_remediate(self, anomaly: Anomaly) -> bool:
         """Check if scaling can help."""
         return anomaly.type in [
             AnomalyType.QUEUE_BACKLOG,
             AnomalyType.HIGH_LATENCY,
         ]
-    
+
     async def execute(self, anomaly: Anomaly) -> RemediationResult:
         """Scale up workers."""
         self.logger.info("scaling_workers", anomaly_id=str(anomaly.id))
-        
+
         # In a real implementation, this would trigger a scaling action
         # For now, we simulate the action
-        
+
         return RemediationResult(
             anomaly_id=anomaly.id,
             action_taken="Increased worker pool size",
@@ -231,20 +231,20 @@ class ScaleWorkersAction(RemediationAction):
 
 class RestartParserAction(RemediationAction):
     """Remediation action to restart a failing parser."""
-    
+
     def __init__(self) -> None:
         """Initialize the restart parser action."""
         super().__init__("restart_parser")
-    
+
     async def can_remediate(self, anomaly: Anomaly) -> bool:
         """Check if parser restart can help."""
         return anomaly.type == AnomalyType.PARSER_DEGRADATION
-    
+
     async def execute(self, anomaly: Anomaly) -> RemediationResult:
         """Restart the degraded parser."""
         parser_id = anomaly.context.get("parser_id", "unknown")
         self.logger.info("restarting_parser", parser_id=parser_id)
-        
+
         return RemediationResult(
             anomaly_id=anomaly.id,
             action_taken=f"Restarted parser: {parser_id}",
@@ -256,19 +256,19 @@ class RestartParserAction(RemediationAction):
 
 class ClearQueueAction(RemediationAction):
     """Remediation action to clear stuck jobs from queue."""
-    
+
     def __init__(self) -> None:
         """Initialize the clear queue action."""
         super().__init__("clear_queue")
-    
+
     async def can_remediate(self, anomaly: Anomaly) -> bool:
         """Check if queue clearing can help."""
         return anomaly.type == AnomalyType.QUEUE_BACKLOG and anomaly.severity == AnomalySeverity.HIGH
-    
+
     async def execute(self, anomaly: Anomaly) -> RemediationResult:
         """Clear stuck jobs from queue."""
         self.logger.warning("clearing_queue", anomaly_id=str(anomaly.id))
-        
+
         return RemediationResult(
             anomaly_id=anomaly.id,
             action_taken="Cleared stuck jobs from queue",
@@ -280,20 +280,20 @@ class ClearQueueAction(RemediationAction):
 
 class SwitchDestinationAction(RemediationAction):
     """Remediation action to switch to backup destination."""
-    
+
     def __init__(self) -> None:
         """Initialize the switch destination action."""
         super().__init__("switch_destination")
-    
+
     async def can_remediate(self, anomaly: Anomaly) -> bool:
         """Check if destination switch can help."""
         return anomaly.type == AnomalyType.DESTINATION_FAILURE
-    
+
     async def execute(self, anomaly: Anomaly) -> RemediationResult:
         """Switch to backup destination."""
         dest_id = anomaly.context.get("destination_id", "unknown")
         self.logger.info("switching_destination", from_dest=dest_id)
-        
+
         return RemediationResult(
             anomaly_id=anomaly.id,
             action_taken=f"Switched from failing destination {dest_id}",
@@ -309,7 +309,7 @@ class SelfHealingSystem:
     Monitors system health, detects anomalies, and automatically
     applies remediation actions for known issues.
     """
-    
+
     def __init__(self, auto_remediate: bool = True) -> None:
         """Initialize the self-healing system.
         
@@ -318,12 +318,12 @@ class SelfHealingSystem:
         """
         self.logger = logger
         self.auto_remediate = auto_remediate
-        self._anomalies: Dict[UUID, Anomaly] = {}
-        self._remediation_actions: List[RemediationAction] = []
-        self._health_history: List[HealthMetrics] = []
+        self._anomalies: dict[UUID, Anomaly] = {}
+        self._remediation_actions: list[RemediationAction] = []
+        self._health_history: list[HealthMetrics] = []
         self._max_history_size = 1000
-        self._detection_callbacks: List[Callable[[Anomaly], None]] = []
-        
+        self._detection_callbacks: list[Callable[[Anomaly], None]] = []
+
         # Thresholds for anomaly detection
         self._thresholds = {
             "error_rate": 0.1,  # 10% error rate
@@ -332,16 +332,16 @@ class SelfHealingSystem:
             "memory_mb": 8192,  # 8 GB
             "cpu_percent": 90,
         }
-        
+
         self._register_default_actions()
-    
+
     def _register_default_actions(self) -> None:
         """Register default remediation actions."""
         self.register_action(ScaleWorkersAction())
         self.register_action(RestartParserAction())
         self.register_action(ClearQueueAction())
         self.register_action(SwitchDestinationAction())
-    
+
     def register_action(self, action: RemediationAction) -> None:
         """Register a remediation action.
         
@@ -350,7 +350,7 @@ class SelfHealingSystem:
         """
         self._remediation_actions.append(action)
         self.logger.debug(f"Registered remediation action: {action.name}")
-    
+
     def on_anomaly_detected(self, callback: Callable[[Anomaly], None]) -> None:
         """Register a callback for anomaly detection.
         
@@ -358,8 +358,8 @@ class SelfHealingSystem:
             callback: Function to call when anomaly is detected
         """
         self._detection_callbacks.append(callback)
-    
-    async def detect_anomalies(self, metrics: HealthMetrics) -> List[Anomaly]:
+
+    async def detect_anomalies(self, metrics: HealthMetrics) -> list[Anomaly]:
         """Detect anomalies based on health metrics.
         
         Args:
@@ -368,13 +368,13 @@ class SelfHealingSystem:
         Returns:
             List of detected anomalies
         """
-        anomalies: List[Anomaly] = []
-        
+        anomalies: list[Anomaly] = []
+
         # Store metrics history
         self._health_history.append(metrics)
         if len(self._health_history) > self._max_history_size:
             self._health_history = self._health_history[-self._max_history_size:]
-        
+
         # Check error rate
         if metrics.error_rate > self._thresholds["error_rate"]:
             severity = AnomalySeverity.HIGH if metrics.error_rate > 0.25 else AnomalySeverity.MEDIUM
@@ -385,7 +385,7 @@ class SelfHealingSystem:
                 component="pipeline",
                 metrics={"error_rate": metrics.error_rate, "threshold": self._thresholds["error_rate"]},
             ))
-        
+
         # Check latency
         if metrics.avg_processing_time_ms > self._thresholds["latency_ms"]:
             severity = AnomalySeverity.MEDIUM
@@ -396,7 +396,7 @@ class SelfHealingSystem:
                 component="pipeline",
                 metrics={"latency_ms": metrics.avg_processing_time_ms},
             ))
-        
+
         # Check queue depth
         if metrics.queue_depth > self._thresholds["queue_depth"]:
             severity = AnomalySeverity.HIGH if metrics.queue_depth > 5000 else AnomalySeverity.MEDIUM
@@ -407,7 +407,7 @@ class SelfHealingSystem:
                 component="queue",
                 metrics={"queue_depth": metrics.queue_depth},
             ))
-        
+
         # Check memory usage
         if metrics.memory_usage_mb > self._thresholds["memory_mb"]:
             severity = AnomalySeverity.CRITICAL if metrics.memory_usage_mb > 12288 else AnomalySeverity.HIGH
@@ -418,7 +418,7 @@ class SelfHealingSystem:
                 component="system",
                 metrics={"memory_mb": metrics.memory_usage_mb},
             ))
-        
+
         # Check parser health
         for parser_id, health in metrics.parser_health.items():
             if health == HealthStatus.UNHEALTHY:
@@ -429,7 +429,7 @@ class SelfHealingSystem:
                     component=f"parser:{parser_id}",
                     metrics={"parser_id": parser_id, "health": health.value},
                 ))
-        
+
         # Check destination health
         for dest_id, health in metrics.destination_health.items():
             if health == HealthStatus.UNHEALTHY:
@@ -440,39 +440,39 @@ class SelfHealingSystem:
                     component=f"destination:{dest_id}",
                     metrics={"destination_id": dest_id, "health": health.value},
                 ))
-        
+
         # Store and notify
         for anomaly in anomalies:
             self._anomalies[anomaly.id] = anomaly
-            
+
             # Notify callbacks
             for callback in self._detection_callbacks:
                 try:
                     callback(anomaly)
                 except Exception as e:
                     self.logger.error(f"Error in anomaly callback: {e}")
-            
+
             # Auto-remediate if enabled
             if self.auto_remediate:
                 await self.auto_remediate_anomaly(anomaly)
-        
+
         if anomalies:
             self.logger.warning(
                 "anomalies_detected",
                 count=len(anomalies),
                 types=[a.type.value for a in anomalies],
             )
-        
+
         return anomalies
-    
+
     def _create_anomaly(
         self,
         type: AnomalyType,
         severity: AnomalySeverity,
         description: str,
         component: str,
-        metrics: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
+        metrics: dict[str, Any],
+        context: dict[str, Any] | None = None,
     ) -> Anomaly:
         """Create a new anomaly.
         
@@ -488,7 +488,7 @@ class SelfHealingSystem:
             Created anomaly
         """
         from uuid import uuid4
-        
+
         return Anomaly(
             id=uuid4(),
             type=type,
@@ -499,7 +499,7 @@ class SelfHealingSystem:
             metrics=metrics,
             context=context or {},
         )
-    
+
     async def auto_remediate(self, anomaly: Anomaly) -> RemediationResult:
         """Automatically remediate an anomaly.
         
@@ -510,7 +510,7 @@ class SelfHealingSystem:
             RemediationResult
         """
         return await self.auto_remediate_anomaly(anomaly)
-    
+
     async def auto_remediate_anomaly(self, anomaly: Anomaly) -> RemediationResult:
         """Attempt to auto-remediate an anomaly.
         
@@ -521,7 +521,7 @@ class SelfHealingSystem:
             RemediationResult
         """
         anomaly.auto_remediated = True
-        
+
         # Find applicable remediation action
         for action in self._remediation_actions:
             if await action.can_remediate(anomaly):
@@ -530,20 +530,20 @@ class SelfHealingSystem:
                     anomaly_id=str(anomaly.id),
                     action=action.name,
                 )
-                
+
                 try:
                     result = await action.execute(anomaly)
                     anomaly.remediation_result = result
-                    
+
                     self.logger.info(
                         "auto_remediation_completed",
                         anomaly_id=str(anomaly.id),
                         success=result.success,
                         action=action.name,
                     )
-                    
+
                     return result
-                    
+
                 except Exception as e:
                     self.logger.error(
                         "auto_remediation_failed",
@@ -551,7 +551,7 @@ class SelfHealingSystem:
                         action=action.name,
                         error=str(e),
                     )
-        
+
         # No applicable action found
         result = RemediationResult(
             anomaly_id=anomaly.id,
@@ -562,13 +562,13 @@ class SelfHealingSystem:
         )
         anomaly.remediation_result = result
         return result
-    
+
     async def get_anomalies(
         self,
-        severity: Optional[AnomalySeverity] = None,
-        type: Optional[AnomalyType] = None,
+        severity: AnomalySeverity | None = None,
+        type: AnomalyType | None = None,
         active_only: bool = True,
-    ) -> List[Anomaly]:
+    ) -> list[Anomaly]:
         """Get anomalies with optional filtering.
         
         Args:
@@ -580,23 +580,23 @@ class SelfHealingSystem:
             List of anomalies
         """
         anomalies = list(self._anomalies.values())
-        
+
         if severity:
             anomalies = [a for a in anomalies if a.severity == severity]
-        
+
         if type:
             anomalies = [a for a in anomalies if a.type == type]
-        
+
         if active_only:
             # Filter out resolved anomalies (those with successful remediation)
             anomalies = [
                 a for a in anomalies
                 if not (a.remediation_result and a.remediation_result.success)
             ]
-        
+
         return sorted(anomalies, key=lambda a: a.detected_at, reverse=True)
-    
-    async def get_anomaly(self, anomaly_id: UUID) -> Optional[Anomaly]:
+
+    async def get_anomaly(self, anomaly_id: UUID) -> Anomaly | None:
         """Get a specific anomaly by ID.
         
         Args:
@@ -606,12 +606,12 @@ class SelfHealingSystem:
             Anomaly or None
         """
         return self._anomalies.get(anomaly_id)
-    
+
     async def resolve_anomaly(
         self,
         anomaly_id: UUID,
-        notes: Optional[str] = None,
-    ) -> Optional[Anomaly]:
+        notes: str | None = None,
+    ) -> Anomaly | None:
         """Mark an anomaly as resolved.
         
         Args:
@@ -624,7 +624,7 @@ class SelfHealingSystem:
         anomaly = self._anomalies.get(anomaly_id)
         if not anomaly:
             return None
-        
+
         anomaly.remediation_result = RemediationResult(
             anomaly_id=anomaly_id,
             action_taken="manual_resolution",
@@ -632,11 +632,11 @@ class SelfHealingSystem:
             success=True,
             message=notes or "Manually resolved",
         )
-        
+
         self.logger.info("anomaly_resolved", anomaly_id=str(anomaly_id))
         return anomaly
-    
-    def get_health_trends(self, minutes: int = 60) -> Dict[str, Any]:
+
+    def get_health_trends(self, minutes: int = 60) -> dict[str, Any]:
         """Get health metric trends.
         
         Args:
@@ -647,14 +647,14 @@ class SelfHealingSystem:
         """
         cutoff = datetime.utcnow() - timedelta(minutes=minutes)
         recent_metrics = [m for m in self._health_history if m.timestamp > cutoff]
-        
+
         if not recent_metrics:
             return {"error": "No data available"}
-        
+
         # Calculate trends
         error_rates = [m.error_rate for m in recent_metrics]
         latencies = [m.avg_processing_time_ms for m in recent_metrics]
-        
+
         return {
             "time_window_minutes": minutes,
             "sample_count": len(recent_metrics),
@@ -674,7 +674,7 @@ class SelfHealingSystem:
 
 
 # Global self-healing system instance
-_healing_system: Optional[SelfHealingSystem] = None
+_healing_system: SelfHealingSystem | None = None
 
 
 def get_healing_system(auto_remediate: bool = True) -> SelfHealingSystem:

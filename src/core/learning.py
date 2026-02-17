@@ -8,11 +8,10 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from uuid import UUID
 
 from src.api.models import Job, PipelineConfig
-from src.core.quality import QualityScore
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +59,12 @@ class ProcessingRecord:
     outcome: ProcessingOutcome
     retry_count: int
     file_size_bytes: int
-    page_count: Optional[int] = None
-    config_used: Optional[PipelineConfig] = None
-    error_type: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    
-    def to_dict(self) -> Dict[str, Any]:
+    page_count: int | None = None
+    config_used: PipelineConfig | None = None
+    error_type: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert record to dictionary."""
         return {
             "id": str(self.id),
@@ -106,8 +105,8 @@ class ParserPerformance:
     avg_quality_score: float = 0.0
     avg_processing_time_ms: float = 0.0
     success_rate: float = 0.0
-    best_for_types: List[str] = field(default_factory=list)
-    
+    best_for_types: list[str] = field(default_factory=list)
+
     def update(self, success: bool, quality_score: float, processing_time_ms: int) -> None:
         """Update metrics with new data point.
         
@@ -117,12 +116,12 @@ class ParserPerformance:
             processing_time_ms: Time taken
         """
         self.total_attempts += 1
-        
+
         if success:
             self.success_count += 1
         else:
             self.failure_count += 1
-        
+
         # Update rolling averages
         self.avg_quality_score = (
             (self.avg_quality_score * (self.total_attempts - 1) + quality_score)
@@ -132,7 +131,7 @@ class ParserPerformance:
             (self.avg_processing_time_ms * (self.total_attempts - 1) + processing_time_ms)
             / self.total_attempts
         )
-        
+
         self.success_rate = self.success_count / self.total_attempts if self.total_attempts > 0 else 0.0
 
 
@@ -152,8 +151,8 @@ class ContentTypePattern:
     content_type: str
     total_count: int = 0
     optimal_parser: str = ""
-    optimal_config: Optional[PipelineConfig] = None
-    common_issues: List[str] = field(default_factory=list)
+    optimal_config: PipelineConfig | None = None
+    common_issues: list[str] = field(default_factory=list)
     avg_quality_score: float = 0.0
     avg_processing_time_ms: float = 0.0
 
@@ -164,7 +163,7 @@ class ProcessingHistory:
     Records processing outcomes and provides analytics
     for optimizing future processing decisions.
     """
-    
+
     def __init__(self, max_records: int = 10000) -> None:
         """Initialize the processing history.
         
@@ -173,10 +172,10 @@ class ProcessingHistory:
         """
         self.logger = logger
         self.max_records = max_records
-        self._records: List[ProcessingRecord] = []
-        self._parser_performance: Dict[str, ParserPerformance] = {}
-        self._content_patterns: Dict[str, ContentTypePattern] = {}
-    
+        self._records: list[ProcessingRecord] = []
+        self._parser_performance: dict[str, ParserPerformance] = {}
+        self._content_patterns: dict[str, ContentTypePattern] = {}
+
     async def record_success(
         self,
         job: Job,
@@ -200,10 +199,10 @@ class ProcessingHistory:
             Created processing record
         """
         from uuid import uuid4
-        
+
         # Determine outcome
         outcome = ProcessingOutcome.RETRY_SUCCESS if job.retry_count > 0 else ProcessingOutcome.SUCCESS
-        
+
         record = ProcessingRecord(
             id=uuid4(),
             job_id=job.id,
@@ -219,18 +218,18 @@ class ProcessingHistory:
             file_size_bytes=job.file_size or 0,
             config_used=job.pipeline_config,
         )
-        
+
         await self._add_record(record)
-        
+
         self.logger.debug(
             "recorded_success",
             job_id=str(job.id),
             parser=parser_used,
             quality_score=quality_score,
         )
-        
+
         return record
-    
+
     async def record_failure(
         self,
         job: Job,
@@ -254,9 +253,9 @@ class ProcessingHistory:
             Created processing record
         """
         from uuid import uuid4
-        
+
         outcome = ProcessingOutcome.DLQ if is_dlq else ProcessingOutcome.FAILED
-        
+
         record = ProcessingRecord(
             id=uuid4(),
             job_id=job.id,
@@ -272,18 +271,18 @@ class ProcessingHistory:
             file_size_bytes=job.file_size or 0,
             error_type=type(error).__name__,
         )
-        
+
         await self._add_record(record)
-        
+
         self.logger.debug(
             "recorded_failure",
             job_id=str(job.id),
             parser=parser_used,
             error_type=type(error).__name__,
         )
-        
+
         return record
-    
+
     async def _add_record(self, record: ProcessingRecord) -> None:
         """Add a record and update derived metrics.
         
@@ -291,17 +290,17 @@ class ProcessingHistory:
             record: Record to add
         """
         self._records.append(record)
-        
+
         # Trim if needed
         if len(self._records) > self.max_records:
             self._records = self._records[-self.max_records:]
-        
+
         # Update parser performance
         await self._update_parser_performance(record)
-        
+
         # Update content patterns
         await self._update_content_patterns(record)
-    
+
     async def _update_parser_performance(self, record: ProcessingRecord) -> None:
         """Update performance metrics for a parser.
         
@@ -309,19 +308,19 @@ class ProcessingHistory:
             record: Processing record
         """
         parser_id = record.parser_used
-        
+
         if parser_id not in self._parser_performance:
             self._parser_performance[parser_id] = ParserPerformance(parser_id=parser_id)
-        
+
         perf = self._parser_performance[parser_id]
         success = record.outcome in (ProcessingOutcome.SUCCESS, ProcessingOutcome.RETRY_SUCCESS)
-        
+
         perf.update(
             success=success,
             quality_score=record.quality_score,
             processing_time_ms=record.processing_time_ms,
         )
-    
+
     async def _update_content_patterns(self, record: ProcessingRecord) -> None:
         """Update patterns for a content type.
         
@@ -329,13 +328,13 @@ class ProcessingHistory:
             record: Processing record
         """
         content_type = record.content_type
-        
+
         if content_type not in self._content_patterns:
             self._content_patterns[content_type] = ContentTypePattern(content_type=content_type)
-        
+
         pattern = self._content_patterns[content_type]
         pattern.total_count += 1
-        
+
         # Update averages
         n = pattern.total_count
         pattern.avg_quality_score = (
@@ -344,7 +343,7 @@ class ProcessingHistory:
         pattern.avg_processing_time_ms = (
             (pattern.avg_processing_time_ms * (n - 1) + record.processing_time_ms) / n
         )
-    
+
     def _get_file_extension(self, file_name: str) -> str:
         """Get file extension from file name.
         
@@ -357,12 +356,12 @@ class ProcessingHistory:
         if "." in file_name:
             return file_name.rsplit(".", 1)[-1].lower()
         return "unknown"
-    
+
     async def get_optimal_config(
         self,
         file_type: str,
         content_type: str,
-    ) -> Optional[PipelineConfig]:
+    ) -> PipelineConfig | None:
         """Get ML-based optimal configuration recommendation.
         
         Args:
@@ -374,31 +373,31 @@ class ProcessingHistory:
         """
         # Find patterns for this content type
         pattern = self._content_patterns.get(content_type)
-        
+
         if not pattern or pattern.total_count < 5:
             # Not enough data, return default config
             return None
-        
+
         # Find best parser for this content type
         best_parser = ""
         best_success_rate = 0.0
-        
+
         for record in self._records:
             if record.content_type == content_type:
                 parser_perf = self._parser_performance.get(record.parser_used)
                 if parser_perf and parser_perf.success_rate > best_success_rate:
                     best_success_rate = parser_perf.success_rate
                     best_parser = record.parser_used
-        
+
         if not best_parser:
             return None
-        
+
         # Build recommended config
         from src.api.models import ParserConfig, QualityConfig
-        
+
         # Adjust quality threshold based on historical performance
         recommended_quality_threshold = max(0.5, min(0.9, pattern.avg_quality_score * 0.9))
-        
+
         config = PipelineConfig(
             name=f"ml_optimized_{content_type}",
             parser=ParserConfig(
@@ -410,21 +409,21 @@ class ProcessingHistory:
                 max_retries=3 if best_success_rate < 0.95 else 2,
             ),
         )
-        
+
         self.logger.info(
             "generated_optimal_config",
             content_type=content_type,
             parser=best_parser,
             quality_threshold=recommended_quality_threshold,
         )
-        
+
         return config
-    
+
     async def get_parser_recommendation(
         self,
         content_type: str,
         file_type: str,
-    ) -> Tuple[str, float]:
+    ) -> tuple[str, float]:
         """Get recommended parser for content type.
         
         Args:
@@ -439,69 +438,69 @@ class ProcessingHistory:
             r for r in self._records
             if r.content_type == content_type or r.file_type == file_type
         ]
-        
+
         if not relevant_records:
             # Default recommendation based on content type rules
             if content_type in ("scanned_pdf", "image"):
                 return "azure_ocr", 0.7
             return "docling", 0.7
-        
+
         # Calculate success rate per parser
-        parser_stats: Dict[str, Dict[str, Any]] = {}
-        
+        parser_stats: dict[str, dict[str, Any]] = {}
+
         for record in relevant_records:
             parser = record.parser_used
             if parser not in parser_stats:
                 parser_stats[parser] = {"success": 0, "total": 0, "quality_sum": 0}
-            
+
             parser_stats[parser]["total"] += 1
             parser_stats[parser]["quality_sum"] += record.quality_score
-            
+
             if record.outcome in (ProcessingOutcome.SUCCESS, ProcessingOutcome.RETRY_SUCCESS):
                 parser_stats[parser]["success"] += 1
-        
+
         # Find best parser
         best_parser = ""
         best_score = 0.0
-        
+
         for parser, stats in parser_stats.items():
             success_rate = stats["success"] / stats["total"] if stats["total"] > 0 else 0
             avg_quality = stats["quality_sum"] / stats["total"] if stats["total"] > 0 else 0
-            
+
             # Combined score: 70% success rate, 30% quality
             score = (success_rate * 0.7) + (avg_quality * 0.3)
-            
+
             if score > best_score:
                 best_score = score
                 best_parser = parser
-        
+
         # Calculate confidence based on sample size
         total_samples = sum(s["total"] for s in parser_stats.values())
         confidence = min(0.95, 0.5 + (total_samples / 100) * 0.45)
-        
+
         return best_parser, confidence
-    
-    async def get_parser_performance_summary(self) -> Dict[str, ParserPerformance]:
+
+    async def get_parser_performance_summary(self) -> dict[str, ParserPerformance]:
         """Get performance summary for all parsers.
         
         Returns:
             Dictionary mapping parser IDs to performance metrics
         """
         return self._parser_performance.copy()
-    
-    async def get_content_type_stats(self) -> Dict[str, ContentTypePattern]:
+
+    async def get_content_type_stats(self) -> dict[str, ContentTypePattern]:
         """Get statistics for all content types.
         
         Returns:
             Dictionary mapping content types to patterns
         """
         return self._content_patterns.copy()
-    
+
     async def get_recent_failures(
         self,
         hours: int = 24,
         limit: int = 100,
-    ) -> List[ProcessingRecord]:
+    ) -> list[ProcessingRecord]:
         """Get recent failure records.
         
         Args:
@@ -512,42 +511,42 @@ class ProcessingHistory:
             List of failure records
         """
         cutoff = datetime.utcnow() - timedelta(hours=hours)
-        
+
         failures = [
             r for r in self._records
             if r.timestamp > cutoff
             and r.outcome in (ProcessingOutcome.FAILED, ProcessingOutcome.DLQ)
         ]
-        
+
         return sorted(failures, key=lambda r: r.timestamp, reverse=True)[:limit]
-    
-    async def analyze_failure_patterns(self) -> Dict[str, Any]:
+
+    async def analyze_failure_patterns(self) -> dict[str, Any]:
         """Analyze patterns in failures.
         
         Returns:
             Analysis results
         """
         failures = [r for r in self._records if r.outcome == ProcessingOutcome.DLQ]
-        
+
         if not failures:
             return {"message": "No failures to analyze"}
-        
+
         # Analyze by parser
-        parser_failures: Dict[str, int] = {}
+        parser_failures: dict[str, int] = {}
         for r in failures:
             parser_failures[r.parser_used] = parser_failures.get(r.parser_used, 0) + 1
-        
+
         # Analyze by content type
-        content_failures: Dict[str, int] = {}
+        content_failures: dict[str, int] = {}
         for r in failures:
             content_failures[r.content_type] = content_failures.get(r.content_type, 0) + 1
-        
+
         # Analyze by error type
-        error_types: Dict[str, int] = {}
+        error_types: dict[str, int] = {}
         for r in failures:
             if r.error_type:
                 error_types[r.error_type] = error_types.get(r.error_type, 0) + 1
-        
+
         return {
             "total_failures": len(failures),
             "parser_failure_distribution": parser_failures,
@@ -558,7 +557,7 @@ class ProcessingHistory:
 
 
 # Global processing history instance
-_history: Optional[ProcessingHistory] = None
+_history: ProcessingHistory | None = None
 
 
 def get_processing_history(max_records: int = 10000) -> ProcessingHistory:

@@ -7,10 +7,10 @@ and programmatic access.
 import hashlib
 import secrets
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 from uuid import UUID
 
-from src.auth.base import AuthProvider, AuthResult, AuthenticationBackend, Credentials, User
+from src.auth.base import AuthenticationBackend, AuthProvider, AuthResult, Credentials, User
 from src.auth.rbac import Role
 
 
@@ -28,20 +28,20 @@ class APIKeyAuth(AuthenticationBackend):
         )
         result = await auth.authenticate(credentials)
     """
-    
-    def __init__(self, api_key_store: Optional[Any] = None):
+
+    def __init__(self, api_key_store: Any | None = None):
         """Initialize API key authentication.
         
         Args:
             api_key_store: Storage backend for API keys (database, cache, etc.)
         """
         self.api_key_store = api_key_store
-    
+
     @property
     def provider_type(self) -> AuthProvider:
         """Return the authentication provider type."""
         return AuthProvider.API_KEY
-    
+
     async def authenticate(self, credentials: Credentials) -> AuthResult:
         """Authenticate using API key.
         
@@ -56,32 +56,32 @@ class APIKeyAuth(AuthenticationBackend):
                 "API key is required",
                 "MISSING_API_KEY"
             )
-        
+
         api_key = credentials.api_key
-        
+
         # Validate key format
         if not self._validate_key_format(api_key):
             return AuthResult.failure_result(
                 "Invalid API key format",
                 "INVALID_KEY_FORMAT"
             )
-        
+
         # Look up key in store
         key_data = await self._lookup_key(api_key)
-        
+
         if not key_data:
             return AuthResult.failure_result(
                 "Invalid API key",
                 "INVALID_API_KEY"
             )
-        
+
         # Check if key is active
         if not key_data.get("is_active", True):
             return AuthResult.failure_result(
                 "API key is deactivated",
                 "KEY_DEACTIVATED"
             )
-        
+
         # Check expiration
         if key_data.get("expires_at"):
             expires_at = key_data["expires_at"]
@@ -92,10 +92,10 @@ class APIKeyAuth(AuthenticationBackend):
                     "API key has expired",
                     "KEY_EXPIRED"
                 )
-        
+
         # Update last used timestamp
         await self._update_last_used(key_data["id"])
-        
+
         # Build user from key data
         user = User(
             id=UUID(key_data["user_id"]),
@@ -111,7 +111,7 @@ class APIKeyAuth(AuthenticationBackend):
             },
             is_service_account=True,
         )
-        
+
         return AuthResult.success_result(
             user=user,
             metadata={
@@ -119,7 +119,7 @@ class APIKeyAuth(AuthenticationBackend):
                 "auth_method": "api_key",
             }
         )
-    
+
     def _validate_key_format(self, api_key: str) -> bool:
         """Validate API key format.
         
@@ -132,15 +132,15 @@ class APIKeyAuth(AuthenticationBackend):
         # API keys should be at least 32 characters
         if len(api_key) < 32:
             return False
-        
+
         # Should be alphanumeric with some special characters
         allowed_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")
         if not all(c in allowed_chars for c in api_key):
             return False
-        
+
         return True
-    
-    async def _lookup_key(self, api_key: str) -> Optional[Dict[str, Any]]:
+
+    async def _lookup_key(self, api_key: str) -> dict[str, Any] | None:
         """Look up API key in storage.
         
         Args:
@@ -151,13 +151,13 @@ class APIKeyAuth(AuthenticationBackend):
         """
         # Hash the key for lookup
         key_hash = self._hash_key(api_key)
-        
+
         if self.api_key_store:
             return await self.api_key_store.get_by_hash(key_hash)
-        
+
         # Fallback: in-memory lookup (development only)
         return self._in_memory_lookup(key_hash)
-    
+
     def _hash_key(self, api_key: str) -> str:
         """Hash an API key for storage/comparison.
         
@@ -169,7 +169,7 @@ class APIKeyAuth(AuthenticationBackend):
         """
         # Use SHA-256 for hashing
         return hashlib.sha256(api_key.encode()).hexdigest()
-    
+
     async def _update_last_used(self, key_id: UUID) -> None:
         """Update last used timestamp for a key.
         
@@ -178,14 +178,14 @@ class APIKeyAuth(AuthenticationBackend):
         """
         if self.api_key_store:
             await self.api_key_store.update_last_used(key_id, datetime.utcnow())
-    
+
     # In-memory store for development (replace with database in production)
-    _dev_keys: Dict[str, Dict[str, Any]] = {}
-    
-    def _in_memory_lookup(self, key_hash: str) -> Optional[Dict[str, Any]]:
+    _dev_keys: dict[str, dict[str, Any]] = {}
+
+    def _in_memory_lookup(self, key_hash: str) -> dict[str, Any] | None:
         """Development-only in-memory key lookup."""
         return self._dev_keys.get(key_hash)
-    
+
     @classmethod
     def register_dev_key(
         cls,
@@ -213,7 +213,7 @@ class APIKeyAuth(AuthenticationBackend):
             "is_active": True,
             "permissions": [],
         }
-    
+
     async def validate_token(self, token: str) -> AuthResult:
         """Validate an API key token.
         
@@ -246,10 +246,10 @@ def generate_api_key(prefix: str = "sk", length: int = 48) -> str:
     """
     # Generate cryptographically secure random string
     random_part = secrets.token_urlsafe(length)
-    
+
     # Clean up any URL-unsafe characters and truncate to length
     random_part = random_part.replace("-", "").replace("_", "")[:length]
-    
+
     return f"{prefix}_{random_part}"
 
 

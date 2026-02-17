@@ -6,12 +6,12 @@ This package contains source plugins for various data sources:
 - SharePointSourcePlugin: SharePoint Online
 """
 
-from src.plugins.sources.s3_source import S3SourcePlugin
 from src.plugins.sources.azure_blob_source import AzureBlobSourcePlugin
+from src.plugins.sources.s3_source import S3SourcePlugin
 from src.plugins.sources.sharepoint_source import SharePointSourcePlugin
 
 __all__ = [
-    "S3SourcePlugin",
     "AzureBlobSourcePlugin",
+    "S3SourcePlugin",
     "SharePointSourcePlugin",
 ]

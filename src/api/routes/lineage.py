@@ -3,18 +3,16 @@
 This module provides endpoints for querying data lineage information.
 """
 
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from src.auth.base import User
-from src.auth.dependencies import get_current_user, require_read_lineage
-from src.lineage.models import DataLineageRecord, LineageGraph, LineageQuery, LineageSummary
+from src.auth.dependencies import require_read_lineage
+from src.lineage.models import LineageQuery
 from src.lineage.tracker import get_lineage_tracker
-
 
 router = APIRouter(prefix="/lineage", tags=["Data Lineage"])
 
@@ -29,23 +27,23 @@ class LineageRecordResponse(BaseModel):
     job_id: str
     stage: str
     step_order: int
-    input_hash: Optional[str]
-    output_hash: Optional[str]
+    input_hash: str | None
+    output_hash: str | None
     transformation: str
     timestamp: str
-    duration_ms: Optional[int]
-    input_size_bytes: Optional[int]
-    output_size_bytes: Optional[int]
-    metadata: Dict[str, Any]
+    duration_ms: int | None
+    input_size_bytes: int | None
+    output_size_bytes: int | None
+    metadata: dict[str, Any]
 
 
 class LineageNodeResponse(BaseModel):
     """Lineage node response."""
     id: str
     stage: str
-    data_hash: Optional[str]
+    data_hash: str | None
     timestamp: str
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
 
 
 class LineageEdgeResponse(BaseModel):
@@ -53,9 +51,9 @@ class LineageEdgeResponse(BaseModel):
     from_node: str = Field(..., alias="from")
     to_node: str = Field(..., alias="to")
     transformation: str
-    duration_ms: Optional[int]
-    metadata: Dict[str, Any]
-    
+    duration_ms: int | None
+    metadata: dict[str, Any]
+
     class Config:
         populate_by_name = True
 
@@ -63,10 +61,10 @@ class LineageEdgeResponse(BaseModel):
 class LineageGraphResponse(BaseModel):
     """Lineage graph response."""
     job_id: str
-    nodes: List[LineageNodeResponse]
-    edges: List[LineageEdgeResponse]
-    start_time: Optional[str]
-    end_time: Optional[str]
+    nodes: list[LineageNodeResponse]
+    edges: list[LineageEdgeResponse]
+    start_time: str | None
+    end_time: str | None
 
 
 class LineageSummaryResponse(BaseModel):
@@ -74,18 +72,18 @@ class LineageSummaryResponse(BaseModel):
     job_id: str
     total_stages: int
     total_transformations: int
-    start_time: Optional[str]
-    end_time: Optional[str]
-    total_duration_ms: Optional[int]
-    stages: List[str]
+    start_time: str | None
+    end_time: str | None
+    total_duration_ms: int | None
+    stages: list[str]
 
 
 class DataIntegrityResponse(BaseModel):
     """Data integrity verification response."""
     stage: str
     verified: bool
-    expected_hash: Optional[str]
-    actual_hash: Optional[str]
+    expected_hash: str | None
+    actual_hash: str | None
     message: str
 
 
@@ -93,10 +91,10 @@ class DataIntegrityResponse(BaseModel):
 # Lineage Endpoints
 # ============================================================================
 
-@router.get("/{job_id}", response_model=List[LineageRecordResponse])
+@router.get("/{job_id}", response_model=list[LineageRecordResponse])
 async def get_job_lineage(
     job_id: UUID,
-    stage: Optional[str] = None,
+    stage: str | None = None,
     user: User = Depends(require_read_lineage),
 ):
     """Get lineage records for a job.
@@ -105,11 +103,11 @@ async def get_job_lineage(
     Requires lineage:read permission.
     """
     tracker = get_lineage_tracker()
-    
+
     # Query with optional stage filter
     query = LineageQuery(job_id=job_id, stage=stage)
     records = await tracker.store.query_records(query)
-    
+
     return [
         LineageRecordResponse(
             id=str(record.id),
@@ -140,9 +138,9 @@ async def get_lineage_graph(
     suitable for visualization.
     """
     tracker = get_lineage_tracker()
-    
+
     graph = await tracker.get_lineage_graph(job_id)
-    
+
     return LineageGraphResponse(
         job_id=str(graph.job_id),
         nodes=[
@@ -182,9 +180,9 @@ async def get_lineage_summary(
     Returns aggregated statistics about the job's processing lineage.
     """
     tracker = get_lineage_tracker()
-    
+
     summary = await tracker.get_lineage_summary(job_id)
-    
+
     return LineageSummaryResponse(
         job_id=str(summary.job_id),
         total_stages=summary.total_stages,
@@ -212,21 +210,21 @@ async def verify_data_integrity(
     # 1. Accept the current data in the request body
     # 2. Compare its hash against the stored hash
     # 3. Return verification result
-    
+
     tracker = get_lineage_tracker()
-    
+
     # Get lineage records for the stage
     query = LineageQuery(job_id=job_id, stage=stage)
     records = await tracker.store.query_records(query)
-    
+
     if not records:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No lineage records found for stage: {stage}",
         )
-    
+
     record = records[0]
-    
+
     return DataIntegrityResponse(
         stage=stage,
         verified=False,  # Would need actual data to verify
@@ -243,9 +241,9 @@ async def get_job_stages(
 ):
     """Get list of stages for a job."""
     tracker = get_lineage_tracker()
-    
+
     summary = await tracker.get_lineage_summary(job_id)
-    
+
     return {
         "job_id": str(job_id),
         "stages": summary.stages,
@@ -261,18 +259,18 @@ async def get_stage_input_hash(
 ):
     """Get input hash for a specific stage."""
     tracker = get_lineage_tracker()
-    
+
     query = LineageQuery(job_id=job_id, stage=stage)
     records = await tracker.store.query_records(query)
-    
+
     if not records:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No lineage records found for stage: {stage}",
         )
-    
+
     record = records[0]
-    
+
     return {
         "job_id": str(job_id),
         "stage": stage,
@@ -289,19 +287,19 @@ async def get_stage_output_hash(
 ):
     """Get output hash for a specific stage."""
     tracker = get_lineage_tracker()
-    
+
     query = LineageQuery(job_id=job_id, stage=stage)
     records = await tracker.store.query_records(query)
-    
+
     if not records:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No lineage records found for stage: {stage}",
         )
-    
+
     # Get the last record for the stage (final output)
     record = sorted(records, key=lambda r: r.step_order)[-1]
-    
+
     return {
         "job_id": str(job_id),
         "stage": stage,

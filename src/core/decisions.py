@@ -10,7 +10,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 from src.api.models import ContentDetectionResult, QualityConfig
@@ -34,9 +34,9 @@ class ParserSelection:
     parser: str
     reason: str
     confidence: float
-    fallback_parser: Optional[str] = None
-    preprocessing_steps: List[str] = None  # type: ignore
-    
+    fallback_parser: str | None = None
+    preprocessing_steps: list[str] = None  # type: ignore
+
     def __post_init__(self) -> None:
         """Initialize default values."""
         if self.preprocessing_steps is None:
@@ -56,7 +56,7 @@ class RetryDecision:
     should_retry: bool
     strategy: str
     reason: str
-    updated_config: Optional[Dict[str, Any]] = None
+    updated_config: dict[str, Any] | None = None
 
 
 class AgenticDecisionEngine:
@@ -70,7 +70,7 @@ class AgenticDecisionEngine:
         >>> selection = await engine.select_parser(detection_result)
         >>> print(f"Selected parser: {selection.parser}")
     """
-    
+
     def __init__(self, llm_provider: LLMProvider) -> None:
         """Initialize the decision engine.
         
@@ -79,7 +79,7 @@ class AgenticDecisionEngine:
         """
         self.llm = llm_provider
         self.logger = logger
-    
+
     async def select_parser(
         self,
         detection_result: ContentDetectionResult,
@@ -117,7 +117,7 @@ Respond with valid JSON only in this format:
     "fallback_parser": "parser to use if primary fails",
     "preprocessing_steps": []
 }"""
-        
+
         user_prompt = f"""Analyze this content detection result and select the best parser:
 
 Detected type: {detection_result.detected_type.value}
@@ -134,7 +134,7 @@ Text statistics:
   - Avg chars per page: {detection_result.text_statistics.avg_chars_per_page or 'N/A'}
 
 Select the optimal parser."""
-        
+
         try:
             # Get LLM decision
             response = await self.llm.chat_completion(
@@ -145,10 +145,10 @@ Select the optimal parser."""
                 temperature=0.1,  # Low temperature for deterministic decisions
                 max_tokens=500,
             )
-            
+
             # Parse JSON response
             decision = json.loads(response.content)
-            
+
             return ParserSelection(
                 parser=decision.get("parser", "docling"),
                 reason=decision.get("reason", "Default selection"),
@@ -156,7 +156,7 @@ Select the optimal parser."""
                 fallback_parser=decision.get("fallback_parser"),
                 preprocessing_steps=decision.get("preprocessing_steps", []),
             )
-            
+
         except json.JSONDecodeError as e:
             self.logger.error(f"Failed to parse LLM response: {e}")
             # Fallback to rule-based decision
@@ -164,7 +164,7 @@ Select the optimal parser."""
         except Exception as e:
             self.logger.error(f"LLM decision failed: {e}")
             return self._rule_based_parser_selection(detection_result)
-    
+
     def _rule_based_parser_selection(
         self,
         detection_result: ContentDetectionResult,
@@ -178,9 +178,9 @@ Select the optimal parser."""
             ParserSelection based on rules
         """
         from src.api.models import ContentType
-        
+
         detected_type = detection_result.detected_type
-        
+
         if detected_type == ContentType.SCANNED_PDF:
             return ParserSelection(
                 parser="azure_ocr",
@@ -209,13 +209,13 @@ Select the optimal parser."""
                 confidence=0.9,
                 fallback_parser="azure_ocr",
             )
-    
+
     async def decide_retry(
         self,
         quality_score: QualityScore,
         current_config: QualityConfig,
         attempt_number: int,
-        previous_strategies: Optional[List[str]] = None,
+        previous_strategies: list[str] | None = None,
     ) -> RetryDecision:
         """Decide whether to retry and with what strategy.
         
@@ -229,7 +229,7 @@ Select the optimal parser."""
             RetryDecision with recommendation
         """
         previous_strategies = previous_strategies or []
-        
+
         # Quick check: if max retries reached, don't retry
         if attempt_number >= current_config.max_retries:
             return RetryDecision(
@@ -237,7 +237,7 @@ Select the optimal parser."""
                 strategy="none",
                 reason="Maximum retry attempts reached",
             )
-        
+
         # If quality is good enough, don't retry
         if quality_score.overall_score >= current_config.min_quality_score:
             return RetryDecision(
@@ -245,7 +245,7 @@ Select the optimal parser."""
                 strategy="none",
                 reason="Quality meets minimum threshold",
             )
-        
+
         # Build decision prompt
         system_prompt = """You are a document processing expert. Decide whether to retry a failed parsing job and select the best retry strategy.
 
@@ -268,7 +268,7 @@ Respond with valid JSON only:
     "reason": "explanation",
     "updated_config": {"key": "value"}
 }"""
-        
+
         user_prompt = f"""Decide retry strategy based on:
 
 Quality Score: {quality_score.overall_score}
@@ -281,7 +281,7 @@ Attempt: {attempt_number}/{current_config.max_retries}
 Previous Strategies: {', '.join(previous_strategies) if previous_strategies else 'None'}
 
 Decision:"""
-        
+
         try:
             response = await self.llm.chat_completion(
                 messages=[
@@ -291,29 +291,29 @@ Decision:"""
                 temperature=0.2,
                 max_tokens=300,
             )
-            
+
             decision = json.loads(response.content)
-            
+
             return RetryDecision(
                 should_retry=decision.get("should_retry", False),
                 strategy=decision.get("strategy", "same_parser"),
                 reason=decision.get("reason", "LLM decision"),
                 updated_config=decision.get("updated_config"),
             )
-            
+
         except Exception as e:
             self.logger.error(f"LLM retry decision failed: {e}")
             # Fallback to rule-based
             return self._rule_based_retry_decision(
                 quality_score, current_config, attempt_number, previous_strategies
             )
-    
+
     def _rule_based_retry_decision(
         self,
         quality_score: QualityScore,
         config: QualityConfig,
         attempt_number: int,
-        previous_strategies: List[str],
+        previous_strategies: list[str],
     ) -> RetryDecision:
         """Fallback rule-based retry decision.
         
@@ -327,7 +327,7 @@ Decision:"""
             RetryDecision based on rules
         """
         score = quality_score.overall_score
-        
+
         if score < 0.3:
             return RetryDecision(
                 should_retry=True,
@@ -353,12 +353,12 @@ Decision:"""
                 strategy="none",
                 reason="Quality acceptable, no retry needed",
             )
-    
+
     async def analyze_error(
         self,
         error: Exception,
-        context: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
         """Analyze an error and suggest recovery actions.
         
         Args:
@@ -384,15 +384,15 @@ Respond with JSON:
     "suggested_action": "action description",
     "retry_immediately": true|false
 }"""
-        
+
         user_prompt = f"""Analyze this error:
 
 Error Type: {type(error).__name__}
-Error Message: {str(error)}
+Error Message: {error!s}
 Context: {json.dumps(context, default=str)}
 
 Analysis:"""
-        
+
         try:
             response = await self.llm.chat_completion(
                 messages=[
@@ -402,9 +402,9 @@ Analysis:"""
                 temperature=0.2,
                 max_tokens=300,
             )
-            
+
             return json.loads(response.content)
-            
+
         except Exception as e:
             self.logger.error(f"Error analysis failed: {e}")
             return {
@@ -413,12 +413,12 @@ Analysis:"""
                 "suggested_action": "Retry with same configuration",
                 "retry_immediately": True,
             }
-    
+
     async def optimize_quality_thresholds(
         self,
-        historical_scores: List[QualityScore],
+        historical_scores: list[QualityScore],
         target_success_rate: float = 0.95,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Suggest optimized quality thresholds based on historical data.
         
         Args:
@@ -430,16 +430,16 @@ Analysis:"""
         """
         if not historical_scores:
             return {"min_quality_score": 0.7}
-        
+
         # Calculate statistics
         scores = [s.overall_score for s in historical_scores]
         avg_score = sum(scores) / len(scores)
         passed_count = sum(1 for s in historical_scores if s.passed)
         current_success_rate = passed_count / len(scores)
-        
+
         # Sort scores to find percentiles
         sorted_scores = sorted(scores)
-        
+
         if current_success_rate < target_success_rate:
             # Need to lower threshold
             percentile_idx = int(len(sorted_scores) * target_success_rate)
@@ -447,7 +447,7 @@ Analysis:"""
         else:
             # Can afford higher threshold
             suggested_threshold = max(0.7, avg_score * 0.9)
-        
+
         return {
             "min_quality_score": round(min(0.95, max(0.5, suggested_threshold)), 2),
             "current_success_rate": round(current_success_rate, 3),
@@ -471,10 +471,10 @@ class DecisionContext:
     """
     job_id: UUID
     file_type: str
-    content_detection: Optional[ContentDetectionResult] = None
+    content_detection: ContentDetectionResult | None = None
     historical_success_rate: float = 0.0
-    parser_performance: Dict[str, Any] = field(default_factory=dict)
-    current_config: Optional[QualityConfig] = None
+    parser_performance: dict[str, Any] = field(default_factory=dict)
+    current_config: QualityConfig | None = None
     system_load: float = 0.5
     time_of_day: int = 12
 
@@ -495,8 +495,8 @@ class DecisionResult:
     selected_option: str
     confidence: float
     reasoning: str
-    alternatives: List[str] = field(default_factory=list)
-    expected_outcome: Dict[str, Any] = field(default_factory=dict)
+    alternatives: list[str] = field(default_factory=list)
+    expected_outcome: dict[str, Any] = field(default_factory=dict)
 
 
 class AdvancedDecisionEngine(AgenticDecisionEngine):
@@ -508,7 +508,7 @@ class AdvancedDecisionEngine(AgenticDecisionEngine):
     - Adaptive thresholds
     - Context-aware routing
     """
-    
+
     def __init__(
         self,
         llm_provider: LLMProvider,
@@ -525,8 +525,8 @@ class AdvancedDecisionEngine(AgenticDecisionEngine):
         super().__init__(llm_provider)
         self.use_historical_data = use_historical_data
         self.ml_weight = ml_weight
-        self._history: Optional[Any] = None
-    
+        self._history: Any | None = None
+
     def set_history_provider(self, history: Any) -> None:
         """Set the processing history provider.
         
@@ -534,7 +534,7 @@ class AdvancedDecisionEngine(AgenticDecisionEngine):
             history: ProcessingHistory instance
         """
         self._history = history
-    
+
     async def decide_with_ml(
         self,
         context: DecisionContext,
@@ -552,7 +552,7 @@ class AdvancedDecisionEngine(AgenticDecisionEngine):
         # Get historical recommendation
         historical_parser = None
         historical_confidence = 0.0
-        
+
         if self.use_historical_data and self._history:
             try:
                 content_type = (
@@ -568,10 +568,10 @@ class AdvancedDecisionEngine(AgenticDecisionEngine):
                 )
             except Exception as e:
                 self.logger.warning(f"Failed to get historical recommendation: {e}")
-        
+
         # Get LLM-based decision
         llm_decision = await self._get_llm_decision(context)
-        
+
         # Combine decisions
         if historical_parser and historical_confidence > 0.7:
             # High confidence historical data - use it
@@ -603,11 +603,11 @@ class AdvancedDecisionEngine(AgenticDecisionEngine):
             selected_parser = llm_decision.get("parser", "docling")
             confidence = llm_decision.get("confidence", 0.75)
             reasoning = llm_decision.get("reason", "LLM-based selection")
-        
+
         # Get alternatives
         alternatives = ["azure_ocr", "docling"]
         alternatives = [a for a in alternatives if a != selected_parser]
-        
+
         return DecisionResult(
             decision_type="parser_selection",
             selected_option=selected_parser,
@@ -619,8 +619,8 @@ class AdvancedDecisionEngine(AgenticDecisionEngine):
                 "estimated_quality_score": 0.8 if selected_parser == "docling" else 0.75,
             },
         )
-    
-    async def _get_llm_decision(self, context: DecisionContext) -> Dict[str, Any]:
+
+    async def _get_llm_decision(self, context: DecisionContext) -> dict[str, Any]:
         """Get LLM-based decision for parser selection.
         
         Args:
@@ -648,7 +648,7 @@ Respond with valid JSON:
     "confidence": 0.95,
     "reason": "explanation"
 }"""
-        
+
         detection_info = ""
         if context.content_detection:
             detection_info = f"""
@@ -658,7 +658,7 @@ Content Detection:
 - Text ratio: {context.content_detection.text_statistics.text_ratio:.2f}
 - Confidence: {context.content_detection.confidence}
 """
-        
+
         user_prompt = f"""Select the best parser for:
 
 File Type: {context.file_type}
@@ -668,7 +668,7 @@ Historical Success Rate: {context.historical_success_rate:.0%}
 Time: {context.time_of_day}:00
 
 Decision:"""
-        
+
         try:
             response = await self.llm.chat_completion(
                 messages=[
@@ -678,14 +678,14 @@ Decision:"""
                 temperature=0.1,
                 max_tokens=300,
             )
-            
+
             import json
             return json.loads(response.content)
-            
+
         except Exception as e:
             self.logger.error(f"LLM decision failed: {e}")
             return {"parser": "docling", "confidence": 0.7, "reason": "Fallback to default"}
-    
+
     async def adaptive_parser_selection(
         self,
         detection_result: ContentDetectionResult,
@@ -704,11 +704,11 @@ Decision:"""
             ParserSelection with adaptive choice
         """
         # Build context
-        from uuid import uuid4
         from pathlib import Path
-        
+        from uuid import uuid4
+
         file_type = Path(file_name).suffix.lower().lstrip(".") or "unknown"
-        
+
         context = DecisionContext(
             job_id=uuid4(),  # Placeholder
             file_type=file_type,
@@ -716,13 +716,13 @@ Decision:"""
             system_load=0.5,  # Default, should come from monitoring
             time_of_day=datetime.utcnow().hour,
         )
-        
+
         # Get ML-based decision
         result = await self.decide_with_ml(context)
-        
+
         # Determine fallback
         fallback = "azure_ocr" if result.selected_option == "docling" else "docling"
-        
+
         return ParserSelection(
             parser=result.selected_option,
             reason=result.reasoning,
@@ -730,13 +730,13 @@ Decision:"""
             fallback_parser=fallback,
             preprocessing_steps=[],
         )
-    
+
     async def context_aware_routing(
         self,
         data: Any,
-        destinations: List[Any],
+        destinations: list[Any],
         system_load: float,
-    ) -> List[Any]:
+    ) -> list[Any]:
         """Make context-aware routing decisions.
         
         Selects optimal destinations based on:
@@ -756,14 +756,14 @@ Decision:"""
             # High load - prioritize reliable destinations
             # Sort by reliability (would use historical data in practice)
             return sorted(destinations, key=lambda d: d.name if hasattr(d, "name") else "")
-        
+
         if system_load < 0.3:
             # Low load - can use all destinations
             return destinations
-        
+
         # Normal load - use default order
         return destinations
-    
+
     async def adaptive_threshold_adjustment(
         self,
         file_type: str,
@@ -781,7 +781,7 @@ Decision:"""
             Adjusted threshold
         """
         adjusted = base_threshold
-        
+
         # Adjust based on historical performance
         if self._history:
             try:
@@ -793,11 +793,11 @@ Decision:"""
                     adjusted = (adjusted * 0.7) + (historical_avg * 0.3)
             except Exception as e:
                 self.logger.warning(f"Failed to get content type stats: {e}")
-        
+
         # Adjust for challenging file types
         challenging_types = ["tiff", "bmp", "gif", "zip"]
         if file_type.lower() in challenging_types:
             adjusted *= 0.9  # Lower threshold for difficult formats
-        
+
         # Ensure bounds
         return max(0.5, min(0.95, adjusted))

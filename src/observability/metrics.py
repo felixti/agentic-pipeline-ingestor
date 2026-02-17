@@ -5,17 +5,16 @@ pipeline performance, throughput, and health.
 """
 
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Dict, Generator, List, Optional
 
 from prometheus_client import (
-    Counter,
-    Histogram,
-    Gauge,
-    Info,
     CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    Info,
     generate_latest,
-    CONTENT_TYPE_LATEST,
 )
 
 # Default registry
@@ -26,45 +25,45 @@ DEFAULT_REGISTRY = CollectorRegistry()
 # =============================================================================
 
 JOBS_CREATED = Counter(
-    'ingestion_jobs_created_total',
-    'Total number of ingestion jobs created',
-    ['source_type', 'priority'],
+    "ingestion_jobs_created_total",
+    "Total number of ingestion jobs created",
+    ["source_type", "priority"],
     registry=DEFAULT_REGISTRY,
 )
 
 JOBS_COMPLETED = Counter(
-    'ingestion_jobs_completed_total',
-    'Total number of ingestion jobs completed',
-    ['source_type', 'status'],
+    "ingestion_jobs_completed_total",
+    "Total number of ingestion jobs completed",
+    ["source_type", "status"],
     registry=DEFAULT_REGISTRY,
 )
 
 JOBS_FAILED = Counter(
-    'ingestion_jobs_failed_total',
-    'Total number of ingestion jobs that failed',
-    ['source_type', 'stage', 'error_type'],
+    "ingestion_jobs_failed_total",
+    "Total number of ingestion jobs that failed",
+    ["source_type", "stage", "error_type"],
     registry=DEFAULT_REGISTRY,
 )
 
 JOB_DURATION = Histogram(
-    'ingestion_job_duration_seconds',
-    'Time spent processing a job from start to completion',
-    ['source_type', 'priority'],
+    "ingestion_job_duration_seconds",
+    "Time spent processing a job from start to completion",
+    ["source_type", "priority"],
     buckets=[1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600],
     registry=DEFAULT_REGISTRY,
 )
 
 JOB_RETRIES = Counter(
-    'ingestion_job_retries_total',
-    'Total number of job retry attempts',
-    ['source_type', 'stage'],
+    "ingestion_job_retries_total",
+    "Total number of job retry attempts",
+    ["source_type", "stage"],
     registry=DEFAULT_REGISTRY,
 )
 
 JOBS_IN_PROGRESS = Gauge(
-    'ingestion_jobs_in_progress',
-    'Number of jobs currently being processed',
-    ['source_type'],
+    "ingestion_jobs_in_progress",
+    "Number of jobs currently being processed",
+    ["source_type"],
     registry=DEFAULT_REGISTRY,
 )
 
@@ -73,24 +72,24 @@ JOBS_IN_PROGRESS = Gauge(
 # =============================================================================
 
 STAGE_DURATION = Histogram(
-    'ingestion_stage_duration_seconds',
-    'Time spent in each pipeline stage',
-    ['stage_name'],
+    "ingestion_stage_duration_seconds",
+    "Time spent in each pipeline stage",
+    ["stage_name"],
     buckets=[0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300],
     registry=DEFAULT_REGISTRY,
 )
 
 STAGE_ERRORS = Counter(
-    'ingestion_stage_errors_total',
-    'Total number of errors in each pipeline stage',
-    ['stage_name', 'error_type'],
+    "ingestion_stage_errors_total",
+    "Total number of errors in each pipeline stage",
+    ["stage_name", "error_type"],
     registry=DEFAULT_REGISTRY,
 )
 
 STAGE_ITEMS_PROCESSED = Counter(
-    'ingestion_stage_items_processed_total',
-    'Total number of items processed by each stage',
-    ['stage_name'],
+    "ingestion_stage_items_processed_total",
+    "Total number of items processed by each stage",
+    ["stage_name"],
     registry=DEFAULT_REGISTRY,
 )
 
@@ -99,23 +98,23 @@ STAGE_ITEMS_PROCESSED = Counter(
 # =============================================================================
 
 QUALITY_SCORE = Gauge(
-    'ingestion_quality_score',
-    'Quality score for processed documents (0-1)',
-    ['job_id', 'parser_used'],
+    "ingestion_quality_score",
+    "Quality score for processed documents (0-1)",
+    ["job_id", "parser_used"],
     registry=DEFAULT_REGISTRY,
 )
 
 QUALITY_CHECKS_PASSED = Counter(
-    'ingestion_quality_checks_passed_total',
-    'Total number of quality checks passed',
-    ['parser_used'],
+    "ingestion_quality_checks_passed_total",
+    "Total number of quality checks passed",
+    ["parser_used"],
     registry=DEFAULT_REGISTRY,
 )
 
 QUALITY_CHECKS_FAILED = Counter(
-    'ingestion_quality_checks_failed_total',
-    'Total number of quality checks failed',
-    ['parser_used', 'failure_reason'],
+    "ingestion_quality_checks_failed_total",
+    "Total number of quality checks failed",
+    ["parser_used", "failure_reason"],
     registry=DEFAULT_REGISTRY,
 )
 
@@ -124,31 +123,31 @@ QUALITY_CHECKS_FAILED = Counter(
 # =============================================================================
 
 PARSER_ERRORS = Counter(
-    'ingestion_parser_errors_total',
-    'Total number of parser errors',
-    ['parser_name', 'file_type', 'error_type'],
+    "ingestion_parser_errors_total",
+    "Total number of parser errors",
+    ["parser_name", "file_type", "error_type"],
     registry=DEFAULT_REGISTRY,
 )
 
 PARSER_DURATION = Histogram(
-    'ingestion_parser_duration_seconds',
-    'Time spent parsing documents',
-    ['parser_name', 'file_type'],
+    "ingestion_parser_duration_seconds",
+    "Time spent parsing documents",
+    ["parser_name", "file_type"],
     buckets=[0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300],
     registry=DEFAULT_REGISTRY,
 )
 
 PARSER_FALLBACK_USED = Counter(
-    'ingestion_parser_fallback_used_total',
-    'Total number of times fallback parser was used',
-    ['primary_parser', 'fallback_parser', 'reason'],
+    "ingestion_parser_fallback_used_total",
+    "Total number of times fallback parser was used",
+    ["primary_parser", "fallback_parser", "reason"],
     registry=DEFAULT_REGISTRY,
 )
 
 PARSER_SUCCESS = Counter(
-    'ingestion_parser_success_total',
-    'Total number of successful parsing operations',
-    ['parser_name', 'file_type'],
+    "ingestion_parser_success_total",
+    "Total number of successful parsing operations",
+    ["parser_name", "file_type"],
     registry=DEFAULT_REGISTRY,
 )
 
@@ -157,31 +156,31 @@ PARSER_SUCCESS = Counter(
 # =============================================================================
 
 DESTINATION_ERRORS = Counter(
-    'ingestion_destination_errors_total',
-    'Total number of destination errors',
-    ['destination_type', 'error_type'],
+    "ingestion_destination_errors_total",
+    "Total number of destination errors",
+    ["destination_type", "error_type"],
     registry=DEFAULT_REGISTRY,
 )
 
 DESTINATION_WRITES = Counter(
-    'ingestion_destination_writes_total',
-    'Total number of write operations to destinations',
-    ['destination_type', 'status'],
+    "ingestion_destination_writes_total",
+    "Total number of write operations to destinations",
+    ["destination_type", "status"],
     registry=DEFAULT_REGISTRY,
 )
 
 DESTINATION_DURATION = Histogram(
-    'ingestion_destination_duration_seconds',
-    'Time spent writing to destinations',
-    ['destination_type'],
+    "ingestion_destination_duration_seconds",
+    "Time spent writing to destinations",
+    ["destination_type"],
     buckets=[0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30],
     registry=DEFAULT_REGISTRY,
 )
 
 DESTINATION_RECORDS_WRITTEN = Counter(
-    'ingestion_destination_records_written_total',
-    'Total number of records written to destinations',
-    ['destination_type'],
+    "ingestion_destination_records_written_total",
+    "Total number of records written to destinations",
+    ["destination_type"],
     registry=DEFAULT_REGISTRY,
 )
 
@@ -190,38 +189,38 @@ DESTINATION_RECORDS_WRITTEN = Counter(
 # =============================================================================
 
 LLM_REQUESTS = Counter(
-    'ingestion_llm_requests_total',
-    'Total number of LLM requests made',
-    ['model', 'operation', 'status'],
+    "ingestion_llm_requests_total",
+    "Total number of LLM requests made",
+    ["model", "operation", "status"],
     registry=DEFAULT_REGISTRY,
 )
 
 LLM_LATENCY = Histogram(
-    'ingestion_llm_latency_seconds',
-    'LLM request latency',
-    ['model', 'operation'],
+    "ingestion_llm_latency_seconds",
+    "LLM request latency",
+    ["model", "operation"],
     buckets=[0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60],
     registry=DEFAULT_REGISTRY,
 )
 
 LLM_TOKENS_USED = Counter(
-    'ingestion_llm_tokens_used_total',
-    'Total number of tokens used in LLM requests',
-    ['model', 'token_type'],
+    "ingestion_llm_tokens_used_total",
+    "Total number of tokens used in LLM requests",
+    ["model", "token_type"],
     registry=DEFAULT_REGISTRY,
 )
 
 LLM_FALLBACK_USED = Counter(
-    'ingestion_llm_fallback_used_total',
-    'Total number of times LLM fallback was used',
-    ['primary_model', 'fallback_model', 'reason'],
+    "ingestion_llm_fallback_used_total",
+    "Total number of times LLM fallback was used",
+    ["primary_model", "fallback_model", "reason"],
     registry=DEFAULT_REGISTRY,
 )
 
 LLM_RATE_LIMITS_HIT = Counter(
-    'ingestion_llm_rate_limits_hit_total',
-    'Total number of rate limit errors from LLM providers',
-    ['model', 'provider'],
+    "ingestion_llm_rate_limits_hit_total",
+    "Total number of rate limit errors from LLM providers",
+    ["model", "provider"],
     registry=DEFAULT_REGISTRY,
 )
 
@@ -230,23 +229,23 @@ LLM_RATE_LIMITS_HIT = Counter(
 # =============================================================================
 
 QUEUE_DEPTH = Gauge(
-    'ingestion_queue_depth',
-    'Current depth of processing queues',
-    ['queue_name'],
+    "ingestion_queue_depth",
+    "Current depth of processing queues",
+    ["queue_name"],
     registry=DEFAULT_REGISTRY,
 )
 
 QUEUE_MESSAGES_PROCESSED = Counter(
-    'ingestion_queue_messages_processed_total',
-    'Total number of queue messages processed',
-    ['queue_name', 'status'],
+    "ingestion_queue_messages_processed_total",
+    "Total number of queue messages processed",
+    ["queue_name", "status"],
     registry=DEFAULT_REGISTRY,
 )
 
 QUEUE_PROCESSING_TIME = Histogram(
-    'ingestion_queue_processing_duration_seconds',
-    'Time spent processing queue messages',
-    ['queue_name'],
+    "ingestion_queue_processing_duration_seconds",
+    "Time spent processing queue messages",
+    ["queue_name"],
     buckets=[0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600],
     registry=DEFAULT_REGISTRY,
 )
@@ -256,40 +255,40 @@ QUEUE_PROCESSING_TIME = Histogram(
 # =============================================================================
 
 API_REQUESTS = Counter(
-    'ingestion_api_requests_total',
-    'Total number of API requests',
-    ['method', 'endpoint', 'status_code'],
+    "ingestion_api_requests_total",
+    "Total number of API requests",
+    ["method", "endpoint", "status_code"],
     registry=DEFAULT_REGISTRY,
 )
 
 API_REQUEST_DURATION = Histogram(
-    'ingestion_api_request_duration_seconds',
-    'API request latency',
-    ['method', 'endpoint'],
+    "ingestion_api_request_duration_seconds",
+    "API request latency",
+    ["method", "endpoint"],
     buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
     registry=DEFAULT_REGISTRY,
 )
 
 API_REQUEST_SIZE = Histogram(
-    'ingestion_api_request_size_bytes',
-    'API request body size',
-    ['method', 'endpoint'],
+    "ingestion_api_request_size_bytes",
+    "API request body size",
+    ["method", "endpoint"],
     buckets=[100, 1000, 10000, 100000, 1000000, 10000000, 100000000],
     registry=DEFAULT_REGISTRY,
 )
 
 API_RESPONSE_SIZE = Histogram(
-    'ingestion_api_response_size_bytes',
-    'API response body size',
-    ['method', 'endpoint'],
+    "ingestion_api_response_size_bytes",
+    "API response body size",
+    ["method", "endpoint"],
     buckets=[100, 1000, 10000, 100000, 1000000, 10000000],
     registry=DEFAULT_REGISTRY,
 )
 
 API_RATE_LIMITS_HIT = Counter(
-    'ingestion_api_rate_limits_hit_total',
-    'Total number of API rate limits hit',
-    ['endpoint'],
+    "ingestion_api_rate_limits_hit_total",
+    "Total number of API rate limits hit",
+    ["endpoint"],
     registry=DEFAULT_REGISTRY,
 )
 
@@ -298,24 +297,24 @@ API_RATE_LIMITS_HIT = Counter(
 # =============================================================================
 
 DB_CONNECTIONS = Gauge(
-    'ingestion_db_connections',
-    'Current number of database connections',
-    ['state'],
+    "ingestion_db_connections",
+    "Current number of database connections",
+    ["state"],
     registry=DEFAULT_REGISTRY,
 )
 
 DB_QUERY_DURATION = Histogram(
-    'ingestion_db_query_duration_seconds',
-    'Database query latency',
-    ['operation', 'table'],
+    "ingestion_db_query_duration_seconds",
+    "Database query latency",
+    ["operation", "table"],
     buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
     registry=DEFAULT_REGISTRY,
 )
 
 DB_QUERY_ERRORS = Counter(
-    'ingestion_db_query_errors_total',
-    'Total number of database query errors',
-    ['operation', 'table', 'error_type'],
+    "ingestion_db_query_errors_total",
+    "Total number of database query errors",
+    ["operation", "table", "error_type"],
     registry=DEFAULT_REGISTRY,
 )
 
@@ -324,24 +323,24 @@ DB_QUERY_ERRORS = Counter(
 # =============================================================================
 
 STORAGE_OPERATIONS = Counter(
-    'ingestion_storage_operations_total',
-    'Total number of storage operations',
-    ['operation', 'storage_type', 'status'],
+    "ingestion_storage_operations_total",
+    "Total number of storage operations",
+    ["operation", "storage_type", "status"],
     registry=DEFAULT_REGISTRY,
 )
 
 STORAGE_OPERATION_DURATION = Histogram(
-    'ingestion_storage_operation_duration_seconds',
-    'Storage operation latency',
-    ['operation', 'storage_type'],
+    "ingestion_storage_operation_duration_seconds",
+    "Storage operation latency",
+    ["operation", "storage_type"],
     buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
     registry=DEFAULT_REGISTRY,
 )
 
 STORAGE_BYTES_TRANSFERRED = Counter(
-    'ingestion_storage_bytes_transferred_total',
-    'Total bytes transferred to/from storage',
-    ['operation', 'storage_type'],
+    "ingestion_storage_bytes_transferred_total",
+    "Total bytes transferred to/from storage",
+    ["operation", "storage_type"],
     registry=DEFAULT_REGISTRY,
 )
 
@@ -350,29 +349,29 @@ STORAGE_BYTES_TRANSFERRED = Counter(
 # =============================================================================
 
 SYSTEM_INFO = Info(
-    'ingestion_system',
-    'System information',
+    "ingestion_system",
+    "System information",
     registry=DEFAULT_REGISTRY,
 )
 
 CACHE_HITS = Counter(
-    'ingestion_cache_hits_total',
-    'Total number of cache hits',
-    ['cache_name'],
+    "ingestion_cache_hits_total",
+    "Total number of cache hits",
+    ["cache_name"],
     registry=DEFAULT_REGISTRY,
 )
 
 CACHE_MISSES = Counter(
-    'ingestion_cache_misses_total',
-    'Total number of cache misses',
-    ['cache_name'],
+    "ingestion_cache_misses_total",
+    "Total number of cache misses",
+    ["cache_name"],
     registry=DEFAULT_REGISTRY,
 )
 
 CACHE_OPERATION_DURATION = Histogram(
-    'ingestion_cache_operation_duration_seconds',
-    'Cache operation latency',
-    ['operation', 'cache_name'],
+    "ingestion_cache_operation_duration_seconds",
+    "Cache operation latency",
+    ["operation", "cache_name"],
     buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25],
     registry=DEFAULT_REGISTRY,
 )
@@ -393,7 +392,7 @@ class MetricsManager:
         >>> with manager.time_stage("parse"):
         ...     parse_document(file)
     """
-    
+
     def __init__(self, registry: CollectorRegistry = DEFAULT_REGISTRY):
         """Initialize the metrics manager.
         
@@ -401,9 +400,9 @@ class MetricsManager:
             registry: Prometheus registry to use
         """
         self.registry = registry
-        self._job_start_times: Dict[str, float] = {}
-        self._stage_start_times: Dict[str, float] = {}
-    
+        self._job_start_times: dict[str, float] = {}
+        self._stage_start_times: dict[str, float] = {}
+
     def record_job_created(self, source_type: str, priority: str = "normal") -> None:
         """Record a job creation.
         
@@ -413,12 +412,12 @@ class MetricsManager:
         """
         JOBS_CREATED.labels(source_type=source_type, priority=priority).inc()
         JOBS_IN_PROGRESS.labels(source_type=source_type).inc()
-    
+
     def record_job_completed(
         self,
         source_type: str,
         status: str,
-        job_id: Optional[str] = None,
+        job_id: str | None = None,
     ) -> None:
         """Record a job completion.
         
@@ -429,12 +428,12 @@ class MetricsManager:
         """
         JOBS_COMPLETED.labels(source_type=source_type, status=status).inc()
         JOBS_IN_PROGRESS.labels(source_type=source_type).dec()
-        
+
         # Record duration if we have a start time
         if job_id and job_id in self._job_start_times:
             duration = time.time() - self._job_start_times.pop(job_id)
             JOB_DURATION.labels(source_type=source_type, priority="normal").observe(duration)
-    
+
     def record_job_failed(
         self,
         source_type: str,
@@ -454,7 +453,7 @@ class MetricsManager:
             error_type=error_type,
         ).inc()
         JOBS_IN_PROGRESS.labels(source_type=source_type).dec()
-    
+
     def record_job_start(self, job_id: str) -> None:
         """Record the start time of a job.
         
@@ -462,7 +461,7 @@ class MetricsManager:
             job_id: Unique job identifier
         """
         self._job_start_times[job_id] = time.time()
-    
+
     @contextmanager
     def time_stage(self, stage_name: str) -> Generator[None, None, None]:
         """Context manager to time a pipeline stage.
@@ -487,7 +486,7 @@ class MetricsManager:
         finally:
             duration = time.time() - start
             STAGE_DURATION.labels(stage_name=stage_name).observe(duration)
-    
+
     def record_parser_success(self, parser_name: str, file_type: str) -> None:
         """Record a successful parse operation.
         
@@ -496,7 +495,7 @@ class MetricsManager:
             file_type: Type of file parsed
         """
         PARSER_SUCCESS.labels(parser_name=parser_name, file_type=file_type).inc()
-    
+
     def record_parser_error(
         self,
         parser_name: str,
@@ -515,7 +514,7 @@ class MetricsManager:
             file_type=file_type,
             error_type=error_type,
         ).inc()
-    
+
     @contextmanager
     def time_parser(self, parser_name: str, file_type: str) -> Generator[None, None, None]:
         """Context manager to time a parser operation.
@@ -540,7 +539,7 @@ class MetricsManager:
                 parser_name=parser_name,
                 file_type=file_type,
             ).observe(duration)
-    
+
     def record_quality_score(
         self,
         job_id: str,
@@ -555,7 +554,7 @@ class MetricsManager:
             score: Quality score (0-1)
         """
         QUALITY_SCORE.labels(job_id=job_id, parser_used=parser_used).set(score)
-    
+
     def record_llm_request(
         self,
         model: str,
@@ -577,15 +576,15 @@ class MetricsManager:
         """
         LLM_REQUESTS.labels(model=model, operation=operation, status=status).inc()
         LLM_LATENCY.labels(model=model, operation=operation).observe(latency)
-        
+
         if input_tokens:
             LLM_TOKENS_USED.labels(model=model, token_type="input").inc(input_tokens)
         if output_tokens:
             LLM_TOKENS_USED.labels(model=model, token_type="output").inc(output_tokens)
-        
+
         if status == "rate_limited":
             LLM_RATE_LIMITS_HIT.labels(model=model, provider="unknown").inc()
-    
+
     def record_destination_write(
         self,
         destination_type: str,
@@ -603,12 +602,12 @@ class MetricsManager:
             destination_type=destination_type,
             status=status,
         ).inc()
-        
+
         if records_written:
             DESTINATION_RECORDS_WRITTEN.labels(
                 destination_type=destination_type,
             ).inc(records_written)
-    
+
     def record_destination_error(
         self,
         destination_type: str,
@@ -624,7 +623,7 @@ class MetricsManager:
             destination_type=destination_type,
             error_type=error_type,
         ).inc()
-    
+
     def set_queue_depth(self, queue_name: str, depth: int) -> None:
         """Set the current queue depth.
         
@@ -633,7 +632,7 @@ class MetricsManager:
             depth: Current number of messages
         """
         QUEUE_DEPTH.labels(queue_name=queue_name).set(depth)
-    
+
     def record_api_request(
         self,
         method: str,
@@ -658,24 +657,24 @@ class MetricsManager:
             endpoint=endpoint,
             status_code=str(status_code),
         ).inc()
-        
+
         API_REQUEST_DURATION.labels(
             method=method,
             endpoint=endpoint,
         ).observe(duration)
-        
+
         if request_size:
             API_REQUEST_SIZE.labels(
                 method=method,
                 endpoint=endpoint,
             ).observe(request_size)
-        
+
         if response_size:
             API_RESPONSE_SIZE.labels(
                 method=method,
                 endpoint=endpoint,
             ).observe(response_size)
-    
+
     def get_metrics(self) -> bytes:
         """Get all metrics in Prometheus exposition format.
         
@@ -686,7 +685,7 @@ class MetricsManager:
 
 
 # Global metrics manager instance
-_metrics_manager: Optional[MetricsManager] = None
+_metrics_manager: MetricsManager | None = None
 
 
 def get_metrics_manager() -> MetricsManager:

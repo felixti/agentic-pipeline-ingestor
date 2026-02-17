@@ -5,14 +5,20 @@ with support for Jaeger, Azure Monitor, and other OTLP-compatible backends.
 """
 
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any, Dict, Generator, Optional, Union
+from typing import Any, Optional
 
 from opentelemetry import trace
+from opentelemetry.sdk.resources import (
+    DEPLOYMENT_ENVIRONMENT,
+    SERVICE_NAME,
+    SERVICE_VERSION,
+    Resource,
+)
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION, DEPLOYMENT_ENVIRONMENT
-from opentelemetry.trace import Status, StatusCode, SpanKind
+from opentelemetry.trace import SpanKind
 
 # Optional exporters - these may not be installed
 try:
@@ -36,7 +42,7 @@ except ImportError:
 from src.config import settings
 
 # Global tracer provider instance
-_tracer_provider: Optional[TracerProvider] = None
+_tracer_provider: TracerProvider | None = None
 _telemetry_manager: Optional["TelemetryManager"] = None
 
 
@@ -71,23 +77,23 @@ class TelemetryManager:
         ...     jaeger_endpoint="http://jaeger:14268/api/traces"
         ... )
     """
-    
+
     def __init__(self):
         """Initialize the telemetry manager."""
-        self._provider: Optional[TracerProvider] = None
+        self._provider: TracerProvider | None = None
         self._initialized = False
         self._exporters: list = []
-    
+
     def setup_tracing(
         self,
         service_name: str,
         service_version: str = "1.0.0",
         environment: str = "development",
-        jaeger_endpoint: Optional[str] = None,
-        otlp_endpoint: Optional[str] = None,
-        azure_connection_string: Optional[str] = None,
+        jaeger_endpoint: str | None = None,
+        otlp_endpoint: str | None = None,
+        azure_connection_string: str | None = None,
         console_export: bool = False,
-        attributes: Optional[Dict[str, Any]] = None,
+        attributes: dict[str, Any] | None = None,
     ) -> TracerProvider:
         """Setup distributed tracing with configured exporters.
         
@@ -108,31 +114,31 @@ class TelemetryManager:
             RuntimeError: If tracing is already initialized
         """
         global _tracer_provider
-        
+
         if self._initialized:
             raise RuntimeError("Tracing is already initialized")
-        
+
         # Build resource attributes
         resource_attrs = {
             SERVICE_NAME: service_name,
             SERVICE_VERSION: service_version,
             DEPLOYMENT_ENVIRONMENT: environment,
         }
-        
+
         if attributes:
             resource_attrs.update(attributes)
-        
+
         # Add custom attributes for our pipeline
         resource_attrs.update({
             "service.namespace": "agentic-pipeline",
             "service.instance.id": os.getenv("HOSTNAME", "unknown"),
             "host.name": os.getenv("HOSTNAME", "localhost"),
         })
-        
+
         # Create resource and provider
         resource = Resource.create(resource_attrs)
         self._provider = TracerProvider(resource=resource)
-        
+
         # Add exporters based on configuration
         self._add_exporters(
             jaeger_endpoint=jaeger_endpoint,
@@ -140,19 +146,19 @@ class TelemetryManager:
             azure_connection_string=azure_connection_string,
             console_export=console_export,
         )
-        
+
         # Set as global provider
         trace.set_tracer_provider(self._provider)
         _tracer_provider = self._provider
         self._initialized = True
-        
+
         return self._provider
-    
+
     def _add_exporters(
         self,
-        jaeger_endpoint: Optional[str] = None,
-        otlp_endpoint: Optional[str] = None,
-        azure_connection_string: Optional[str] = None,
+        jaeger_endpoint: str | None = None,
+        otlp_endpoint: str | None = None,
+        azure_connection_string: str | None = None,
         console_export: bool = False,
     ) -> None:
         """Add span exporters based on configuration.
@@ -178,7 +184,7 @@ class TelemetryManager:
                 "Jaeger endpoint configured but jaeger exporter not installed. "
                 "Install with: pip install opentelemetry-exporter-jaeger"
             )
-        
+
         # OTLP exporter
         if otlp_endpoint and OTLP_GRPC_AVAILABLE:
             otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
@@ -192,7 +198,7 @@ class TelemetryManager:
                 "OTLP endpoint configured but OTLP exporter not installed. "
                 "Install with: pip install opentelemetry-exporter-otlp"
             )
-        
+
         # Azure Monitor exporter
         if azure_connection_string and AZURE_MONITOR_AVAILABLE:
             azure_exporter = AzureMonitorTraceExporter(
@@ -208,7 +214,7 @@ class TelemetryManager:
                 "Azure Monitor configured but exporter not installed. "
                 "Install with: pip install azure-monitor-opentelemetry-exporter"
             )
-        
+
         # Console exporter for debugging
         if console_export or (not self._exporters and settings.debug):
             console_exporter = ConsoleSpanExporter()
@@ -216,19 +222,19 @@ class TelemetryManager:
                 BatchSpanProcessor(console_exporter)
             )
             self._exporters.append("console")
-    
+
     def shutdown(self) -> None:
         """Shutdown the tracer provider and flush pending spans."""
         if self._provider:
             self._provider.shutdown()
             self._initialized = False
             self._exporters.clear()
-    
+
     @property
     def is_initialized(self) -> bool:
         """Check if tracing is initialized."""
         return self._initialized
-    
+
     @property
     def active_exporters(self) -> list:
         """List of active exporter names."""
@@ -247,7 +253,7 @@ def get_telemetry_manager() -> TelemetryManager:
     return _telemetry_manager
 
 
-def setup_tracing_from_settings() -> Optional[TracerProvider]:
+def setup_tracing_from_settings() -> TracerProvider | None:
     """Setup tracing from application settings.
     
     This convenience function reads tracing configuration from
@@ -257,20 +263,20 @@ def setup_tracing_from_settings() -> Optional[TracerProvider]:
         Configured TracerProvider or None if disabled
     """
     manager = get_telemetry_manager()
-    
+
     # Check if tracing is enabled
     if os.getenv("OTEL_ENABLED", "true").lower() == "false":
         return None
-    
+
     service_name = os.getenv("OTEL_SERVICE_NAME", "pipeline-api")
     service_version = settings.app_version
     environment = os.getenv("OTEL_ENVIRONMENT", settings.env)
-    
+
     jaeger_endpoint = os.getenv("OTEL_EXPORTER_JAEGER_ENDPOINT")
     otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
     azure_connection = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
     console_export = os.getenv("OTEL_CONSOLE_EXPORT", "false").lower() == "true"
-    
+
     return manager.setup_tracing(
         service_name=service_name,
         service_version=service_version,
@@ -286,7 +292,7 @@ def setup_tracing_from_settings() -> Optional[TracerProvider]:
 def start_span(
     name: str,
     kind: SpanKind = SpanKind.INTERNAL,
-    attributes: Optional[Dict[str, Any]] = None,
+    attributes: dict[str, Any] | None = None,
     parent=None,
 ) -> Generator[trace.Span, None, None]:
     """Context manager for starting a span.
@@ -318,8 +324,8 @@ def start_span(
 @contextmanager
 def start_pipeline_stage_span(
     stage_name: str,
-    job_id: Optional[str] = None,
-    attributes: Optional[Dict[str, Any]] = None,
+    job_id: str | None = None,
+    attributes: dict[str, Any] | None = None,
 ) -> Generator[trace.Span, None, None]:
     """Context manager for pipeline stage spans.
     
@@ -338,7 +344,7 @@ def start_pipeline_stage_span(
         attrs["job.id"] = job_id
     if attributes:
         attrs.update(attributes)
-    
+
     with start_span(
         name=f"pipeline.stage.{stage_name}",
         kind=SpanKind.INTERNAL,

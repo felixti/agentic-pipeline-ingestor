@@ -14,11 +14,11 @@ from src.audit.models import (
 )
 
 __all__ = [
-    "AuditLogger",
-    "get_audit_logger",
     "AuditEvent",
     "AuditEventStatus",
     "AuditEventType",
     "AuditLogQuery",
     "AuditLogQueryResult",
+    "AuditLogger",
+    "get_audit_logger",
 ]

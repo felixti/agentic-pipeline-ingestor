@@ -7,10 +7,9 @@ Agentic Data Pipeline Ingestor following shift-left engineering principles.
 import asyncio
 import json
 import os
-import time
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Optional
-from urllib.parse import urljoin
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -18,7 +17,6 @@ import pytest_asyncio
 # Import httpx for HTTP client
 pytest.importorskip("httpx")
 import httpx
-
 
 # =============================================================================
 # Configuration
@@ -105,7 +103,7 @@ async def unauth_client(http_client: httpx.AsyncClient) -> httpx.AsyncClient:
 # =============================================================================
 
 @pytest.fixture(scope="session")
-def test_dataset() -> Dict[str, Any]:
+def test_dataset() -> dict[str, Any]:
     """Load the test dataset configuration."""
     dataset_path = DATASETS_DIR / "test-dataset.json"
     if dataset_path.exists():
@@ -115,7 +113,7 @@ def test_dataset() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def test_documents() -> Dict[str, Path]:
+def test_documents() -> dict[str, Path]:
     """Get paths to test documents."""
     return {
         "text_pdf": DOCUMENTS_DIR / "pdf" / "sample-text.pdf",
@@ -132,7 +130,7 @@ def test_documents() -> Dict[str, Path]:
 
 
 @pytest.fixture
-def sample_job_payload() -> Dict[str, Any]:
+def sample_job_payload() -> dict[str, Any]:
     """Get a sample job creation payload."""
     return {
         "source_type": "upload",
@@ -157,7 +155,7 @@ async def wait_for_job_completion(
     job_id: str,
     max_attempts: int = E2E_MAX_POLL_ATTEMPTS,
     interval: float = E2E_POLL_INTERVAL,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Wait for a job to complete.
     
     Args:
@@ -174,27 +172,27 @@ async def wait_for_job_completion(
     """
     for attempt in range(max_attempts):
         response = await client.get(f"/api/v1/jobs/{job_id}")
-        
+
         if response.status_code == 404:
             raise ValueError(f"Job {job_id} not found")
-        
+
         response.raise_for_status()
         data = response.json()
-        
+
         job_data = data.get("data", {})
         status = job_data.get("status", "unknown")
-        
+
         if status in ("completed", "failed", "cancelled"):
             return job_data
-        
+
         await asyncio.sleep(interval)
-    
+
     raise TimeoutError(f"Job {job_id} did not complete within {max_attempts} attempts")
 
 
 async def create_job(
     client: httpx.AsyncClient,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
 ) -> str:
     """Create a job and return the job ID.
     
@@ -207,7 +205,7 @@ async def create_job(
     """
     response = await client.post("/api/v1/jobs", json=payload)
     response.raise_for_status()
-    
+
     data = response.json()
     return data["data"]["id"]
 
@@ -215,8 +213,8 @@ async def create_job(
 async def upload_file(
     client: httpx.AsyncClient,
     file_path: Path,
-    metadata: Optional[Dict[str, Any]] = None,
-    options: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
+    options: dict[str, Any] | None = None,
 ) -> str:
     """Upload a file and return the job ID.
     
@@ -231,15 +229,15 @@ async def upload_file(
     """
     files = {"file": (file_path.name, open(file_path, "rb"), "application/octet-stream")}
     data = {}
-    
+
     if metadata:
         data["metadata"] = json.dumps(metadata)
     if options:
         data["options"] = json.dumps(options)
-    
+
     response = await client.post("/api/v1/upload", files=files, data=data)
     response.raise_for_status()
-    
+
     return response.json()["data"]["job_id"]
 
 
@@ -263,38 +261,38 @@ def pytest_configure(config):
 
 class JobHelper:
     """Helper class for job-related operations."""
-    
+
     def __init__(self, client: httpx.AsyncClient):
         self.client = client
-    
-    async def create(self, payload: Dict[str, Any]) -> str:
+
+    async def create(self, payload: dict[str, Any]) -> str:
         """Create a job."""
         return await create_job(self.client, payload)
-    
-    async def get(self, job_id: str) -> Dict[str, Any]:
+
+    async def get(self, job_id: str) -> dict[str, Any]:
         """Get job details."""
         response = await self.client.get(f"/api/v1/jobs/{job_id}")
         response.raise_for_status()
         return response.json()["data"]
-    
+
     async def wait_for_completion(
         self,
         job_id: str,
         timeout: int = 120,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Wait for job completion."""
         return await wait_for_job_completion(
             self.client,
             job_id,
             max_attempts=int(timeout / E2E_POLL_INTERVAL),
         )
-    
+
     async def cancel(self, job_id: str) -> None:
         """Cancel a job."""
         response = await self.client.delete(f"/api/v1/jobs/{job_id}")
         response.raise_for_status()
-    
-    async def retry(self, job_id: str, options: Optional[Dict] = None) -> str:
+
+    async def retry(self, job_id: str, options: dict | None = None) -> str:
         """Retry a failed job."""
         response = await self.client.post(
             f"/api/v1/jobs/{job_id}/retry",
@@ -302,8 +300,8 @@ class JobHelper:
         )
         response.raise_for_status()
         return response.json()["data"]["id"]
-    
-    async def get_result(self, job_id: str) -> Dict[str, Any]:
+
+    async def get_result(self, job_id: str) -> dict[str, Any]:
         """Get job result."""
         response = await self.client.get(f"/api/v1/jobs/{job_id}/result")
         response.raise_for_status()
@@ -322,32 +320,32 @@ def job_helper(auth_client: httpx.AsyncClient) -> JobHelper:
 
 class E2EAssertions:
     """Custom assertion helpers for E2E tests."""
-    
+
     @staticmethod
-    def assert_job_completed(job_data: Dict[str, Any]) -> None:
+    def assert_job_completed(job_data: dict[str, Any]) -> None:
         """Assert that a job completed successfully."""
         assert job_data.get("status") == "completed", \
             f"Expected job status 'completed', got '{job_data.get('status')}'"
-    
+
     @staticmethod
-    def assert_job_failed(job_data: Dict[str, Any]) -> None:
+    def assert_job_failed(job_data: dict[str, Any]) -> None:
         """Assert that a job failed."""
         assert job_data.get("status") == "failed", \
             f"Expected job status 'failed', got '{job_data.get('status')}'"
-    
+
     @staticmethod
-    def assert_has_text(result: Dict[str, Any]) -> None:
+    def assert_has_text(result: dict[str, Any]) -> None:
         """Assert that result contains text."""
         text = result.get("text", "")
         assert text and len(text) > 0, "Expected result to have text content"
-    
+
     @staticmethod
-    def assert_quality_score(result: Dict[str, Any], min_score: float = 0.8) -> None:
+    def assert_quality_score(result: dict[str, Any], min_score: float = 0.8) -> None:
         """Assert that quality score meets minimum."""
         score = result.get("quality_score", 0)
         assert score >= min_score, \
             f"Expected quality score >= {min_score}, got {score}"
-    
+
     @staticmethod
     def assert_response_time(response_time_ms: float, max_ms: float = 2000) -> None:
         """Assert that response time is within limit."""

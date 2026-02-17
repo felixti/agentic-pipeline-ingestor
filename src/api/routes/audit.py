@@ -4,29 +4,25 @@ This module provides endpoints for querying and exporting audit logs.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
-from src.auth.base import User
-from src.auth.dependencies import (
-    get_current_user,
-    require_export_audit,
-    require_permissions,
-    require_read_audit,
-)
 from src.audit.logger import get_audit_logger
 from src.audit.models import (
-    AuditEvent,
     AuditEventStatus,
     AuditEventType,
     AuditLogExportRequest,
     AuditLogQuery,
-    AuditLogQueryResult,
 )
-
+from src.auth.base import User
+from src.auth.dependencies import (
+    get_current_user,
+    require_export_audit,
+    require_read_audit,
+)
 
 router = APIRouter(prefix="/audit", tags=["Audit"])
 
@@ -37,29 +33,29 @@ router = APIRouter(prefix="/audit", tags=["Audit"])
 
 class AuditLogQueryParams(BaseModel):
     """Query parameters for audit logs."""
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    event_types: Optional[List[str]] = None
-    user_ids: Optional[List[str]] = None
-    resource_types: Optional[List[str]] = None
-    resource_ids: Optional[List[str]] = None
-    status: Optional[str] = None
-    correlation_id: Optional[str] = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    event_types: list[str] | None = None
+    user_ids: list[str] | None = None
+    resource_types: list[str] | None = None
+    resource_ids: list[str] | None = None
+    status: str | None = None
+    correlation_id: str | None = None
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=50, ge=1, le=1000)
     sort_by: str = "timestamp"
     sort_order: str = "desc"
-    
+
     def to_audit_query(self) -> AuditLogQuery:
         """Convert to internal audit query."""
         event_types = None
         if self.event_types:
             event_types = [AuditEventType(e) for e in self.event_types]
-        
+
         status_enum = None
         if self.status:
             status_enum = AuditEventStatus(self.status)
-        
+
         return AuditLogQuery(
             start_time=self.start_time,
             end_time=self.end_time,
@@ -81,20 +77,20 @@ class AuditLogEntryResponse(BaseModel):
     id: str
     timestamp: str
     event_type: str
-    user_id: Optional[str]
-    ip_address: Optional[str]
-    resource_type: Optional[str]
-    resource_id: Optional[str]
-    action: Optional[str]
+    user_id: str | None
+    ip_address: str | None
+    resource_type: str | None
+    resource_id: str | None
+    action: str | None
     status: str
-    details: Dict[str, Any]
-    correlation_id: Optional[str]
-    request_id: Optional[str]
+    details: dict[str, Any]
+    correlation_id: str | None
+    request_id: str | None
 
 
 class AuditLogListResponse(BaseModel):
     """Audit log list response."""
-    events: List[AuditLogEntryResponse]
+    events: list[AuditLogEntryResponse]
     total: int
     page: int
     page_size: int
@@ -104,14 +100,14 @@ class AuditLogListResponse(BaseModel):
 
 class AuditExportRequest(BaseModel):
     """Audit export request."""
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    event_types: Optional[List[str]] = None
-    user_ids: Optional[List[str]] = None
-    resource_types: Optional[List[str]] = None
-    status: Optional[str] = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    event_types: list[str] | None = None
+    user_ids: list[str] | None = None
+    resource_types: list[str] | None = None
+    status: str | None = None
     format: str = Field(default="json", pattern="^(json|csv|ndjson)$")
-    
+
     def to_export_request(self) -> AuditLogExportRequest:
         """Convert to internal export request."""
         query = AuditLogQueryParams(
@@ -122,7 +118,7 @@ class AuditExportRequest(BaseModel):
             resource_types=self.resource_types,
             status=self.status,
         )
-        
+
         return AuditLogExportRequest(
             query=query.to_audit_query(),
             format=self.format,
@@ -132,10 +128,10 @@ class AuditExportRequest(BaseModel):
 class AuditSummaryResponse(BaseModel):
     """Audit log summary response."""
     total_events: int
-    events_by_type: Dict[str, int]
-    events_by_status: Dict[str, int]
-    events_by_user: Dict[str, int]
-    time_range: Dict[str, Optional[str]]
+    events_by_type: dict[str, int]
+    events_by_status: dict[str, int]
+    events_by_user: dict[str, int]
+    time_range: dict[str, str | None]
 
 
 # ============================================================================
@@ -145,14 +141,14 @@ class AuditSummaryResponse(BaseModel):
 @router.get("/logs", response_model=AuditLogListResponse)
 async def query_audit_logs(
     request: Request,
-    start_time: Optional[datetime] = None,
-    end_time: Optional[datetime] = None,
-    event_types: Optional[List[str]] = Query(None),
-    user_ids: Optional[List[str]] = Query(None),
-    resource_types: Optional[List[str]] = Query(None),
-    resource_ids: Optional[List[str]] = Query(None),
-    status: Optional[str] = None,
-    correlation_id: Optional[str] = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+    event_types: list[str] | None = Query(None),
+    user_ids: list[str] | None = Query(None),
+    resource_types: list[str] | None = Query(None),
+    resource_ids: list[str] | None = Query(None),
+    status: str | None = None,
+    correlation_id: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=1000),
     sort_by: str = Query("timestamp"),
@@ -180,15 +176,15 @@ async def query_audit_logs(
         sort_by=sort_by,
         sort_order=sort_order,
     )
-    
+
     # Execute query
     result = await audit_logger.query_logs(query)
-    
+
     # Log this access
     await audit_logger.query_logs(
         AuditLogQuery(event_types=[AuditEventType.AUDIT_EXPORTED], page=1, page_size=1)
     )
-    
+
     return AuditLogListResponse(
         events=[
             AuditLogEntryResponse(
@@ -228,10 +224,10 @@ async def export_audit_logs(
     """
     # Convert to internal request
     internal_request = export_request.to_export_request()
-    
+
     # Export data
     data = await audit_logger.export_logs(internal_request)
-    
+
     # Determine content type
     content_type_map = {
         "json": "application/json",
@@ -239,14 +235,14 @@ async def export_audit_logs(
         "ndjson": "application/x-ndjson",
     }
     content_type = content_type_map.get(export_request.format, "application/octet-stream")
-    
+
     # Determine filename
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     filename = f"audit_export_{timestamp}.{export_request.format}"
-    
+
     # Log export
     # Note: This would need to be async, but we're already in the function
-    
+
     return Response(
         content=data,
         media_type=content_type,
@@ -258,8 +254,8 @@ async def export_audit_logs(
 
 @router.get("/summary", response_model=AuditSummaryResponse)
 async def get_audit_summary(
-    start_time: Optional[datetime] = None,
-    end_time: Optional[datetime] = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
     user: User = Depends(require_read_audit),
     audit_logger=Depends(get_audit_logger),
 ):
@@ -275,27 +271,27 @@ async def get_audit_summary(
         page=1,
         page_size=10000,  # Large page for aggregation
     )
-    
+
     result = await audit_logger.query_logs(query)
-    
+
     # Aggregate statistics
-    events_by_type: Dict[str, int] = {}
-    events_by_status: Dict[str, int] = {}
-    events_by_user: Dict[str, int] = {}
-    
+    events_by_type: dict[str, int] = {}
+    events_by_status: dict[str, int] = {}
+    events_by_user: dict[str, int] = {}
+
     for event in result.events:
         # Count by type
         event_type = event.event_type.value
         events_by_type[event_type] = events_by_type.get(event_type, 0) + 1
-        
+
         # Count by status
         status = event.status.value
         events_by_status[status] = events_by_status.get(status, 0) + 1
-        
+
         # Count by user
         user_id = event.user_id or "anonymous"
         events_by_user[user_id] = events_by_user.get(user_id, 0) + 1
-    
+
     return AuditSummaryResponse(
         total_events=result.total,
         events_by_type=events_by_type,
@@ -332,8 +328,7 @@ async def get_event_details(
     Requires audit:read permission.
     """
     # Query for specific event
-    from uuid import UUID
-    
+
     try:
         event_uuid = UUID(event_id)
     except ValueError:
@@ -341,7 +336,7 @@ async def get_event_details(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid event ID format",
         )
-    
+
     # In a real implementation, this would query by ID
     # For now, return not found
     raise HTTPException(

@@ -591,7 +591,7 @@ class EmailParser(ParserPlugin):
         self,
         msg: email.message.EmailMessage,
         options: dict[str, Any],
-    ) -> Tuple[list[EmailAttachment], list[EmailAttachment]]:
+    ) -> tuple[list[EmailAttachment], list[EmailAttachment]]:
         """Extract attachments from an email message.
         
         Args:

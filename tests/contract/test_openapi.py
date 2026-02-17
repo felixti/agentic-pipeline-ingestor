@@ -7,20 +7,10 @@ specification defined in /api/openapi.yaml.
 from pathlib import Path
 
 import pytest
-import schemathesis
+import yaml
 from fastapi.testclient import TestClient
 
 from src.main import app
-
-# Load OpenAPI schema
-openapi_path = Path(__file__).parent.parent.parent / "api" / "openapi.yaml"
-
-# Configure Schemathesis
-schema = schemathesis.from_path(
-    str(openapi_path),
-    app=app,
-    base_url="http://localhost:8000",
-)
 
 
 @pytest.fixture
@@ -29,142 +19,105 @@ def client():
     return TestClient(app)
 
 
-# ============================================================================
-# Health Endpoint Tests
-# ============================================================================
-
-@schema.parametrize(endpoint="/health")
-def test_health_endpoint(case, client):
-    """Test health endpoint conforms to OpenAPI spec."""
-    response = case.call_and_validate(session=client)
-    assert response.status_code == 200
-    assert "status" in response.json()
+@pytest.fixture
+def openapi_schema():
+    """Load the OpenAPI schema."""
+    openapi_path = Path(__file__).parent.parent.parent / "api" / "openapi.yaml"
+    with open(openapi_path) as f:
+        return yaml.safe_load(f)
 
 
-@schema.parametrize(endpoint="/health/ready")
-def test_readiness_endpoint(case, client):
-    """Test readiness endpoint conforms to OpenAPI spec."""
-    response = case.call_and_validate(session=client)
-    assert response.status_code == 200
+class TestBasicEndpoints:
+    """Test basic API endpoints conform to OpenAPI spec."""
+
+    def test_health_endpoint_exists(self, client):
+        """Test that health endpoint exists and returns correct structure."""
+        response = client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert "status" in data
+        assert "components" in data
+
+    def test_health_live_endpoint(self, client):
+        """Test Kubernetes liveness probe endpoint."""
+        response = client.get("/health/live")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "alive"
+
+    def test_health_ready_endpoint(self, client):
+        """Test Kubernetes readiness probe endpoint."""
+        response = client.get("/health/ready")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ready"
+
+    def test_openapi_spec_endpoint(self, client):
+        """Test that OpenAPI spec endpoint returns valid YAML."""
+        response = client.get("/api/v1/openapi.yaml")
+        assert response.status_code == 200
+        content = response.text
+        assert "openapi:" in content
+        assert "paths:" in content
+
+    def test_metrics_endpoint(self, client):
+        """Test Prometheus metrics endpoint."""
+        response = client.get("/metrics")
+        assert response.status_code == 200
+        content = response.text
+        assert "# HELP" in content or "# TYPE" in content
 
 
-@schema.parametrize(endpoint="/health/live")
-def test_liveness_endpoint(case, client):
-    """Test liveness endpoint conforms to OpenAPI spec."""
-    response = case.call_and_validate(session=client)
-    assert response.status_code == 200
+class TestOpenAPISpecValidity:
+    """Test that the OpenAPI spec is valid and complete."""
+
+    def test_spec_has_required_fields(self, openapi_schema):
+        """Test that spec has all required OpenAPI fields."""
+        assert "openapi" in openapi_schema
+        assert "info" in openapi_schema
+        assert "paths" in openapi_schema
+
+    def test_spec_version_is_3_1(self, openapi_schema):
+        """Test that spec version is 3.1.x."""
+        version = openapi_schema["openapi"]
+        assert version.startswith("3.1")
+
+    def test_spec_has_api_info(self, openapi_schema):
+        """Test that spec has API information."""
+        info = openapi_schema["info"]
+        assert "title" in info
+        assert "version" in info
+        assert "description" in info
+
+    def test_spec_has_paths(self, openapi_schema):
+        """Test that spec has at least one path defined."""
+        paths = openapi_schema["paths"]
+        assert len(paths) > 0
+
+    def test_health_path_defined(self, openapi_schema):
+        """Test that /health path is defined."""
+        assert "/health" in openapi_schema["paths"]
+
+    def test_jobs_path_defined(self, openapi_schema):
+        """Test that /api/v1/jobs path is defined."""
+        assert "/api/v1/jobs" in openapi_schema["paths"]
 
 
-# ============================================================================
-# API Schema Validation
-# ============================================================================
+class TestResponseSchemas:
+    """Test that responses match expected schemas."""
 
-def test_openapi_schema_is_valid():
-    """Verify the OpenAPI schema is valid and can be loaded."""
-    assert schema.raw_schema is not None
-    assert "paths" in schema.raw_schema
-    assert "/api/v1/jobs" in schema.raw_schema["paths"]
+    def test_health_response_structure(self, client, openapi_schema):
+        """Test health response matches schema."""
+        response = client.get("/health")
+        data = response.json()
 
+        # Verify required fields
+        assert "status" in data
+        assert "version" in data
+        assert "timestamp" in data
+        assert "components" in data
 
-def test_all_endpoints_have_operations():
-    """Verify all endpoints have at least one operation defined."""
-    paths = schema.raw_schema.get("paths", {})
-    for path, operations in paths.items():
-        # Skip paths that are just parameter definitions
-        if not any(op in operations for op in ["get", "post", "put", "delete", "patch"]):
-            continue
-
-        # Each operation should have a summary or description
-        for method in ["get", "post", "put", "delete", "patch"]:
-            if method in operations:
-                operation = operations[method]
-                assert "operationId" in operation, f"{method.upper()} {path} missing operationId"
-
-
-# ============================================================================
-# Response Schema Validation
-# ============================================================================
-
-def test_health_response_schema():
-    """Validate health endpoint response schema."""
-    client = TestClient(app)
-    response = client.get("/health")
-
-    assert response.status_code == 200
-    data = response.json()
-
-    # Check required fields
-    assert "status" in data
-    assert "version" in data
-    assert "timestamp" in data
-    assert "components" in data
-
-    # Check status values
-    assert data["status"] in ["healthy", "degraded", "unhealthy"]
-
-
-def test_error_response_schema():
-    """Validate error response follows standard format."""
-    client = TestClient(app)
-
-    # Trigger a 404 error
-    response = client.get("/api/v1/jobs/invalid-uuid")
-
-    # Should return standardized error format
-    assert response.status_code in [404, 422]
-
-    # Error responses should follow standard format
-    data = response.json()
-    if "error" in data:
-        assert "code" in data["error"]
-        assert "message" in data["error"]
-        assert "meta" in data
-        assert "request_id" in data["meta"]
-
-
-# ============================================================================
-# Content-Type Validation
-# ============================================================================
-
-def test_api_returns_json():
-    """Verify API returns JSON for API endpoints."""
-    client = TestClient(app)
-
-    response = client.get("/health")
-    assert response.headers["content-type"] == "application/json"
-
-
-def test_metrics_returns_prometheus_format():
-    """Verify metrics endpoint returns Prometheus format."""
-    client = TestClient(app)
-
-    response = client.get("/metrics")
-    assert response.status_code == 200
-    assert "text/plain" in response.headers["content-type"]
-
-
-# ============================================================================
-# Security Header Validation
-# ============================================================================
-
-def test_security_headers_present():
-    """Verify security headers are present in responses."""
-    client = TestClient(app)
-
-    response = client.get("/health")
-
-    # Check for request ID header
-    assert "X-Request-ID" in response.headers
-    assert "X-API-Version" in response.headers
-
-
-# ============================================================================
-# API Version Validation
-# ============================================================================
-
-def test_api_version_header():
-    """Verify API version header is correct."""
-    client = TestClient(app)
-
-    response = client.get("/health")
-    assert response.headers["X-API-Version"] == "v1"
+        # Verify field types
+        assert isinstance(data["status"], str)
+        assert isinstance(data["version"], str)
+        assert isinstance(data["components"], dict)

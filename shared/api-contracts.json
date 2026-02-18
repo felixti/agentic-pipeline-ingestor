@@ -1,0 +1,561 @@
+{
+  "api_version": "v1",
+  "description": "API Contracts for Agentic Data Pipeline Ingestor",
+  "chunk_endpoints": {
+    "list_chunks": {
+      "path": "/api/v1/jobs/{job_id}/chunks",
+      "method": "GET",
+      "description": "List all chunks for a specific job with pagination",
+      "parameters": {
+        "job_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Job UUID",
+          "in": "path",
+          "required": true
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 100,
+          "description": "Maximum number of chunks to return",
+          "in": "query"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Number of chunks to skip for pagination",
+          "in": "query"
+        },
+        "include_embedding": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include vector embedding in response (performance impact)",
+          "in": "query"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "List of chunks",
+          "model": "DocumentChunkListResponse"
+        },
+        "404": {
+          "description": "Job not found"
+        },
+        "400": {
+          "description": "Invalid UUID format"
+        }
+      }
+    },
+    "get_chunk": {
+      "path": "/api/v1/jobs/{job_id}/chunks/{chunk_id}",
+      "method": "GET",
+      "description": "Get a specific chunk by ID with optional embedding",
+      "parameters": {
+        "job_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Job UUID",
+          "in": "path",
+          "required": true
+        },
+        "chunk_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Chunk UUID",
+          "in": "path",
+          "required": true
+        },
+        "include_embedding": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include vector embedding in response",
+          "in": "query"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Chunk details",
+          "model": "DocumentChunkResponse"
+        },
+        "404": {
+          "description": "Chunk not found"
+        },
+        "400": {
+          "description": "Invalid UUID format or chunk doesn't belong to job"
+        }
+      }
+    }
+  },
+  "health_endpoints": {
+    "comprehensive": {
+      "path": "/health",
+      "method": "GET",
+      "description": "Comprehensive health check for all system components",
+      "response_model": "ComprehensiveHealthResponse",
+      "components_checked": [
+        "database",
+        "redis",
+        "llm_providers",
+        "destinations",
+        "storage",
+        "opentelemetry",
+        "vector_store"
+      ]
+    },
+    "liveness": {
+      "path": "/health/live",
+      "method": "GET",
+      "description": "Kubernetes liveness probe - lightweight check",
+      "response_model": "LivenessResponse"
+    },
+    "readiness": {
+      "path": "/health/ready",
+      "method": "GET",
+      "description": "Kubernetes readiness probe - checks critical dependencies",
+      "response_model": "ReadinessResponse"
+    },
+    "vector_store": {
+      "path": "/health/vector",
+      "method": "GET",
+      "description": "Vector store health check - verifies pgvector and pg_trgm extensions",
+      "response_model": "VectorStoreHealthResponse",
+      "extensions_checked": ["vector", "pg_trgm"],
+      "example_response": {
+        "healthy": true,
+        "status": "healthy",
+        "message": "pgvector and pg_trgm extensions available",
+        "latency_ms": 2.5,
+        "extensions": {
+          "vector": "0.7.0",
+          "pg_trgm": "1.6"
+        },
+        "pgvector_version": "0.7.0",
+        "pg_trgm_version": "1.6",
+        "missing_extensions": null,
+        "timestamp": "2026-02-18T01:00:00.000000"
+      }
+    },
+    "detailed_component": {
+      "path": "/health/detailed/{component}",
+      "method": "GET",
+      "description": "Detailed health information for a specific component",
+      "parameters": {
+        "component": {
+          "type": "string",
+          "enum": ["database", "redis", "llm_providers", "destinations", "storage", "opentelemetry", "vector_store"],
+          "description": "Component name to check"
+        }
+      }
+    }
+  },
+  "search_endpoints": {
+    "semantic_search": {
+      "path": "/api/v1/search/semantic",
+      "method": "POST",
+      "description": "Semantic search using pre-computed embedding vector with cosine similarity",
+      "request_body": {
+        "query_embedding": {
+          "type": "array",
+          "items": {"type": "number"},
+          "description": "Query embedding vector (list of floats)"
+        },
+        "top_k": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 10,
+          "description": "Maximum number of results"
+        },
+        "min_similarity": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.7,
+          "description": "Minimum similarity threshold"
+        },
+        "filters": {
+          "type": "object",
+          "description": "Optional filters (e.g., job_id)"
+        }
+      },
+      "response_model": "SearchResultsResponse",
+      "responses": {
+        "200": {"description": "Search results"},
+        "400": {"description": "Invalid embedding vector"},
+        "422": {"description": "Validation error"}
+      }
+    },
+    "text_search": {
+      "path": "/api/v1/search/text",
+      "method": "POST",
+      "description": "Full-text search with BM25 ranking and optional fuzzy matching",
+      "request_body": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "Search query text"
+        },
+        "top_k": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 10,
+          "description": "Maximum number of results"
+        },
+        "language": {
+          "type": "string",
+          "default": "english",
+          "description": "Text search language configuration"
+        },
+        "use_fuzzy": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include fuzzy trigram matching"
+        },
+        "highlight": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include highlighted snippets"
+        },
+        "filters": {
+          "type": "object",
+          "description": "Optional filters"
+        }
+      },
+      "response_model": "TextSearchResultsResponse",
+      "responses": {
+        "200": {"description": "Search results with optional highlighting"},
+        "400": {"description": "Invalid search query"},
+        "422": {"description": "Validation error"}
+      }
+    },
+    "hybrid_search": {
+      "path": "/api/v1/search/hybrid",
+      "method": "POST",
+      "description": "Combine vector similarity and text search using fusion methods",
+      "request_body": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "Search query text"
+        },
+        "top_k": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 10,
+          "description": "Maximum number of results"
+        },
+        "vector_weight": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.7,
+          "description": "Weight for vector search scores"
+        },
+        "text_weight": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.3,
+          "description": "Weight for text search scores"
+        },
+        "fusion_method": {
+          "type": "string",
+          "enum": ["weighted_sum", "rrf"],
+          "default": "weighted_sum",
+          "description": "Fusion method: weighted_sum or rrf"
+        },
+        "min_similarity": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.5,
+          "description": "Minimum similarity threshold"
+        },
+        "filters": {
+          "type": "object",
+          "description": "Optional filters"
+        }
+      },
+      "response_model": "HybridSearchResultsResponse",
+      "responses": {
+        "200": {"description": "Hybrid search results with component scores"},
+        "400": {"description": "Invalid query or weights"},
+        "422": {"description": "Validation error"}
+      }
+    },
+    "similar_chunks": {
+      "path": "/api/v1/search/similar/{chunk_id}",
+      "method": "GET",
+      "description": "Find chunks semantically similar to a reference chunk",
+      "parameters": {
+        "chunk_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Reference chunk UUID",
+          "in": "path",
+          "required": true
+        },
+        "top_k": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 10,
+          "description": "Maximum number of results",
+          "in": "query"
+        },
+        "exclude_self": {
+          "type": "boolean",
+          "default": true,
+          "description": "Exclude the reference chunk from results",
+          "in": "query"
+        }
+      },
+      "response_model": "SearchResultsResponse",
+      "responses": {
+        "200": {"description": "Similar chunks with similarity scores"},
+        "400": {"description": "Invalid UUID format or chunk has no embedding"},
+        "404": {"description": "Reference chunk not found"}
+      }
+    }
+  },
+  "models": {
+    "HealthStatus": {
+      "type": "string",
+      "enum": ["healthy", "degraded", "unhealthy"]
+    },
+    "ComponentHealth": {
+      "type": "object",
+      "properties": {
+        "status": {"type": "string", "enum": ["healthy", "degraded", "unhealthy"]},
+        "latency_ms": {"type": "number", "nullable": true},
+        "message": {"type": "string", "nullable": true}
+      }
+    },
+    "ComprehensiveHealthResponse": {
+      "type": "object",
+      "properties": {
+        "status": {"type": "string", "enum": ["healthy", "degraded", "unhealthy"]},
+        "timestamp": {"type": "string", "format": "date-time"},
+        "version": {"type": "string"},
+        "environment": {"type": "string"},
+        "components": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/models/ComponentHealth"}
+        },
+        "overall_healthy": {"type": "boolean"}
+      }
+    },
+    "VectorStoreHealthResponse": {
+      "type": "object",
+      "properties": {
+        "healthy": {"type": "boolean"},
+        "status": {"type": "string", "enum": ["healthy", "degraded", "unhealthy"]},
+        "message": {"type": "string"},
+        "latency_ms": {"type": "number", "nullable": true},
+        "extensions": {
+          "type": "object",
+          "additionalProperties": {"type": "string"},
+          "nullable": true
+        },
+        "pgvector_version": {"type": "string", "nullable": true},
+        "pg_trgm_version": {"type": "string", "nullable": true},
+        "missing_extensions": {
+          "type": "array",
+          "items": {"type": "string"},
+          "nullable": true
+        },
+        "timestamp": {"type": "string", "format": "date-time"}
+      }
+    },
+    "DocumentChunkListItem": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "format": "uuid"},
+        "job_id": {"type": "string", "format": "uuid"},
+        "chunk_index": {"type": "integer", "minimum": 0},
+        "content": {"type": "string"},
+        "content_hash": {"type": "string", "nullable": true},
+        "metadata": {"type": "object"},
+        "created_at": {"type": "string", "format": "date-time"}
+      },
+      "required": ["id", "job_id", "chunk_index", "content", "metadata", "created_at"]
+    },
+    "DocumentChunkResponse": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "format": "uuid"},
+        "job_id": {"type": "string", "format": "uuid"},
+        "chunk_index": {"type": "integer", "minimum": 0},
+        "content": {"type": "string"},
+        "content_hash": {"type": "string", "nullable": true},
+        "embedding": {
+          "type": "array",
+          "items": {"type": "number"},
+          "nullable": true
+        },
+        "metadata": {"type": "object"},
+        "created_at": {"type": "string", "format": "date-time"}
+      },
+      "required": ["id", "job_id", "chunk_index", "content", "metadata", "created_at"]
+    },
+    "DocumentChunkListResponse": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {"$ref": "#/models/DocumentChunkListItem"}
+        },
+        "total": {"type": "integer", "minimum": 0},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+        "offset": {"type": "integer", "minimum": 0}
+      },
+      "required": ["items", "total", "limit", "offset"]
+    },
+    "SearchResultItem": {
+      "type": "object",
+      "properties": {
+        "chunk_id": {"type": "string", "format": "uuid"},
+        "job_id": {"type": "string", "format": "uuid"},
+        "chunk_index": {"type": "integer", "minimum": 0},
+        "content": {"type": "string"},
+        "metadata": {"type": "object"},
+        "similarity_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "rank": {"type": "integer", "minimum": 1}
+      },
+      "required": ["chunk_id", "job_id", "chunk_index", "content", "similarity_score", "rank"]
+    },
+    "SearchResultsResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {"$ref": "#/models/SearchResultItem"}
+        },
+        "total": {"type": "integer", "minimum": 0},
+        "query_time_ms": {"type": "number"}
+      },
+      "required": ["results", "total", "query_time_ms"]
+    },
+    "TextSearchResultItem": {
+      "type": "object",
+      "allOf": [{"$ref": "#/models/SearchResultItem"}],
+      "properties": {
+        "highlighted_content": {"type": "string", "nullable": true},
+        "matched_terms": {
+          "type": "array",
+          "items": {"type": "string"},
+          "nullable": true
+        }
+      }
+    },
+    "TextSearchResultsResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {"$ref": "#/models/TextSearchResultItem"}
+        },
+        "total": {"type": "integer", "minimum": 0},
+        "query_time_ms": {"type": "number"}
+      },
+      "required": ["results", "total", "query_time_ms"]
+    },
+    "HybridSearchResultItem": {
+      "type": "object",
+      "properties": {
+        "chunk_id": {"type": "string", "format": "uuid"},
+        "job_id": {"type": "string", "format": "uuid"},
+        "chunk_index": {"type": "integer", "minimum": 0},
+        "content": {"type": "string"},
+        "metadata": {"type": "object"},
+        "hybrid_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "vector_score": {"type": "number", "minimum": 0.0, "maximum": 1.0, "nullable": true},
+        "text_score": {"type": "number", "minimum": 0.0, "maximum": 1.0, "nullable": true},
+        "vector_rank": {"type": "integer", "minimum": 1, "nullable": true},
+        "text_rank": {"type": "integer", "minimum": 1, "nullable": true},
+        "rank": {"type": "integer", "minimum": 1},
+        "fusion_method": {"type": "string"}
+      },
+      "required": ["chunk_id", "job_id", "chunk_index", "content", "hybrid_score", "rank", "fusion_method"]
+    },
+    "HybridSearchResultsResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {"$ref": "#/models/HybridSearchResultItem"}
+        },
+        "total": {"type": "integer", "minimum": 0},
+        "query_time_ms": {"type": "number"}
+      },
+      "required": ["results", "total", "query_time_ms"]
+    }
+  },
+  "configuration": {
+    "vector_store": {
+      "config_file": "config/vector_store.yaml",
+      "environment_variables": [
+        {"name": "VECTOR_STORE_ENABLED", "type": "boolean", "default": "true"},
+        {"name": "EMBEDDING_MODEL", "type": "string", "default": "text-embedding-3-small"},
+        {"name": "EMBEDDING_API_KEY", "type": "string", "default": null},
+        {"name": "EMBEDDING_API_BASE", "type": "string", "default": null},
+        {"name": "EMBEDDING_DIMENSIONS", "type": "integer", "default": "1536"}
+      ],
+      "default_settings": {
+        "embedding": {
+          "model": "text-embedding-3-small",
+          "dimensions": 1536,
+          "batch_size": 100,
+          "max_tokens": 8192
+        },
+        "search": {
+          "default_top_k": 10,
+          "max_top_k": 100,
+          "default_min_similarity": 0.7,
+          "query_timeout_ms": 5000
+        },
+        "index": {
+          "hnsw_m": 16,
+          "hnsw_ef_construction": 64,
+          "hnsw_ef_search": 32,
+          "distance_metric": "cosine"
+        },
+        "hybrid": {
+          "default_vector_weight": 0.7,
+          "default_text_weight": 0.3,
+          "rrf_k": 60,
+          "fallback_strategy": "text_only"
+        },
+        "pipeline": {
+          "auto_generate_embeddings": true,
+          "chunking_strategy": "semantic",
+          "chunk_size": 1000,
+          "chunk_overlap": 200,
+          "min_chunk_size": 100,
+          "store_chunks": true
+        }
+      }
+    }
+  },
+  "rate_limits": {
+    "list_chunks": {"requests": 120, "window_seconds": 60},
+    "get_chunk": {"requests": 120, "window_seconds": 60},
+    "semantic_search": {"requests": 60, "window_seconds": 60},
+    "text_search": {"requests": 100, "window_seconds": 60},
+    "hybrid_search": {"requests": 30, "window_seconds": 60},
+    "similar_chunks": {"requests": 60, "window_seconds": 60}
+  },
+  "performance_targets": {
+    "semantic_search_p99_ms": 100,
+    "text_search_p99_ms": 50,
+    "hybrid_search_p99_ms": 150,
+    "embedding_generation_p99_ms": 500
+  }
+}

@@ -1,0 +1,148 @@
+# Vector Store Configuration for Agentic Data Pipeline Ingestor
+#
+# This file configures the pgvector-based vector storage and search system.
+# It includes settings for embeddings, search parameters, HNSW indexing, and hybrid search.
+#
+# Environment Variables Supported:
+#   VECTOR_STORE_ENABLED - Override enabled setting (true/false)
+#   EMBEDDING_MODEL - Override embedding model name
+#   EMBEDDING_API_KEY - API key for embedding provider
+#   EMBEDDING_API_BASE - Base URL for embedding provider
+
+vector_store:
+  # ============================================================================
+  # General Settings
+  # ============================================================================
+  enabled: true
+  
+  # ============================================================================
+  # Embedding Configuration
+  # ============================================================================
+  # Configuration for text embedding generation
+  embedding:
+    # Model to use for embeddings (litellm format)
+    # Examples: "text-embedding-3-small", "text-embedding-3-large", "azure/text-embedding-ada-002"
+    model: "text-embedding-3-small"
+    
+    # Embedding dimensions (must match model output)
+    # text-embedding-3-small: 1536
+    # text-embedding-3-large: 3072
+    # text-embedding-ada-002: 1536
+    dimensions: 1536
+    
+    # Batch size for embedding generation (max texts per batch)
+    batch_size: 100
+    
+    # Maximum tokens per chunk (for truncation)
+    max_tokens: 8192
+    
+    # Provider-specific parameters
+    provider_params:
+      # Timeout for embedding requests (seconds)
+      timeout: 30
+      # Number of retries on failure
+      retries: 3
+      # Retry backoff factor
+      backoff_factor: 2.0
+  
+  # ============================================================================
+  # Search Configuration
+  # ============================================================================
+  # Default parameters for vector search operations
+  search:
+    # Default number of results to return
+    default_top_k: 10
+    
+    # Maximum allowed top_k (prevent abuse)
+    max_top_k: 100
+    
+    # Default minimum similarity threshold (0-1)
+    default_min_similarity: 0.7
+    
+    # Query timeout (milliseconds)
+    query_timeout_ms: 5000
+  
+  # ============================================================================
+  # HNSW Index Configuration
+  # ============================================================================
+  # HNSW (Hierarchical Navigable Small World) index parameters for pgvector
+  # These affect build time, search speed, and recall quality
+  index:
+    # M: Number of bi-directional links for each node (higher = better recall, slower build)
+    # Recommended: 8-64 (16 is a good default)
+    hnsw_m: 16
+    
+    # ef_construction: Size of dynamic candidate list during index building
+    # Higher = better index quality, slower build time
+    # Recommended: 40-200 (64 is a good default)
+    hnsw_ef_construction: 64
+    
+    # ef_search: Size of dynamic candidate list during search
+    # Higher = better recall, slower search
+    # Recommended: 40-400 (32 is a good default for fast search)
+    hnsw_ef_search: 32
+    
+    # Distance metric for indexing
+    # Options: cosine, l2, inner_product
+    distance_metric: "cosine"
+  
+  # ============================================================================
+  # Hybrid Search Configuration
+  # ============================================================================
+  # Parameters for combining vector and text search results
+  hybrid:
+    # Default weight for vector search scores (0-1)
+    default_vector_weight: 0.7
+    
+    # Default weight for text search scores (0-1)
+    default_text_weight: 0.3
+    
+    # RRF (Reciprocal Rank Fusion) constant
+    # Higher values dampen the impact of rankings less
+    # Recommended: 20-100 (60 is a good default)
+    rrf_k: 60
+    
+    # Fallback strategy when one search type fails
+    # Options: vector_only, text_only, error
+    fallback_strategy: "text_only"
+  
+  # ============================================================================
+  # Caching Configuration
+  # ============================================================================
+  # Cache settings for embedding results
+  cache:
+    # Enable embedding caching
+    enabled: true
+    
+    # Cache provider: memory, redis
+    provider: "memory"
+    
+    # TTL for cached embeddings (seconds)
+    ttl_seconds: 3600
+    
+    # Maximum cache size (number of entries, for memory provider)
+    max_size: 10000
+  
+  # ============================================================================
+  # Pipeline Integration
+  # ============================================================================
+  # Settings for automatic chunking and embedding in pipeline
+  pipeline:
+    # Automatically generate embeddings during pipeline processing
+    auto_generate_embeddings: true
+    
+    # Chunking strategy for pipeline documents
+    # Options: fixed, semantic, hierarchical
+    chunking_strategy: "semantic"
+    
+    # Chunk size in tokens/characters
+    chunk_size: 1000
+    
+    # Chunk overlap (prevents context loss at boundaries)
+    chunk_overlap: 200
+    
+    # Minimum chunk size (smaller chunks are filtered out)
+    min_chunk_size: 100
+    
+    # Store chunks in database during pipeline processing
+    store_chunks: true

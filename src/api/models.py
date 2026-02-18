@@ -752,6 +752,57 @@ class ApiResponse(BaseModel):
 
 
 # ============================================================================
+# Document Chunk Models
+# ============================================================================
+
+class DocumentChunkResponse(BaseModel):
+    """Response model for a single document chunk.
+    
+    Used for both list items and detailed responses. The embedding field
+    is only included when explicitly requested via include_embedding parameter.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID = Field(..., description="Unique chunk identifier")
+    job_id: UUID = Field(..., description="Parent job identifier")
+    chunk_index: int = Field(..., ge=0, description="Position within document (0-indexed)")
+    content: str = Field(..., description="Text content of the chunk")
+    content_hash: str | None = Field(default=None, description="SHA-256 hash for deduplication")
+    embedding: list[float] | None = Field(
+        default=None,
+        description="Vector embedding for semantic search (only when requested)"
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Chunk metadata (page numbers, etc.)")
+    created_at: datetime = Field(..., description="Timestamp of record creation")
+
+
+class DocumentChunkListItem(BaseModel):
+    """List item response for document chunks (excludes embedding by default).
+    
+    Used in list endpoints where embedding data is excluded for performance.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID = Field(..., description="Unique chunk identifier")
+    job_id: UUID = Field(..., description="Parent job identifier")
+    chunk_index: int = Field(..., ge=0, description="Position within document (0-indexed)")
+    content: str = Field(..., description="Text content of the chunk")
+    content_hash: str | None = Field(default=None, description="SHA-256 hash for deduplication")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Chunk metadata (page numbers, etc.)")
+    created_at: datetime = Field(..., description="Timestamp of record creation")
+
+
+class DocumentChunkListResponse(BaseModel):
+    """Response model for paginated chunk list."""
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: list[DocumentChunkListItem] = Field(default_factory=list, description="List of chunks")
+    total: int = Field(..., ge=0, description="Total number of chunks for this job")
+    limit: int = Field(..., ge=1, le=1000, description="Number of items returned")
+    offset: int = Field(..., ge=0, description="Offset from start of results")
+
+
+# ============================================================================
 # Error Models
 # ============================================================================
 

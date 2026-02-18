@@ -1,0 +1,39 @@
+version: 1
+agent:
+  name: ralph-loop-orchestrator
+  system_prompt_path: ./system-prompts/ralph-orchestrator.md
+  tools:
+    - "kimi_cli.tools.multiagent:Task"
+    - "kimi_cli.tools.todo:SetTodoList"
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.file:StrReplaceFile"
+    - "kimi_cli.tools.shell:Shell"
+    - "kimi_cli.tools.web:SearchWeb"
+    - "kimi_cli.tools.web:FetchURL"
+  subagents:
+    backend-developer:
+      path: ./subagents/backend-developer.yaml
+      description: "Implements backend APIs, services, and business logic"
+    frontend-developer:
+      path: ./subagents/frontend-developer.yaml
+      description: "Implements UI components, pages, and client-side logic"
+    qa-agent:
+      path: ./subagents/qa-agent.yaml
+      description: "Validates implementation against requirements and specs"
+    tester-agent:
+      path: ./subagents/tester-agent.yaml
+      description: "Writes and runs unit, integration, and E2E tests"
+    db-agent:
+      path: ./subagents/db-agent.yaml
+      description: "Designs and implements database schemas, migrations, and queries"
+  system_prompt_args:
+    OPEN_SPEC_DIR: "openspec"
+    CHANGES_DIR: "openspec/changes"
+    MAIN_SPECS_DIR: "openspec/specs"
+    ARCHIVE_DIR: "openspec/changes/archive"
+    IMPLEMENTATION_DIR: "."
+    MAX_ITERATIONS: "50"
+    CONTEXT_WINDOW_LIMIT: "150000"

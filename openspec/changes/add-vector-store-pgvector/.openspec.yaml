@@ -1,0 +1,16 @@
+name: add-vector-store-pgvector
+created: "2025-02-18T01:08:00"
+schema: default
+artifacts:
+  proposal:
+    status: pending
+    path: proposal.md
+  specs:
+    status: pending
+    path: specs/
+  design:
+    status: pending
+    path: design.md
+  tasks:
+    status: pending
+    path: tasks.md

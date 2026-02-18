@@ -19,7 +19,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_db
-from src.api.routes import health
+from src.api.routes import chunks, health, search
 from src.config import settings
 from src.db.models import _engine as db_engine
 from src.db.models import init_db, init_engine
@@ -176,6 +176,12 @@ def create_app() -> FastAPI:
 
     # Include health check router
     app.include_router(health.router)
+
+    # Include chunks router
+    app.include_router(chunks.router, prefix="/api/v1")
+
+    # Include search router
+    app.include_router(search.router, prefix="/api/v1")
 
     return app
 

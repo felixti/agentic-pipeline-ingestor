@@ -3,12 +3,53 @@
 from collections.abc import AsyncGenerator
 from datetime import datetime
 from enum import Enum
+from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.types import UserDefinedType
+
+
+class Vector(UserDefinedType):
+    """SQLAlchemy type for pgvector VECTOR.
+    
+    This is a custom type that maps Python lists to PostgreSQL VECTOR columns.
+    Supports configurable dimensions (default 1536 for OpenAI embeddings).
+    
+    Example:
+        embedding = Column(Vector(1536), nullable=True)
+    """
+    
+    cache_ok = True
+    
+    def __init__(self, dimensions: int = 1536) -> None:
+        self.dimensions = dimensions
+    
+    def get_col_spec(self, **kw: Any) -> str:
+        return f"VECTOR({self.dimensions})"
+    
+    def bind_processor(self, dialect):
+        def process(value):
+            if value is None:
+                return None
+            if isinstance(value, list):
+                return f"[{','.join(str(x) for x in value)}]"
+            return value
+        return process
+    
+    def result_processor(self, dialect, coltype):
+        def process(value):
+            if value is None:
+                return None
+            # Parse vector string representation into list of floats
+            if isinstance(value, str):
+                value = value.strip('[]')
+                return [float(x) for x in value.split(',')]
+            return value
+        return process
 
 Base = declarative_base()
 
@@ -199,6 +240,12 @@ class JobModel(Base):
     detection_results = relationship("JobDetectionResultModel", back_populates="job", cascade="all, delete-orphan")
     result = relationship("JobResultModel", back_populates="job", uselist=False, cascade="all, delete-orphan")
     pipeline = relationship("PipelineModel", back_populates="jobs")
+    chunks = relationship(
+        "DocumentChunkModel",
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="DocumentChunkModel.chunk_index",
+    )
     
     def to_dict(self) -> dict:
         """Convert job to dictionary."""
@@ -264,6 +311,97 @@ class JobResultModel(Base):
     
     # Relationships
     job = relationship("JobModel", back_populates="result")
+
+
+class DocumentChunkModel(Base):
+    """Document chunk model with vector embedding for semantic search.
+    
+    Stores chunks of text extracted from documents with their vector embeddings
+    for similarity search. Each chunk belongs to a specific job and is ordered
+    by chunk_index within that job.
+    
+    Attributes:
+        id: Unique identifier (UUID)
+        job_id: Reference to parent job (cascade delete)
+        chunk_index: Position of chunk within document (0-indexed, non-negative)
+        content: Text content of the chunk
+        content_hash: SHA-256 hash for deduplication
+        embedding: Vector embedding for semantic search (nullable initially)
+        metadata: JSONB metadata (source, page numbers, etc.)
+        created_at: Timestamp of record creation
+    """
+    
+    __tablename__ = 'document_chunks'
+    
+    # Table constraints and indexes
+    __table_args__ = (
+        # Unique constraint: one chunk_index per job
+        Index('uq_document_chunks_job_chunk', 'job_id', 'chunk_index', unique=True),
+        # Composite index for efficient job + chunk_index queries
+        Index('idx_document_chunks_job_chunk', 'job_id', 'chunk_index'),
+    )
+    
+    # Primary key
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    
+    # Foreign key to jobs table with CASCADE delete
+    job_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey('jobs.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+    )
+    
+    # Chunk ordering within document (must be non-negative)
+    chunk_index = Column(Integer, nullable=False)
+    
+    # Content storage
+    content = Column(Text, nullable=False)
+    
+    # SHA-256 hash for deduplication
+    content_hash = Column(String(64), nullable=True, index=True)
+    
+    # Vector embedding for semantic search (nullable during initial creation)
+    embedding = Column(Vector(dimensions=1536), nullable=True)
+    
+    # Flexible metadata storage
+    metadata = Column(JSONB, nullable=False, default={})
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    job = relationship("JobModel", back_populates="chunks")
+    
+    def __repr__(self) -> str:
+        return (
+            f"<DocumentChunkModel(id={self.id}, "
+            f"job_id={self.job_id}, "
+            f"chunk_index={self.chunk_index}, "
+            f"has_embedding={self.embedding is not None})>"
+        )
+    
+    @property
+    def has_embedding(self) -> bool:
+        """Check if chunk has an embedding vector."""
+        return self.embedding is not None
+    
+    def set_embedding(self, embedding: list[float]) -> None:
+        """Set the embedding vector with dimension validation.
+        
+        Args:
+            embedding: List of float values
+            
+        Raises:
+            ValueError: If embedding dimensions don't match expected size
+        """
+        expected_dims = 1536  # From Vector type definition
+        if len(embedding) != expected_dims:
+            raise ValueError(
+                f"Embedding must have {expected_dims} dimensions, "
+                f"got {len(embedding)}"
+            )
+        self.embedding = embedding
 
 
 class AuditLogModel(Base):

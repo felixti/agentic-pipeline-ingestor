@@ -1,0 +1,19 @@
+version: 1
+agent:
+  name: backend-developer
+  system_prompt_path: ../system-prompts/backend-developer.md
+  tools:
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.file:StrReplaceFile"
+    - "kimi_cli.tools.shell:Shell"
+    - "kimi_cli.tools.web:SearchWeb"
+    - "kimi_cli.tools.todo:SetTodoList"
+  system_prompt_args:
+    BACKEND_DIR: "./src"
+    TESTS_DIR: "./tests"
+    API_CONTRACTS_PATH: "./shared/api-contracts.json"
+    OPEN_SPEC_DIR: "openspec"
+    MAIN_SPECS_DIR: "openspec/specs"

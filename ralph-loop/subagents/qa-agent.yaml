@@ -1,0 +1,17 @@
+version: 1
+agent:
+  name: qa-agent
+  system_prompt_path: ../system-prompts/qa-agent.md
+  tools:
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.shell:Shell"
+    - "kimi_cli.tools.todo:SetTodoList"
+  system_prompt_args:
+    QA_REPORTS_DIR: "./shared/qa-reports"
+    OPEN_SPEC_DIR: "openspec"
+    MAIN_SPECS_DIR: "openspec/specs"
+    CHANGES_DIR: "openspec/changes"
+    REVIEW_DEPTH: "comprehensive"

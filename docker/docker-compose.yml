@@ -137,10 +137,15 @@ services:
       replicas: 2  # Run 2 worker instances for parallel processing
 
   # ============================================================================
-  # PostgreSQL Database
+  # PostgreSQL Database (with pgvector extension)
+  # ============================================================================
+  # pgvector/pgvector:pg17 is a PostgreSQL image with pgvector extension pre-installed.
+  # This enables vector storage and similarity search capabilities.
+  # The image is fully compatible with standard PostgreSQL and includes pgvector v0.8.0+.
+  # No additional environment variables are required - the extension is available via CREATE EXTENSION.
   # ============================================================================
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     container_name: pipeline-postgres
     environment:
       - POSTGRES_USER=postgres

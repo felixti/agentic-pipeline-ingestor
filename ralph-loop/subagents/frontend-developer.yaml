@@ -1,0 +1,21 @@
+version: 1
+agent:
+  name: frontend-developer
+  system_prompt_path: ../system-prompts/frontend-developer.md
+  tools:
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.file:StrReplaceFile"
+    - "kimi_cli.tools.shell:Shell"
+    - "kimi_cli.tools.web:SearchWeb"
+    - "kimi_cli.tools.web:FetchURL"
+    - "kimi_cli.tools.todo:SetTodoList"
+  system_prompt_args:
+    FRONTEND_DIR: "./frontend"
+    COMPONENTS_DIR: "./frontend/components"
+    PAGES_DIR: "./frontend/pages"
+    API_CONTRACTS_PATH: "./shared/api-contracts.json"
+    OPEN_SPEC_DIR: "openspec"
+    MAIN_SPECS_DIR: "openspec/specs"

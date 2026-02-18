@@ -301,6 +301,92 @@ async def check_opentelemetry() -> HealthCheckResult:
         )
 
 
+async def check_vector_store() -> HealthCheckResult:
+    """Check vector store (pgvector) extension availability.
+    
+    Checks if the PostgreSQL pgvector and pg_trgm extensions are installed
+    and returns their version information.
+    
+    Returns:
+        HealthCheckResult with vector store status
+    """
+    start = time.time()
+    try:
+        from sqlalchemy import text
+        from src.db.models import get_session
+
+        async for session in get_session():
+            # Query for pgvector and pg_trgm extensions
+            query = text("""
+                SELECT extname, extversion 
+                FROM pg_extension 
+                WHERE extname IN ('vector', 'pg_trgm')
+            """)
+            result = await session.execute(query)
+            extensions = {row[0]: row[1] for row in result.fetchall()}
+
+            latency = (time.time() - start) * 1000
+
+            # Check if both required extensions are available
+            has_vector = "vector" in extensions
+            has_pg_trgm = "pg_trgm" in extensions
+
+            if has_vector and has_pg_trgm:
+                return HealthCheckResult(
+                    healthy=True,
+                    component="vector_store",
+                    message="pgvector and pg_trgm extensions available",
+                    latency_ms=round(latency, 2),
+                    details={
+                        "extensions": extensions,
+                        "pgvector_version": extensions.get("vector"),
+                        "pg_trgm_version": extensions.get("pg_trgm"),
+                    },
+                )
+            elif has_vector:
+                return HealthCheckResult(
+                    healthy=True,  # Degraded but functional
+                    component="vector_store",
+                    message="pgvector available but pg_trgm missing",
+                    latency_ms=round(latency, 2),
+                    details={
+                        "extensions": extensions,
+                        "pgvector_version": extensions.get("vector"),
+                        "missing": ["pg_trgm"],
+                    },
+                )
+            elif has_pg_trgm:
+                return HealthCheckResult(
+                    healthy=False,
+                    component="vector_store",
+                    message="pg_trgm available but pgvector missing",
+                    latency_ms=round(latency, 2),
+                    details={
+                        "extensions": extensions,
+                        "pg_trgm_version": extensions.get("pg_trgm"),
+                        "missing": ["vector"],
+                    },
+                )
+            else:
+                return HealthCheckResult(
+                    healthy=False,
+                    component="vector_store",
+                    message="Neither pgvector nor pg_trgm extensions installed",
+                    latency_ms=round(latency, 2),
+                    details={
+                        "extensions": {},
+                        "missing": ["vector", "pg_trgm"],
+                    },
+                )
+    except Exception as e:
+        return HealthCheckResult(
+            healthy=False,
+            component="vector_store",
+            message=f"Vector store check failed: {e!s}",
+            latency_ms=round((time.time() - start) * 1000, 2),
+        )
+
+
 @router.get("", response_model=ComprehensiveHealthResponse)
 async def health_check() -> ComprehensiveHealthResponse:
     """Comprehensive health check endpoint.
@@ -312,6 +398,7 @@ async def health_check() -> ComprehensiveHealthResponse:
     - Destinations
     - Storage
     - OpenTelemetry
+    - Vector Store
     
     Returns:
         Comprehensive health status of all components
@@ -326,6 +413,7 @@ async def health_check() -> ComprehensiveHealthResponse:
         check_destinations(),
         check_storage(),
         check_opentelemetry(),
+        check_vector_store(),
         return_exceptions=True,
     )
 
@@ -441,6 +529,57 @@ async def liveness_probe() -> LivenessResponse:
     )
 
 
+class VectorStoreHealthResponse(BaseModel):
+    """Response model for vector store health check."""
+    healthy: bool
+    status: HealthStatus
+    message: str
+    latency_ms: float | None = None
+    extensions: dict[str, str] | None = None
+    pgvector_version: str | None = None
+    pg_trgm_version: str | None = None
+    missing_extensions: list[str] | None = None
+    timestamp: str
+
+
+@router.get("/vector", response_model=VectorStoreHealthResponse)
+async def vector_store_health() -> VectorStoreHealthResponse:
+    """Vector store health check endpoint.
+    
+    Checks the availability of PostgreSQL extensions required for vector storage:
+    - pgvector: For vector similarity search
+    - pg_trgm: For trigram-based text search
+    
+    Returns:
+        Vector store health status with extension version information
+    """
+    from datetime import datetime
+
+    result = await check_vector_store()
+
+    # Determine status based on health check result
+    if result.healthy:
+        health_status = HealthStatus.HEALTHY
+    else:
+        health_status = HealthStatus.UNHEALTHY
+
+    details = result.details or {}
+    extensions = details.get("extensions", {})
+    missing = details.get("missing", [])
+
+    return VectorStoreHealthResponse(
+        healthy=result.healthy,
+        status=health_status,
+        message=result.message,
+        latency_ms=result.latency_ms,
+        extensions=extensions,
+        pgvector_version=extensions.get("vector"),
+        pg_trgm_version=extensions.get("pg_trgm"),
+        missing_extensions=missing if missing else None,
+        timestamp=datetime.utcnow().isoformat(),
+    )
+
+
 @router.get("/detailed/{component}")
 async def detailed_component_health(component: str) -> dict[str, Any]:
     """Get detailed health information for a specific component.
@@ -461,6 +600,7 @@ async def detailed_component_health(component: str) -> dict[str, Any]:
         "destinations": check_destinations,
         "storage": check_storage,
         "opentelemetry": check_opentelemetry,
+        "vector_store": check_vector_store,
     }
 
     if component not in check_functions:

@@ -20,10 +20,12 @@ from src.api.routes.health import (
     check_opentelemetry,
     check_redis,
     check_storage,
+    check_vector_store,
     detailed_component_health,
     health_check,
     liveness_probe,
     readiness_probe,
+    vector_store_health,
 )
 
 
@@ -432,6 +434,7 @@ class TestDetailedComponentHealth:
             "destinations",
             "storage",
             "opentelemetry",
+            "vector_store",
         ]
         
         mock_result = MagicMock()
@@ -446,5 +449,189 @@ class TestDetailedComponentHealth:
                 # We need to check that each component function exists
                 assert component in [
                     "database", "redis", "llm_providers",
-                    "destinations", "storage", "opentelemetry"
+                    "destinations", "storage", "opentelemetry", "vector_store"
                 ]
+
+    @pytest.mark.asyncio
+    async def test_detailed_health_vector_store(self):
+        """Test detailed health check for vector store."""
+        mock_result = MagicMock()
+        mock_result.healthy = True
+        mock_result.component = "vector_store"
+        mock_result.message = "pgvector and pg_trgm extensions available"
+        mock_result.latency_ms = 2.5
+        mock_result.details = {
+            "extensions": {"vector": "0.7.0", "pg_trgm": "1.6"},
+            "pgvector_version": "0.7.0",
+            "pg_trgm_version": "1.6",
+        }
+        
+        with patch("src.api.routes.health.check_vector_store", return_value=mock_result):
+            response = await detailed_component_health("vector_store")
+        
+        assert response["component"] == "vector_store"
+        assert response["healthy"] is True
+        assert "pgvector" in response["message"].lower()
+        assert response["latency_ms"] == 2.5
+        assert "timestamp" in response
+
+
+@pytest.mark.unit
+class TestVectorStoreHealthCheck:
+    """Tests for vector store health check functionality."""
+
+    @pytest.mark.asyncio
+    async def test_check_vector_store_both_extensions_available(self):
+        """Test vector store health check when both extensions are available."""
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = [
+            ("vector", "0.7.0"),
+            ("pg_trgm", "1.6"),
+        ]
+        
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+        
+        with patch("src.db.models.get_session") as mock_get_session:
+            async def mock_gen():
+                yield mock_session
+            
+            mock_get_session.return_value = mock_gen()
+            result = await check_vector_store()
+        
+        assert result.healthy is True
+        assert result.component == "vector_store"
+        assert "pgvector and pg_trgm" in result.message.lower()
+        assert result.details is not None
+        assert result.details["extensions"]["vector"] == "0.7.0"
+        assert result.details["extensions"]["pg_trgm"] == "1.6"
+        assert result.latency_ms is not None
+
+    @pytest.mark.asyncio
+    async def test_check_vector_store_only_pgvector(self):
+        """Test vector store health check when only pgvector is available."""
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = [
+            ("vector", "0.7.0"),
+        ]
+        
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+        
+        with patch("src.db.models.get_session") as mock_get_session:
+            async def mock_gen():
+                yield mock_session
+            
+            mock_get_session.return_value = mock_gen()
+            result = await check_vector_store()
+        
+        assert result.healthy is True  # Degraded but functional
+        assert result.component == "vector_store"
+        assert "pg_trgm missing" in result.message.lower()
+        assert result.details["missing"] == ["pg_trgm"]
+
+    @pytest.mark.asyncio
+    async def test_check_vector_store_only_pg_trgm(self):
+        """Test vector store health check when only pg_trgm is available."""
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = [
+            ("pg_trgm", "1.6"),
+        ]
+        
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+        
+        with patch("src.db.models.get_session") as mock_get_session:
+            async def mock_gen():
+                yield mock_session
+            
+            mock_get_session.return_value = mock_gen()
+            result = await check_vector_store()
+        
+        assert result.healthy is False
+        assert result.component == "vector_store"
+        assert "pgvector missing" in result.message.lower()
+        assert result.details["missing"] == ["vector"]
+
+    @pytest.mark.asyncio
+    async def test_check_vector_store_no_extensions(self):
+        """Test vector store health check when no extensions are available."""
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = []
+        
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+        
+        with patch("src.db.models.get_session") as mock_get_session:
+            async def mock_gen():
+                yield mock_session
+            
+            mock_get_session.return_value = mock_gen()
+            result = await check_vector_store()
+        
+        assert result.healthy is False
+        assert result.component == "vector_store"
+        assert "neither pgvector nor pg_trgm" in result.message.lower()
+        assert result.details["missing"] == ["vector", "pg_trgm"]
+
+    @pytest.mark.asyncio
+    async def test_check_vector_store_exception(self):
+        """Test vector store health check with database exception."""
+        with patch("src.db.models.get_session") as mock_get_session:
+            mock_session = AsyncMock()
+            mock_session.execute.side_effect = Exception("Connection refused")
+            
+            async def mock_gen():
+                yield mock_session
+            
+            mock_get_session.return_value = mock_gen()
+            result = await check_vector_store()
+        
+        assert result.healthy is False
+        assert result.component == "vector_store"
+        assert "failed" in result.message.lower()
+        assert result.latency_ms is not None
+
+    @pytest.mark.asyncio
+    async def test_vector_store_health_endpoint(self):
+        """Test the vector store health endpoint."""
+        mock_result = MagicMock()
+        mock_result.healthy = True
+        mock_result.message = "pgvector and pg_trgm extensions available"
+        mock_result.latency_ms = 2.5
+        mock_result.details = {
+            "extensions": {"vector": "0.7.0", "pg_trgm": "1.6"},
+            "pgvector_version": "0.7.0",
+            "pg_trgm_version": "1.6",
+        }
+        
+        with patch("src.api.routes.health.check_vector_store", return_value=mock_result):
+            response = await vector_store_health()
+        
+        assert response.healthy is True
+        assert response.status == HealthStatus.HEALTHY
+        assert response.pgvector_version == "0.7.0"
+        assert response.pg_trgm_version == "1.6"
+        assert response.missing_extensions is None
+        assert response.timestamp is not None
+
+    @pytest.mark.asyncio
+    async def test_vector_store_health_endpoint_unhealthy(self):
+        """Test the vector store health endpoint when unhealthy."""
+        mock_result = MagicMock()
+        mock_result.healthy = False
+        mock_result.message = "pgvector missing"
+        mock_result.latency_ms = 1.5
+        mock_result.details = {
+            "extensions": {},
+            "missing": ["vector", "pg_trgm"],
+        }
+        
+        with patch("src.api.routes.health.check_vector_store", return_value=mock_result):
+            response = await vector_store_health()
+        
+        assert response.healthy is False
+        assert response.status == HealthStatus.UNHEALTHY
+        assert response.missing_extensions == ["vector", "pg_trgm"]
+        assert response.pgvector_version is None
+        assert response.pg_trgm_version is None

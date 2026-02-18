@@ -132,6 +132,58 @@ Accept: text/plain
 
 ###
 
+### Health Check - Detailed Component Health (Vector Store)
+GET {{base_url}}/health/detailed/vector_store
+Accept: application/json
+
+> {%
+    client.test("Vector store health check returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Component is vector_store", function() {
+        client.assert(response.body.component === "vector_store", "Component is vector_store");
+    });
+    client.test("Has healthy status", function() {
+        client.assert(response.body.healthy !== undefined, "Has healthy field");
+    });
+    client.test("Has extension details", function() {
+        client.assert(response.body.details !== undefined, "Has details field");
+        client.assert(response.body.details.extensions !== undefined, "Has extensions in details");
+    });
+%}
+
+###
+
+### Health Check - Vector Store (Dedicated Endpoint)
+GET {{base_url}}/health/vector
+Accept: application/json
+
+> {%
+    client.test("Vector store dedicated endpoint returns 200", function() {
+        client.assert(response.status === 200, "Expected 200 OK");
+    });
+    client.test("Has healthy field", function() {
+        client.assert(response.body.healthy !== undefined, "Has healthy field");
+    });
+    client.test("Has status field", function() {
+        client.assert(response.body.status !== undefined, "Has status field");
+    });
+    client.test("Has extensions info", function() {
+        client.assert(response.body.extensions !== undefined, "Has extensions field");
+    });
+    client.test("Has pgvector_version field", function() {
+        client.assert(response.body.pgvector_version !== undefined, "Has pgvector_version field");
+    });
+    client.test("Has pg_trgm_version field", function() {
+        client.assert(response.body.pg_trgm_version !== undefined, "Has pg_trgm_version field");
+    });
+    client.test("Has timestamp", function() {
+        client.assert(response.body.timestamp !== undefined, "Has timestamp field");
+    });
+%}
+
+###
+
 ### Health Check - OpenAPI Specification
 GET {{base_url}}/api/v1/openapi.yaml
 Accept: text/yaml

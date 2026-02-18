@@ -1,6 +1,6 @@
 # Agentic Data Pipeline Ingestor - Agent Guide
 
-> **Last Updated**: 2026-02-16  
+> **Last Updated**: 2026-02-17  
 > **Language**: English  
 > **Project Status**: Phase 4 Complete (Enterprise Features)
 
@@ -306,6 +306,241 @@ python sdks/generate.py --language typescript
 # Dry run (preview commands)
 python sdks/generate.py --dry-run
 ```
+
+---
+
+## 4.6 Makefile Tasks (Recommended)
+
+This project includes a comprehensive Makefile for automation. **Use `make` commands instead of direct tool invocations** for consistency.
+
+### Quick Reference
+
+```bash
+make help              # Show all available commands
+make up                # Start all services
+make down              # Stop all services
+make test              # Run all tests
+make lint              # Run linter
+make format            # Format code
+```
+
+### Installation & Setup
+
+| Command | Description |
+|---------|-------------|
+| `make install` | Install production dependencies |
+| `make dev-install` | Install development dependencies |
+| `make install-all` | Install all dependencies (dev, docling, azure, cognee) |
+| `make sync` | Sync dependencies with uv.lock |
+
+### Docker Operations
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build Docker images |
+| `make up` | Start all services in detached mode |
+| `make down` | Stop all services |
+| `make stop` | Stop services without removing containers |
+| `make restart` | Restart all services |
+| `make logs` | Show logs from all services |
+| `make logs-api` | Show logs from API service only |
+| `make ps` | Show running containers |
+
+### Testing
+
+| Command | Description |
+|---------|-------------|
+| `make test` | Run all tests |
+| `make test-unit` | Run unit tests only |
+| `make test-integration` | Run integration tests only |
+| `make test-contract` | Run contract tests only |
+| `make test-coverage` | Run tests with coverage report |
+| `make test-coverage-open` | Run tests and open coverage report in browser |
+
+### E2E Testing
+
+| Command | Description |
+|---------|-------------|
+| `make e2e-up` | Start E2E test environment |
+| `make e2e-down` | Stop E2E test environment |
+| `make e2e-test` | Run E2E tests |
+| `make e2e-test-quick` | Run quick E2E smoke tests |
+| `make e2e-test-auth` | Run E2E auth tests only |
+| `make e2e-test-performance` | Run E2E performance tests |
+| `make e2e-logs` | Show E2E test logs |
+
+### Code Quality
+
+| Command | Description |
+|---------|-------------|
+| `make lint` | Run linter (ruff) |
+| `make lint-fix` | Run linter and fix issues |
+| `make format` | Format code with ruff |
+| `make type-check` | Run type checker (mypy) |
+| `make type-check-strict` | Run type checker in strict mode |
+| `make security` | Run security checks (bandit, safety) |
+| `make quality` | Run all quality checks (lint + type-check + security) |
+| `make format-and-lint` | Format code and run linter |
+
+### Database
+
+| Command | Description |
+|---------|-------------|
+| `make migrate` | Run database migrations |
+| `make migrate-create MESSAGE="desc"` | Create new migration |
+| `make migrate-downgrade` | Downgrade database by one revision |
+| `make migrate-history` | Show migration history |
+| `make db-reset` | Reset database (drop and recreate) |
+
+### SDK Generation
+
+| Command | Description |
+|---------|-------------|
+| `make sdk` | Generate SDKs from OpenAPI spec |
+| `make sdk-python` | Generate Python SDK only |
+| `make sdk-typescript` | Generate TypeScript SDK only |
+| `make sdk-dry-run` | Preview SDK generation commands |
+
+### Documentation
+
+| Command | Description |
+|---------|-------------|
+| `make docs` | Build documentation |
+| `make docs-serve` | Serve documentation locally |
+| `make docs-deploy` | Deploy documentation |
+
+### API Testing
+
+| Command | Description |
+|---------|-------------|
+| `make api-health` | Test health endpoints |
+| `make api-docs` | Open API documentation in browser |
+| `make api-spec` | Download OpenAPI specification |
+
+### Cleanup
+
+| Command | Description |
+|---------|-------------|
+| `make clean` | Clean up build artifacts and cache |
+| `make clean-docker` | Clean up Docker resources |
+| `make clean-all` | Clean everything |
+
+### Development Utilities
+
+| Command | Description |
+|---------|-------------|
+| `make run` | Run the application locally (without Docker) |
+| `make run-prod` | Run the application in production mode |
+| `make shell` | Open a shell in the API container |
+| `make db-shell` | Open PostgreSQL shell |
+| `make redis-cli` | Open Redis CLI |
+
+### CI/CD
+
+| Command | Description |
+|---------|-------------|
+| `make ci` | Run CI checks (lint + test) |
+| `make ci-full` | Run full CI pipeline |
+
+### Release
+
+| Command | Description |
+|---------|-------------|
+| `make version` | Show current version |
+| `make bump-patch` | Bump patch version |
+| `make bump-minor` | Bump minor version |
+| `make bump-major` | Bump major version |
+
+### Information
+
+| Command | Description |
+|---------|-------------|
+| `make status` | Show project status (git, docker) |
+| `make info` | Show project information |
+
+---
+
+## 4.7 Makefile Guidelines
+
+### When to Use Make Commands
+
+**Always use `make` commands when:**
+- Starting/stopping services (`make up`, `make down`)
+- Running tests (`make test`, `make test-unit`)
+- Code quality checks (`make lint`, `make format`)
+- Database operations (`make migrate`)
+- Any operation that involves multiple steps or Docker
+
+**Direct commands are acceptable for:**
+- One-off Python script execution
+- Debugging specific issues
+- Exploring the codebase
+
+### Common Workflows
+
+#### Starting Development
+
+```bash
+# 1. Start services
+make up
+
+# 2. Check health
+make api-health
+
+# 3. Open API docs
+make api-docs
+```
+
+#### Before Committing
+
+```bash
+# Run all quality checks
+make format-and-lint
+make type-check
+
+# Run tests
+make test
+
+# Or run the full CI pipeline
+make ci-full
+```
+
+#### Working with Database
+
+```bash
+# Create a migration after model changes
+make migrate-create MESSAGE="add user table"
+
+# Apply migrations
+make migrate
+
+# Reset database (use with caution)
+make db-reset
+```
+
+#### Debugging
+
+```bash
+# Check service status
+make ps
+
+# View logs
+make logs-api
+
+# Enter container shell
+make shell
+
+# Check database
+make db-shell
+```
+
+### Makefile Best Practices
+
+1. **Use `make help`** to discover available commands
+2. **Chain commands**: `make down up` for quick restart
+3. **Use descriptive messages** when creating migrations
+4. **Run `make clean`** periodically to remove cache files
+5. **Always run `make ci`** before pushing changes
 
 ---
 

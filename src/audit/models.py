@@ -6,7 +6,7 @@ This module defines the data models for audit events and queries.
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
@@ -112,7 +112,7 @@ class AuditEvent(BaseModel):
         metadata: Additional metadata
     """
 
-    id: UUID = Field(default_factory=UUID)
+    id: UUID = Field(default_factory=uuid4)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     event_type: AuditEventType
     user_id: str | None = None
@@ -137,16 +137,20 @@ class AuditEvent(BaseModel):
 
     def to_dict(self) -> dict[str, Any]:
         """Convert event to dictionary."""
+        # Handle both enum and string values (use_enum_values config may convert to string)
+        event_type_value = self.event_type.value if hasattr(self.event_type, 'value') else self.event_type
+        status_value = self.status.value if hasattr(self.status, 'value') else self.status
+        
         return {
             "id": str(self.id),
             "timestamp": self.timestamp.isoformat(),
-            "event_type": self.event_type.value,
+            "event_type": event_type_value,
             "user_id": self.user_id,
             "ip_address": self.ip_address,
             "resource_type": self.resource_type,
             "resource_id": self.resource_id,
             "action": self.action,
-            "status": self.status.value,
+            "status": status_value,
             "details": self.details,
             "correlation_id": self.correlation_id,
             "request_id": self.request_id,

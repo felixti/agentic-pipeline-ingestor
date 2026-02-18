@@ -63,10 +63,11 @@ async def check_database() -> HealthCheckResult:
     """
     start = time.time()
     try:
+        from sqlalchemy import text
         from src.db.models import get_session
 
         async for session in get_session():
-            result = await session.execute("SELECT 1")
+            result = await session.execute(text("SELECT 1"))
             row = result.scalar()
 
             latency = (time.time() - start) * 1000

@@ -6,10 +6,12 @@ testing.
 """
 
 import asyncio
+import os
 import signal
 import sys
+from datetime import datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 
@@ -35,13 +37,15 @@ structlog.configure(
 logger = structlog.get_logger(__name__)
 
 from src.core.engine import OrchestrationEngine
+from src.db.models import JobStatus, get_async_engine
+from src.db.repositories.job import JobRepository
 from src.worker.processor import JobProcessor
 
 
 class WorkerService:
     """Worker service for processing pipeline jobs.
     
-    The worker service polls for jobs from the queue and processes
+    The worker service polls for jobs from the database and processes
 them through the pipeline.
     
     Example:
@@ -55,56 +59,76 @@ them through the pipeline.
         self,
         poll_interval: float = 5.0,
         max_concurrent_jobs: int = 3,
+        worker_id: str | None = None,
+        lock_timeout: int = 300,
     ) -> None:
         """Initialize the worker service.
         
         Args:
             poll_interval: Seconds between queue polls
             max_concurrent_jobs: Maximum concurrent jobs to process
+            worker_id: Unique identifier for this worker (auto-generated if None)
+            lock_timeout: Seconds before considering a job stalled
         """
         self.poll_interval = poll_interval
         self.max_concurrent_jobs = max_concurrent_jobs
+        self.worker_id = worker_id or f"worker-{uuid4().hex[:8]}"
+        self.lock_timeout = lock_timeout
+        
         self.processor: JobProcessor | None = None
         self.engine: OrchestrationEngine | None = None
         self._running = False
         self._shutdown_event = asyncio.Event()
         self._active_tasks: set = set()
+        self._stalled_job_checker: asyncio.Task | None = None
 
     async def initialize(self) -> None:
         """Initialize the worker service."""
-        logger.info("Initializing worker service...")
+        logger.info(
+            "initializing_worker_service",
+            worker_id=self.worker_id,
+            poll_interval=self.poll_interval,
+            max_concurrent=self.max_concurrent_jobs,
+        )
 
+        # Initialize database engine
+        engine = get_async_engine()
+        
         # Initialize orchestration engine
         self.engine = OrchestrationEngine()
 
         # Initialize processor
-        self.processor = JobProcessor(engine=self.engine)
+        self.processor = JobProcessor(engine=self.engine, worker_id=self.worker_id)
         await self.processor.initialize()
 
-        logger.info("Worker service initialized")
+        logger.info("worker_service_initialized", worker_id=self.worker_id)
 
     async def start(self) -> None:
         """Start the worker service."""
         if self._running:
-            logger.warning("Worker service already running")
+            logger.warning("worker_service_already_running", worker_id=self.worker_id)
             return
 
         await self.initialize()
 
         self._running = True
         logger.info(
-            "Worker service started",
+            "worker_service_started",
+            worker_id=self.worker_id,
             poll_interval=self.poll_interval,
             max_concurrent=self.max_concurrent_jobs,
         )
+
+        # Start stalled job checker
+        self._stalled_job_checker = asyncio.create_task(self._check_stalled_jobs())
 
         # Start job processing loop
         try:
             await self._processing_loop()
         except asyncio.CancelledError:
-            logger.info("Worker service cancelled")
+            logger.info("worker_service_cancelled", worker_id=self.worker_id)
         except Exception as e:
-            logger.error("Worker service error", error=str(e))
+            logger.error("worker_service_error", worker_id=self.worker_id, error=str(e))
             raise
         finally:
             await self.stop()
@@ -114,14 +138,23 @@ them through the pipeline.
         if not self._running:
             return
 
-        logger.info("Stopping worker service...")
+        logger.info("stopping_worker_service", worker_id=self.worker_id)
         self._running = False
         self._shutdown_event.set()
+
+        # Cancel stalled job checker
+        if self._stalled_job_checker and not self._stalled_job_checker.done():
+            self._stalled_job_checker.cancel()
+            try:
+                await self._stalled_job_checker
+            except asyncio.CancelledError:
+                pass
 
         # Wait for active tasks to complete
         if self._active_tasks:
             logger.info(
-                "Waiting for active tasks to complete",
+                "waiting_for_active_tasks",
+                worker_id=self.worker_id,
                 count=len(self._active_tasks),
             )
             await asyncio.gather(*self._active_tasks, return_exceptions=True)
@@ -130,10 +163,12 @@ them through the pipeline.
         if self.processor:
             await self.processor.shutdown()
 
-        logger.info("Worker service stopped")
+        logger.info("worker_service_stopped", worker_id=self.worker_id)
 
     async def _processing_loop(self) -> None:
         """Main processing loop."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+        
         while self._running:
             try:
                 # Check if we can process more jobs
@@ -145,12 +180,12 @@ them through the pipeline.
                     )
                     continue
 
-                # Poll for jobs (simulated - in real implementation would use queue)
+                # Poll for jobs from database
                 job = await self._poll_for_job()
 
                 if job:
                     # Start processing job
-                    task = asyncio.create_task(self._process_job_safe(job))
+                    task = asyncio.create_task(self._process_job_safe(job.id))
                     self._active_tasks.add(task)
                     task.add_done_callback(self._active_tasks.discard)
                 else:
@@ -163,32 +198,41 @@ them through the pipeline.
             except TimeoutError:
                 continue
             except Exception as e:
-                logger.error("Error in processing loop", error=str(e))
+                logger.error("error_in_processing_loop", worker_id=self.worker_id, error=str(e))
                 await asyncio.sleep(1)
 
-    async def _poll_for_job(self) -> UUID | None:
-        """Poll for a job from the queue.
+    async def _poll_for_job(self) -> Any | None:
+        """Poll for a job from the database.
         
         Returns:
-            Job ID if available, None otherwise
+            Job model if available, None otherwise
         """
-        # In a real implementation, this would poll from Redis/RQ, Azure Queue, etc.
-        # For now, we check the orchestration engine for queued jobs
-        if not self.engine:
-            return None
-
-        from src.api.models import JobStatus
-
-        # Find queued jobs
-        jobs = await self.engine.list_jobs(status=JobStatus.QUEUED, limit=1)
-
-        if jobs:
-            job = jobs[0]
-            # Mark as processing
-            await self.engine.update_job_status(job.id, JobStatus.PROCESSING)
-            return job.id
-
-        return None
+        from sqlalchemy.ext.asyncio import AsyncSession
+        
+        engine = get_async_engine()
+        
+        async with AsyncSession(engine) as session:
+            try:
+                repo = JobRepository(session)
+                job = await repo.poll_pending_job(
+                    worker_id=self.worker_id,
+                    timeout_seconds=self.lock_timeout,
+                )
+                
+                if job:
+                    logger.info(
+                        "job_claimed",
+                        worker_id=self.worker_id,
+                        job_id=str(job.id),
+                        source_type=job.source_type,
+                    )
+                
+                return job
+                
+            except Exception as e:
+                logger.error("error_polling_for_job", worker_id=self.worker_id, error=str(e))
+                await session.rollback()
+                return None
 
     async def _process_job_safe(self, job_id: UUID) -> None:
         """Process a job with error handling.
@@ -197,7 +241,11 @@ them through the pipeline.
             job_id: Job ID to process
         """
         try:
-            logger.info("Starting job processing", job_id=str(job_id))
+            logger.info(
+                "starting_job_processing",
+                worker_id=self.worker_id,
+                job_id=str(job_id),
+            )
 
             if not self.processor:
                 raise RuntimeError("Processor not initialized")
@@ -205,7 +253,8 @@ them through the pipeline.
             result = await self.processor.process_job_with_retry(job_id)
 
             logger.info(
-                "Job processing complete",
+                "job_processing_complete",
+                worker_id=self.worker_id,
                 job_id=str(job_id),
                 status=result.get("status"),
                 success=result.get("success"),
@@ -213,10 +262,60 @@ them through the pipeline.
 
         except Exception as e:
             logger.error(
-                "Job processing failed",
+                "job_processing_failed",
+                worker_id=self.worker_id,
                 job_id=str(job_id),
                 error=str(e),
             )
+
+    async def _check_stalled_jobs(self) -> None:
+        """Periodically check for and recover stalled jobs."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+        
+        while self._running:
+            try:
+                await asyncio.wait_for(
+                    self._shutdown_event.wait(),
+                    timeout=60,  # Check every minute
+                )
+                continue
+            except TimeoutError:
+                pass
+            
+            if not self._running:
+                break
+            
+            try:
+                engine = get_async_engine()
+                async with AsyncSession(engine) as session:
+                    repo = JobRepository(session)
+                    stalled_jobs = await repo.find_stalled_jobs(timeout_seconds=self.lock_timeout)
+                    
+                    if stalled_jobs:
+                        logger.warning(
+                            "found_stalled_jobs",
+                            worker_id=self.worker_id,
+                            count=len(stalled_jobs),
+                            job_ids=[str(j.id) for j in stalled_jobs],
+                        )
+                        
+                        for job in stalled_jobs:
+                            # Release the lock and reset to pending
+                            job.locked_by = None
+                            job.locked_at = None
+                            job.status = JobStatus.PENDING
+                            job.updated_at = datetime.utcnow()
+                        
+                        await session.commit()
+                        
+                        logger.info(
+                            "released_stalled_jobs",
+                            worker_id=self.worker_id,
+                            count=len(stalled_jobs),
+                        )
+                        
+            except Exception as e:
+                logger.error("error_checking_stalled_jobs", worker_id=self.worker_id, error=str(e))
 
     def signal_handler(self, sig: int) -> None:
         """Handle shutdown signals.
@@ -224,7 +323,7 @@ them through the pipeline.
         Args:
             sig: Signal number
         """
-        logger.info("Received shutdown signal", signal=sig)
+        logger.info("received_shutdown_signal", worker_id=self.worker_id, signal=sig)
         asyncio.create_task(self.stop())
 
 
@@ -268,6 +367,16 @@ async def main() -> None:
         default=3,
         help="Maximum concurrent jobs",
     )
+    parser.add_argument(
+        "--worker-id",
+        help="Unique worker identifier",
+    )
+    parser.add_argument(
+        "--lock-timeout",
+        type=int,
+        default=300,
+        help="Job lock timeout in seconds",
+    )
 
     args = parser.parse_args()
 
@@ -281,6 +390,8 @@ async def main() -> None:
     worker = WorkerService(
         poll_interval=args.poll_interval,
         max_concurrent_jobs=args.max_concurrent,
+        worker_id=args.worker_id,
+        lock_timeout=args.lock_timeout,
     )
 
     # Setup signal handlers
@@ -291,7 +402,7 @@ async def main() -> None:
     try:
         await worker.start()
     except KeyboardInterrupt:
-        logger.info("Interrupted by user")
+        logger.info("interrupted_by_user", worker_id=worker.worker_id)
     finally:
         await worker.stop()
 

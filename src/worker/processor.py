@@ -9,9 +9,13 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from src.api.models import JobStatus
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.config import settings
 from src.core.engine import OrchestrationEngine
+from src.db.models import JobModel, JobStatus, get_async_engine
+from src.db.repositories.job import JobRepository
+from src.db.repositories.job_result import JobResultRepository
 from src.llm.provider import LLMProvider, load_llm_config
 from src.plugins.registry import PluginRegistry
 
@@ -33,22 +37,26 @@ class JobProcessor:
         self,
         engine: OrchestrationEngine | None = None,
         plugin_registry: PluginRegistry | None = None,
+        worker_id: str | None = None,
     ) -> None:
         """Initialize the job processor.
         
         Args:
             engine: Orchestration engine
             plugin_registry: Plugin registry
+            worker_id: Unique identifier for the worker
         """
         self.engine = engine
         self.registry = plugin_registry or PluginRegistry()
+        self.worker_id = worker_id or "unknown"
         self.llm: LLMProvider | None = None
         self._running = False
         self._current_job: UUID | None = None
+        self._heartbeat_task: asyncio.Task | None = None
 
     async def initialize(self) -> None:
         """Initialize the processor with dependencies."""
-        logger.info("Initializing job processor...")
+        logger.info("initializing_job_processor", worker_id=self.worker_id)
 
         # Initialize plugins
         await self._initialize_plugins()
@@ -63,7 +71,7 @@ class JobProcessor:
                 llm_provider=self.llm,
             )
 
-        logger.info("Job processor initialized")
+        logger.info("job_processor_initialized", worker_id=self.worker_id)
 
     async def _initialize_plugins(self) -> None:
         """Initialize all plugins from registry."""
@@ -83,10 +91,10 @@ class JobProcessor:
             })
             self.registry.register_parser(azure_ocr)
 
-            logger.info("Registered parser plugins")
+            logger.info("registered_parser_plugins", worker_id=self.worker_id)
 
         except Exception as e:
-            logger.warning(f"Failed to register some parser plugins: {e}")
+            logger.warning("failed_to_register_parser_plugins", worker_id=self.worker_id, error=str(e))
 
         # Register built-in destinations
         try:
@@ -99,10 +107,10 @@ class JobProcessor:
             })
             self.registry.register_destination(cognee)
 
-            logger.info("Registered destination plugins")
+            logger.info("registered_destination_plugins", worker_id=self.worker_id)
 
         except Exception as e:
-            logger.warning(f"Failed to register some destination plugins: {e}")
+            logger.warning("failed_to_register_destination_plugins", worker_id=self.worker_id, error=str(e))
 
     async def _initialize_llm(self) -> None:
         """Initialize LLM provider if configured."""
@@ -110,11 +118,11 @@ class JobProcessor:
             config = load_llm_config()
             if config.routers:
                 self.llm = LLMProvider(config)
-                logger.info("LLM provider initialized")
+                logger.info("llm_provider_initialized", worker_id=self.worker_id)
             else:
-                logger.warning("No LLM routers configured")
+                logger.warning("no_llm_routers_configured", worker_id=self.worker_id)
         except Exception as e:
-            logger.warning(f"Failed to initialize LLM provider: {e}")
+            logger.warning("failed_to_initialize_llm_provider", worker_id=self.worker_id, error=str(e))
 
     async def process_job(self, job_id: UUID) -> dict[str, Any]:
         """Process a single job.
@@ -129,54 +137,79 @@ class JobProcessor:
             raise RuntimeError("Processor not initialized")
 
         self._current_job = job_id
+        
+        # Start heartbeat task
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(job_id))
 
         try:
-            logger.info("processing_job", job_id=str(job_id))
+            logger.info("processing_job", worker_id=self.worker_id, job_id=str(job_id))
 
             # Execute pipeline
             context = await self.engine.process_job(job_id)
 
-            # Get job to check final status
-            job = await self.engine.get_job(job_id)
+            # Get job from database to check final status
+            engine = get_async_engine()
+            async with AsyncSession(engine) as session:
+                repo = JobRepository(session)
+                job = await repo.get_by_id(job_id)
 
-            result = {
-                "job_id": str(job_id),
-                "status": job.status.value if job else "unknown",
-                "stages_completed": list(context.stage_results.keys()),
-                "success": job.status == JobStatus.COMPLETED if job else False,
-            }
+                if job is None:
+                    return {
+                        "job_id": str(job_id),
+                        "status": "unknown",
+                        "error": "Job not found after processing",
+                        "success": False,
+                    }
 
-            # Add quality score if available
-            quality_result = context.get_stage_result("quality")
-            if quality_result:
-                result["quality_score"] = quality_result.get("overall_score")
+                # Store results if completed
+                if job.status == JobStatus.COMPLETED:
+                    await self._store_results(job, context, session)
 
-            logger.info(
-                "job_processing_finished",
-                job_id=str(job_id),
-                status=result["status"],
-                success=result["success"],
-            )
+                result = {
+                    "job_id": str(job_id),
+                    "status": job.status,
+                    "stages_completed": list(context.stage_results.keys()),
+                    "success": job.status == JobStatus.COMPLETED,
+                }
 
-            return result
+                # Add quality score if available
+                quality_result = context.get_stage_result("quality")
+                if quality_result:
+                    result["quality_score"] = quality_result.get("overall_score")
+
+                logger.info(
+                    "job_processing_finished",
+                    worker_id=self.worker_id,
+                    job_id=str(job_id),
+                    status=result["status"],
+                    success=result["success"],
+                )
+
+                return result
 
         except Exception as e:
             logger.error(
                 "job_processing_failed",
+                worker_id=self.worker_id,
                 job_id=str(job_id),
                 error=str(e),
             )
 
             # Update job status to failed
             try:
-                await self.engine.update_job_status(
-                    job_id,
-                    JobStatus.FAILED,
-                    error={"code": "PROCESSING_ERROR", "message": str(e)},
-                )
+                engine = get_async_engine()
+                async with AsyncSession(engine) as session:
+                    repo = JobRepository(session)
+                    await repo.update_status(
+                        job_id,
+                        JobStatus.FAILED,
+                        error_message=str(e),
+                        error_code="PROCESSING_ERROR",
+                    )
             except Exception as update_error:
                 logger.error(
                     "failed_to_update_job_status",
+                    worker_id=self.worker_id,
                     job_id=str(job_id),
                     error=str(update_error),
                 )
@@ -190,6 +223,117 @@ class JobProcessor:
 
         finally:
             self._current_job = None
+            # Stop heartbeat task
+            if self._heartbeat_task and not self._heartbeat_task.done():
+                self._heartbeat_task.cancel()
+                try:
+                    await self._heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+
+    async def _store_results(
+        self,
+        job: JobModel,
+        context: Any,
+        session: AsyncSession,
+    ) -> None:
+        """Store job processing results.
+        
+        Args:
+            job: Job model
+            context: Pipeline context
+            session: Database session
+        """
+        try:
+            repo = JobResultRepository(session)
+            
+            # Calculate processing time
+            processing_time_ms = None
+            if job.started_at and job.completed_at:
+                processing_time_ms = int((job.completed_at - job.started_at).total_seconds() * 1000)
+            
+            # Extract output data from context
+            output_data = {}
+            extracted_text = None
+            quality_score = None
+            
+            # Get parse result
+            parse_result = context.get_stage_result("parse")
+            if parse_result:
+                extracted_text = parse_result.get("text", "")
+                output_data["parse_result"] = parse_result
+            
+            # Get quality result
+            quality_result = context.get_stage_result("quality")
+            if quality_result:
+                quality_score = quality_result.get("overall_score")
+                output_data["quality_result"] = quality_result
+            
+            # Get other stage results
+            for stage in ["ingest", "detect", "enrich", "transform", "output"]:
+                stage_result = context.get_stage_result(stage)
+                if stage_result:
+                    output_data[f"{stage}_result"] = stage_result
+            
+            # Build metadata
+            result_metadata = {
+                "job_id": str(job.id),
+                "source_type": job.source_type,
+                "file_name": job.file_name,
+                "file_size": job.file_size,
+                "mime_type": job.mime_type,
+                "stages_completed": list(context.stage_results.keys()),
+            }
+            
+            # Save result
+            await repo.save(
+                job_id=str(job.id),
+                extracted_text=extracted_text,
+                output_data=output_data,
+                result_metadata=result_metadata,
+                quality_score=quality_score,
+                processing_time_ms=processing_time_ms,
+            )
+            
+            logger.info(
+                "stored_job_results",
+                worker_id=self.worker_id,
+                job_id=str(job.id),
+                has_text=bool(extracted_text),
+                quality_score=quality_score,
+            )
+            
+        except Exception as e:
+            logger.error(
+                "failed_to_store_results",
+                worker_id=self.worker_id,
+                job_id=str(job.id),
+                error=str(e),
+            )
+
+    async def _heartbeat_loop(self, job_id: UUID) -> None:
+        """Send periodic heartbeats while processing a job.
+        
+        Args:
+            job_id: Job ID being processed
+        """
+        while self._current_job == job_id:
+            try:
+                await asyncio.sleep(30)  # Heartbeat every 30 seconds
+                
+                if self._current_job != job_id:
+                    break
+                
+                engine = get_async_engine()
+                async with AsyncSession(engine) as session:
+                    repo = JobRepository(session)
+                    await repo.update_heartbeat(job_id)
+                    logger.debug("sent_heartbeat", worker_id=self.worker_id, job_id=str(job_id))
+                    
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning("heartbeat_failed", worker_id=self.worker_id, job_id=str(job_id), error=str(e))
 
     async def process_job_with_retry(
         self,
@@ -216,15 +360,24 @@ class JobProcessor:
 
                 # Check if we should retry
                 if attempt < max_retries:
-                    job = await self.engine.get_job(job_id)
-                    if job and job.status == JobStatus.RETRYING:
-                        logger.info(
-                            "retrying_job",
-                            job_id=str(job_id),
-                            attempt=attempt + 1,
-                        )
-                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
-                        continue
+                    engine = get_async_engine()
+                    async with AsyncSession(engine) as session:
+                        repo = JobRepository(session)
+                        job = await repo.get_by_id(job_id)
+                        if job and job.retry_count < job.max_retries:
+                            logger.info(
+                                "retrying_job",
+                                worker_id=self.worker_id,
+                                job_id=str(job_id),
+                                attempt=attempt + 1,
+                            )
+                            job.retry_count += 1
+                            job.status = JobStatus.PENDING
+                            job.error_message = None
+                            job.error_code = None
+                            await session.commit()
+                            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                            continue
 
                 return result
 
@@ -232,6 +385,7 @@ class JobProcessor:
                 last_error = e
                 logger.error(
                     "job_attempt_failed",
+                    worker_id=self.worker_id,
                     job_id=str(job_id),
                     attempt=attempt,
                     error=str(e),
@@ -250,24 +404,32 @@ class JobProcessor:
 
     async def shutdown(self) -> None:
         """Shutdown the processor and cleanup resources."""
-        logger.info("Shutting down job processor...")
+        logger.info("shutting_down_job_processor", worker_id=self.worker_id)
 
         self._running = False
+
+        # Cancel heartbeat task
+        if self._heartbeat_task and not self._heartbeat_task.done():
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
         # Shutdown plugins
         for plugin in self.registry._parsers.values():
             try:
                 await plugin.shutdown()
             except Exception as e:
-                logger.warning(f"Error shutting down parser: {e}")
+                logger.warning("error_shutting_down_parser", worker_id=self.worker_id, error=str(e))
 
         for plugin in self.registry._destinations.values():
             try:
                 await plugin.shutdown()
             except Exception as e:
-                logger.warning(f"Error shutting down destination: {e}")
+                logger.warning("error_shutting_down_destination", worker_id=self.worker_id, error=str(e))
 
-        logger.info("Job processor shutdown complete")
+        logger.info("job_processor_shutdown_complete", worker_id=self.worker_id)
 
     @property
     def is_processing(self) -> bool:

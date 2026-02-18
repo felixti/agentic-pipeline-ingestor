@@ -412,6 +412,58 @@ class JobEvent(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+class JobResponse(BaseModel):
+    """Response model for job data."""
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID = Field(...)
+    status: JobStatus = Field(...)
+    source_type: SourceType = Field(...)
+    source_uri: str = Field(...)
+    file_name: str | None = Field(default=None)
+    file_size: int | None = Field(default=None)
+    mime_type: str | None = Field(default=None)
+    priority: int = Field(default=5)
+    mode: ProcessingMode = Field(default=ProcessingMode.ASYNC)
+    external_id: str | None = Field(default=None)
+    retry_count: int = Field(default=0)
+    max_retries: int = Field(default=3)
+    created_at: datetime = Field(...)
+    updated_at: datetime = Field(...)
+    started_at: datetime | None = Field(default=None)
+    completed_at: datetime | None = Field(default=None)
+    error: JobError | None = Field(default=None)
+
+
+class JobListResponse(BaseModel):
+    """Response model for job list."""
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: list[JobResponse] = Field(default_factory=list)
+    total: int = Field(...)
+    page: int = Field(...)
+    page_size: int = Field(...)
+
+
+class UploadResponse(BaseModel):
+    """Response model for file upload."""
+    model_config = ConfigDict(populate_by_name=True)
+
+    message: str = Field(...)
+    job_id: UUID = Field(...)
+    file_name: str = Field(...)
+    file_size: int = Field(...)
+
+
+class UploadMultipleResponse(BaseModel):
+    """Response model for multiple file upload."""
+    model_config = ConfigDict(populate_by_name=True)
+
+    message: str = Field(...)
+    job_ids: list[UUID] = Field(default_factory=list)
+    files: list[str] = Field(default_factory=list)
+
+
 # ============================================================================
 # Content Detection Models
 # ============================================================================

@@ -1,1309 +1,338 @@
-"""SQLAlchemy database models for the Agentic Data Pipeline Ingestor.
+"""SQLAlchemy models for database tables."""
 
-This module defines the database schema for jobs, audit logs, pipeline
-configurations, and plugin configurations.
-"""
-
-import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime
-from enum import Enum as PyEnum
-from typing import Any, Optional
-
-from sqlalchemy import (
-    JSON,
-    BigInteger,
-    Boolean,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-)
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import (
-    DeclarativeBase,
-    Mapped,
-    mapped_column,
-    relationship,
-)
-
-
-class Base(DeclarativeBase):
-    """Base class for all SQLAlchemy models."""
-
-    # Enable use of mapped_column with default=None
-    pass
-
-
-# ============================================================================
-# Enums
-# ============================================================================
-
-class JobStatus(str, PyEnum):
-    """Job processing status."""
-    CREATED = "created"
-    QUEUED = "queued"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-    RETRYING = "retrying"
-    DEAD_LETTER = "dead_letter"
-
-
-class ProcessingMode(str, PyEnum):
-    """Job processing mode."""
-    SYNC = "sync"
-    ASYNC = "async"
-
-
-class SourceType(str, PyEnum):
-    """Document source type."""
-    UPLOAD = "upload"
-    URL = "url"
-    S3 = "s3"
-    AZURE_BLOB = "azure_blob"
-    SHAREPOINT = "sharepoint"
-
-
-class DestinationType(str, PyEnum):
-    """Output destination type."""
-    COGNEE = "cognee"
-    WEBHOOK = "webhook"
-    S3 = "s3"
-    AZURE_BLOB = "azure_blob"
-    NEO4J = "neo4j"
-    VECTOR_STORE = "vector_store"
-
-
-class AuditEventType(str, PyEnum):
-    """Audit event types."""
-    # Job lifecycle events
-    JOB_CREATED = "job.created"
-    JOB_STARTED = "job.started"
-    JOB_COMPLETED = "job.completed"
-    JOB_FAILED = "job.failed"
-    JOB_CANCELLED = "job.cancelled"
-    JOB_RETRY = "job.retry"
-    JOB_DELETED = "job.deleted"
-
-    # Stage events
-    STAGE_STARTED = "stage.started"
-    STAGE_COMPLETED = "stage.completed"
-    STAGE_FAILED = "stage.failed"
-
-    # Config events
-    CONFIG_CREATED = "config.created"
-    CONFIG_UPDATED = "config.updated"
-    CONFIG_DELETED = "config.deleted"
-
-    # Source/Destination events
-    SOURCE_CREATED = "source.created"
-    SOURCE_UPDATED = "source.updated"
-    SOURCE_DELETED = "source.deleted"
-    SOURCE_ACCESSED = "source.accessed"
-    DESTINATION_CREATED = "destination.created"
-    DESTINATION_UPDATED = "destination.updated"
-    DESTINATION_DELETED = "destination.deleted"
-
-    # Authentication events
-    AUTH_LOGIN = "auth.login"
-    AUTH_LOGOUT = "auth.logout"
-    AUTH_FAILED = "auth.failed"
-    AUTH_TOKEN_REFRESH = "auth.token_refresh"
-
-    # API key events
-    API_KEY_CREATED = "api_key.created"
-    API_KEY_REVOKED = "api_key.revoked"
-    API_KEY_USED = "api_key.used"
-
-    # User management events
-    USER_CREATED = "user.created"
-    USER_UPDATED = "user.updated"
-    USER_DELETED = "user.deleted"
-
-    # Audit and compliance events
-    AUDIT_EXPORTED = "audit.exported"
-    LINEAGE_ACCESSED = "lineage.accessed"
-
-    # DLQ events
-    DLQ_ENTRY_CREATED = "dlq.entry_created"
-    DLQ_ENTRY_RETRIED = "dlq.entry_retried"
-    DLQ_ENTRY_ARCHIVED = "dlq.entry_archived"
-
-    # System events
-    SYSTEM_HEALTH_CHECK = "system.health_check"
-    SYSTEM_METRICS_ACCESSED = "system.metrics_accessed"
-
-
-# ============================================================================
-# Job Models
-# ============================================================================
-
-class Job(Base):
-    """Job model for document ingestion jobs.
-    
-    This is the core entity representing a document ingestion job
-    through the entire processing pipeline.
-    """
-
-    __tablename__ = "jobs"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    external_id: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-        index=True,
-    )
-
-    # Source information
-    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    source_uri: Mapped[str] = mapped_column(Text, nullable=False)
-
-    # File information
-    file_name: Mapped[str] = mapped_column(String(512), nullable=False)
-    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    file_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    # Processing configuration
-    mode: Mapped[str] = mapped_column(
-        String(10),
-        nullable=False,
-        default=ProcessingMode.ASYNC.value,
-    )
-    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
-
-    # Pipeline configuration (embedded or reference)
-    pipeline_config_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("pipeline_configs.id"),
-        nullable=True,
-    )
-    pipeline_config_snapshot: Mapped[dict[str, Any] | None] = mapped_column(
-        JSON,
-        nullable=True,
-        doc="Snapshot of pipeline config at job creation time",
-    )
-
-    # Status tracking
-    status: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default=JobStatus.CREATED.value,
-        index=True,
-    )
-    current_stage: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    stage_progress: Mapped[dict[str, Any]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=dict,
-    )
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-        index=True,
-    )
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    # Results and errors
-    result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    error: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-
-    # Retry tracking
-    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    retry_history: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=list,
-    )
-
-    # Audit fields
-    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    source_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
-
-    # Relationships
-    destinations: Mapped[list["JobDestination"]] = relationship(
-        "JobDestination",
-        back_populates="job",
-        cascade="all, delete-orphan",
-    )
-    lineage: Mapped[list["DataLineage"]] = relationship(
-        "DataLineage",
-        back_populates="job",
-        cascade="all, delete-orphan",
-        order_by="DataLineage.step_order",
-    )
-    audit_logs: Mapped[list["AuditLog"]] = relationship(
-        "AuditLog",
-        back_populates="job",
-        cascade="all, delete-orphan",
-    )
-    pipeline_config_ref: Mapped[Optional["PipelineConfig"]] = relationship(
-        "PipelineConfig",
-        back_populates="jobs",
-    )
-
-    def __repr__(self) -> str:
-        return f"<Job(id={self.id}, status={self.status}, file={self.file_name})>"
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary representation."""
-        return {
-            "id": str(self.id),
-            "external_id": self.external_id,
-            "source_type": self.source_type,
-            "source_uri": self.source_uri,
-            "file_name": self.file_name,
-            "file_size": self.file_size,
-            "file_hash": self.file_hash,
-            "mime_type": self.mime_type,
-            "mode": self.mode,
-            "priority": self.priority,
-            "status": self.status,
-            "current_stage": self.current_stage,
-            "stage_progress": self.stage_progress,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "retry_count": self.retry_count,
-            "created_by": self.created_by,
-        }
-
-
-class JobDestination(Base):
-    """Association between jobs and destinations.
-    
-    Tracks which destinations a job was configured to output to
-    and the status of each output operation.
-    """
-
-    __tablename__ = "job_destinations"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("jobs.id"),
-        nullable=False,
-    )
-    destination_config_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("destination_configs.id"),
-        nullable=True,
-    )
-    destination_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    destination_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    config_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-
-    # Output status
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
-    output_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
-    records_written: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    # Relationships
-    job: Mapped[Job] = relationship("Job", back_populates="destinations")
-    destination_config: Mapped[Optional["DestinationConfig"]] = relationship(
-        "DestinationConfig",
-        back_populates="job_destinations",
-    )
-
-
-# ============================================================================
-# Pipeline Configuration Models
-# ============================================================================
-
-class PipelineConfig(Base):
-    """Pipeline configuration model.
-    
-    Stores configurable pipeline settings for document processing.
-    """
-
-    __tablename__ = "pipeline_configs"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    name: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        unique=True,
-        index=True,
-    )
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # Configuration sections
-    content_detection: Mapped[dict[str, Any]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=lambda: {
-            "auto_detect": True,
-            "detection_method": "hybrid",
-            "text_ratio_threshold": 0.95,
-        },
-    )
-    parser: Mapped[dict[str, Any]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=lambda: {
-            "primary_parser": "docling",
-            "fallback_parser": "azure_ocr",
-            "ocr_language": "eng",
-        },
-    )
-    enrichment: Mapped[dict[str, Any]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=lambda: {
-            "extract_entities": False,
-            "classify_document": False,
-            "add_metadata": True,
-        },
-    )
-    quality: Mapped[dict[str, Any]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=lambda: {
-            "enabled": True,
-            "min_quality_score": 0.7,
-            "auto_retry": True,
-            "max_retries": 3,
-        },
-    )
-    transformation: Mapped[dict[str, Any]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=lambda: {
-            "chunking": {
-                "enabled": True,
-                "strategy": "semantic",
-                "chunk_size": 1000,
-                "chunk_overlap": 200,
-            },
-            "generate_embeddings": False,
-            "output_format": "json",
-        },
-    )
-    enabled_stages: Mapped[list[str]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=lambda: [
-            "ingest", "detect", "parse", "enrich", "quality", "transform", "output"
-        ],
-    )
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
-    )
-
-    # Audit
-    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    # Relationships
-    jobs: Mapped[list[Job]] = relationship("Job", back_populates="pipeline_config_ref")
-
-
-# ============================================================================
-# Source and Destination Configuration Models
-# ============================================================================
-
-class SourceConfig(Base):
-    """Source configuration model.
-    
-    Stores configuration for data sources like S3, Azure Blob, SharePoint.
-    """
-
-    __tablename__ = "source_configs"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    type: Mapped[str] = mapped_column(String(50), nullable=False)
-    name: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        unique=True,
-        index=True,
-    )
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # Configuration (encrypted at application level for sensitive fields)
-    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
-    )
-
-    # Audit
-    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-
-class DestinationConfig(Base):
-    """Destination configuration model.
-    
-    Stores configuration for output destinations like Cognee, webhooks.
-    """
-
-    __tablename__ = "destination_configs"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    type: Mapped[str] = mapped_column(String(50), nullable=False)
-    name: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        unique=True,
-        index=True,
-    )
-
-    # Configuration
-    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    filters: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=list,
-    )
-
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
-    )
-
-    # Audit
-    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    # Relationships
-    job_destinations: Mapped[list[JobDestination]] = relationship(
-        "JobDestination",
-        back_populates="destination_config",
-    )
-
-
-# ============================================================================
-# Data Lineage Model
-# ============================================================================
-
-class DataLineage(Base):
-    """Data lineage model.
-    
-    Tracks the transformation lineage of documents through the pipeline.
-    """
-
-    __tablename__ = "data_lineage"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("jobs.id"),
-        nullable=False,
-        index=True,
-    )
-
-    # Step information
-    step_order: Mapped[int] = mapped_column(Integer, nullable=False)
-    stage: Mapped[str] = mapped_column(String(50), nullable=False)
-    transformation: Mapped[str] = mapped_column(String(255), nullable=False)
-
-    # Hash tracking for data integrity
-    input_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    output_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
-
-    # Additional metadata
-    extra_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-
-    # Timestamp
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-    )
-
-    # Relationships
-    job: Mapped[Job] = relationship("Job", back_populates="lineage")
-
-    __table_args__ = (
-        # Ensure unique step order per job
-        {"sqlite_autoincrement": True},
-    )
-
-
-# ============================================================================
-# Audit Log Model
-# ============================================================================
-
-class AuditLog(Base):
-    """Audit log model.
-    
-    Stores comprehensive audit trail for compliance and debugging.
-    """
-
-    __tablename__ = "audit_logs"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-
-    # Event information
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-        index=True,
-    )
-    event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-
-    # Actor information
-    user: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    source_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
-    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # Resource information
-    resource_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    resource_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    action: Mapped[str] = mapped_column(String(50), nullable=False)
-
-    # Event details
-    details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-
-    # Request tracking
-    request_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-
-    # Optional job reference
-    job_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("jobs.id"),
-        nullable=True,
-        index=True,
-    )
-
-    # Relationships
-    job: Mapped[Job | None] = relationship("Job", back_populates="audit_logs")
-
-    def __repr__(self) -> str:
-        return f"<AuditLog(event={self.event_type}, user={self.user}, timestamp={self.timestamp})>"
-
-
-# ============================================================================
-# Dead Letter Queue Model
-# ============================================================================
-
-class DLQEntry(Base):
-    """Dead Letter Queue entry model.
-    
-    Stores failed jobs that have exhausted all retry attempts
-    and require manual inspection or intervention.
-    """
-
-    __tablename__ = "dlq_entries"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("jobs.id"),
-        nullable=False,
-        index=True,
-    )
-
-    # Failure information
-    failure_category: Mapped[str] = mapped_column(String(50), nullable=False)
-    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    error_details: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-
-    # Retry history
-    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    retry_history: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=list,
-    )
-    max_retries_reached: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-    )
-
-    # Status tracking
-    status: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="pending",
-        index=True,
-    )
-
-    # Review information
-    reviewed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-        index=True,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
-    )
-    archived_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    # Additional metadata
-    extra_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-
-    # Relationships
-    job: Mapped[Job] = relationship("Job", backref="dlq_entry")
-
-
-# ============================================================================
-# Processing History Model
-# ============================================================================
-
-class ProcessingHistory(Base):
-    """Processing history model.
-    
-    Tracks processing outcomes for machine learning-based optimization.
-    """
-
-    __tablename__ = "processing_history"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("jobs.id"),
-        nullable=False,
-        index=True,
-    )
-
-    # File information
-    file_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    content_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-    # Processing information
-    parser_used: Mapped[str] = mapped_column(String(100), nullable=False)
-    fallback_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    quality_score: Mapped[float] = mapped_column(
-        Float,
-        nullable=False,
-        default=0.0,
-    )
-    processing_time_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
-    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-    # Error information (if failed)
-    error_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
-
-    # Configuration snapshot
-    config_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-
-    # Timestamp
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-        index=True,
-    )
-
-    # Additional metadata
-    extra_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-
-    # Relationships
-    job: Mapped[Job] = relationship("Job", backref="processing_history")
-
-    __table_args__ = (
-        # Index for ML queries
-        {"sqlite_autoincrement": True},
-    )
-
-
-# ============================================================================
-# Circuit Breaker State Model
-# ============================================================================
-
-class CircuitBreakerState(Base):
-    """Circuit breaker state model.
-    
-    Tracks the state of circuit breakers for external services.
-    """
-
-    __tablename__ = "circuit_breakers"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-
-    # Circuit identification
-    service_id: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        unique=True,
-        index=True,
-    )
-    service_type: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-    )  # 'parser', 'destination', 'source'
-
-    # Circuit state
-    state: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="closed",
-    )  # 'closed', 'open', 'half_open'
-
-    # Failure tracking
-    failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    success_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    failure_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
-    success_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
-
-    # Timestamps
-    last_failure_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    last_success_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    last_state_change: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    # Timeout configuration
-    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
-    )
-
-
-# ============================================================================
-# Source Sync State Model
-# ============================================================================
-
-class SourceSyncState(Base):
-    """Source synchronization state model.
-    
-    Tracks synchronization state for external sources (S3, Azure Blob, etc.)
-    to enable incremental/delta syncing.
-    """
-
-    __tablename__ = "source_sync_states"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-
-    # Source identification
-    source_config_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("source_configs.id"),
-        nullable=False,
-        index=True,
-    )
-
-    # Sync tracking
-    last_sync_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    last_sync_marker: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-    )  # S3 continuation token, Azure marker, etc.
-
-    # Sync statistics
-    files_synced: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    files_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    bytes_synced: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-
-    # Sync status
-    sync_status: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="idle",
-    )  # 'idle', 'running', 'failed', 'completed'
-    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # Incremental sync cursor
-    cursor_value: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cursor_type: Mapped[str | None] = mapped_column(
-        String(50),
-        nullable=True,
-    )  # 'timestamp', 'token', 'etag', etc.
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
-    )
-
-    # Relationships
-    source_config: Mapped[SourceConfig] = relationship(
-        "SourceConfig",
-        backref="sync_states",
-    )
-
-
-# ============================================================================
-# User and Authentication Models
-# ============================================================================
-
-class User(Base):
-    """User model for authentication and authorization.
-    
-    Stores user information for all authentication methods including
-    OAuth2, Azure AD, and API key service accounts.
-    """
-
-    __tablename__ = "users"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    email: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-        unique=True,
-        index=True,
-    )
-    username: Mapped[str | None] = mapped_column(
-        String(100),
-        nullable=True,
-        unique=True,
-        index=True,
-    )
-
-    # Role and permissions
-    role: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        default="viewer",
-    )
-    permissions: Mapped[list[str]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=list,
-    )
-
-    # Authentication
-    auth_provider: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        default="jwt",
-    )  # api_key, oauth2, azure_ad, jwt
-    external_id: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-        index=True,
-    )  # ID from external provider (Azure AD OID, etc.)
-
-    # Profile
-    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    given_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    family_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    department: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    job_title: Mapped[str | None] = mapped_column(String(100), nullable=True)
-
-    # Account status
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True,
-    )
-    is_service_account: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-    )
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
-    )
-    last_login_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    # Metadata
-    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=dict,
-    )
-
-    # Relationships
-    api_keys: Mapped[list["APIKey"]] = relationship(
-        "APIKey",
-        back_populates="user",
-        cascade="all, delete-orphan",
-    )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary representation."""
-        return {
-            "id": str(self.id),
-            "email": self.email,
-            "username": self.username,
-            "role": self.role,
-            "permissions": self.permissions,
-            "auth_provider": self.auth_provider,
-            "display_name": self.display_name,
-            "is_active": self.is_active,
-            "is_service_account": self.is_service_account,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
-        }
-
-
-class APIKey(Base):
-    """API key model for service account authentication.
-    
-    Stores API keys for programmatic access to the system.
-    Keys are hashed before storage.
-    """
-
-    __tablename__ = "api_keys"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id"),
-        nullable=False,
-        index=True,
-    )
-
-    # Key information (hash only, never store plain key)
-    key_hash: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        unique=True,
-        index=True,
-    )
-    key_prefix: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        index=True,
-    )  # First few characters of key for identification
-
-    # Key metadata
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # Permissions (override user permissions if specified)
-    permissions: Mapped[list[str]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=list,
-    )
-    scopes: Mapped[list[str]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=list,
-    )
-
-    # Status
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True,
-    )
-
-    # Expiration
-    expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    # Usage tracking
-    last_used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    use_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-    )
-
-    # Rate limiting
-    rate_limit_per_minute: Mapped[int | None] = mapped_column(
-        Integer,
-        nullable=True,
-    )
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=datetime.utcnow,
-    )
-    revoked_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    revoked_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    # Metadata
-    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=dict,
-    )
-
-    # Relationships
-    user: Mapped[User] = relationship("User", back_populates="api_keys")
-
-    def is_expired(self) -> bool:
-        """Check if API key has expired."""
-        if not self.expires_at:
-            return False
-        return datetime.utcnow() > self.expires_at
-
-    def is_valid(self) -> bool:
-        """Check if API key is valid (active and not expired)."""
-        return self.is_active and not self.is_expired()
-
-    def to_dict(self, include_hash: bool = False) -> dict[str, Any]:
-        """Convert to dictionary representation.
-        
-        Args:
-            include_hash: Whether to include key hash (usually False)
-        """
-        result = {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "key_prefix": self.key_prefix,
-            "name": self.name,
-            "description": self.description,
-            "permissions": self.permissions,
-            "scopes": self.scopes,
-            "is_active": self.is_active,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-            "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
-            "use_count": self.use_count,
-            "rate_limit_per_minute": self.rate_limit_per_minute,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None,
-        }
-
-        if include_hash:
-            result["key_hash"] = self.key_hash
-
-        return result
-
-
-# ============================================================================
-# Database Engine and Session Management
-# ============================================================================
-
-def create_async_engine_from_url(database_url: str, **kwargs: Any) -> Any:
-    """Create an async database engine.
+from enum import Enum
+from uuid import uuid4
+
+from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import declarative_base, relationship
+
+Base = declarative_base()
+
+# Async engine (initialized on demand)
+_async_engine = None
+_engine = None  # Alias for backward compatibility
+
+
+def init_engine(
+    database_url: str | None = None,
+    echo: bool = False,
+    pool_size: int = 5,
+    max_overflow: int = 10,
+):
+    """Initialize the async engine (for backward compatibility).
     
     Args:
-        database_url: Database connection URL
-        **kwargs: Additional engine arguments
+        database_url: Database URL
+        echo: Whether to echo SQL statements
+        pool_size: Connection pool size
+        max_overflow: Max overflow connections
         
     Returns:
         AsyncEngine instance
     """
-    # Convert postgresql:// to postgresql+asyncpg://
-    if database_url.startswith("postgresql://"):
-        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-
-    return create_async_engine(
+    global _engine, _async_engine
+    if database_url is None:
+        import os
+        database_url = os.getenv(
+            "DB_URL",
+            "postgresql+asyncpg://postgres:postgres@localhost:5432/pipeline"
+        )
+    
+    _engine = create_async_engine(
         database_url,
-        echo=kwargs.get("echo", False),
-        pool_size=kwargs.get("pool_size", 10),
-        max_overflow=kwargs.get("max_overflow", 20),
+        echo=echo,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
     )
+    _async_engine = _engine
+    return _engine
 
 
-async def init_db(engine: Any) -> None:
-    """Initialize the database schema.
+async def init_db(engine=None):
+    """Initialize the database (create tables).
+    
+    This is a placeholder - actual migrations should be run via Alembic.
     
     Args:
-        engine: Database engine
+        engine: Optional engine instance (uses global engine if not provided)
     """
+    if engine is None:
+        engine = get_async_engine()
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        # In production, use Alembic migrations instead
+        # await conn.run_sync(Base.metadata.create_all)
+        pass
 
 
-async def drop_db(engine: Any) -> None:
-    """Drop all database tables.
+def get_async_engine(database_url: str | None = None):
+    """Get or create async engine.
     
     Args:
-        engine: Database engine
+        database_url: Database URL (uses env var or default if not provided)
+        
+    Returns:
+        AsyncEngine instance
     """
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    global _async_engine, _engine
+    if _async_engine is None:
+        # Check if init_engine was already called
+        if _engine is not None:
+            _async_engine = _engine
+        else:
+            if database_url is None:
+                import os
+                database_url = os.getenv(
+                    "DB_URL",
+                    "postgresql+asyncpg://postgres:postgres@localhost:5432/pipeline"
+                )
+            _async_engine = create_async_engine(database_url, echo=False)
+    return _async_engine
 
 
-# Global engine and session factory (initialized at startup)
-_engine: Any = None
-_async_session_factory: Any = None
-
-
-async def get_session() -> AsyncSession:
-    """Get a database session.
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """Get database session.
     
     Yields:
         AsyncSession for database operations
     """
-    global _async_session_factory
+    engine = get_async_engine()
+    async with AsyncSession(engine) as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
-    if _async_session_factory is None:
-        raise RuntimeError("Database not initialized. Call init_engine() first.")
 
-    async with _async_session_factory() as session:
-        yield session
-
-
-def init_engine(database_url: str, **kwargs: Any) -> Any:
-    """Initialize the database engine and session factory.
+class ContentDetectionResultModel(Base):
+    """Database model for content detection results."""
     
-    Args:
-        database_url: Database connection URL
-        **kwargs: Additional engine arguments
-        
-    Returns:
-        AsyncEngine instance
-    """
-    global _engine, _async_session_factory
+    __tablename__ = 'content_detection_results'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    file_hash = Column(String(64), unique=True, nullable=False, index=True)
+    file_size = Column(BigInteger, nullable=False)
+    content_type = Column(String(20), nullable=False, index=True)
+    confidence = Column(Float, nullable=False)
+    recommended_parser = Column(String(50), nullable=False)
+    alternative_parsers = Column(ARRAY(String), nullable=False, default=[])
+    text_statistics = Column(JSONB, nullable=False)
+    image_statistics = Column(JSONB, nullable=False)
+    page_results = Column(JSONB, nullable=False)
+    processing_time_ms = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    access_count = Column(Integer, default=1)
+    last_accessed_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    
+    # Relationships
+    jobs = relationship("JobDetectionResultModel", back_populates="detection_result")
 
-    _engine = create_async_engine_from_url(database_url, **kwargs)
-    _async_session_factory = async_sessionmaker(
-        _engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
 
-    return _engine
+class JobDetectionResultModel(Base):
+    """Link table between jobs and detection results."""
+    
+    __tablename__ = 'job_detection_results'
+    
+    job_id = Column(UUID(as_uuid=True), ForeignKey('jobs.id', ondelete='CASCADE'), primary_key=True)
+    detection_result_id = Column(UUID(as_uuid=True), ForeignKey('content_detection_results.id', ondelete='CASCADE'), primary_key=True)
+    
+    # Relationships
+    job = relationship("JobModel", back_populates="detection_results")
+    detection_result = relationship("ContentDetectionResultModel", back_populates="jobs")
+
+
+class JobStatus(str, Enum):
+    """Job status enumeration."""
+    
+    CREATED = "created"
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    CANCELLING = "cancelling"
+
+
+class JobModel(Base):
+    """Job model for pipeline processing jobs."""
+    
+    __tablename__ = 'jobs'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    status = Column(String(20), nullable=False, default=JobStatus.CREATED, index=True)
+    source_type = Column(String(50), nullable=False, index=True)
+    source_uri = Column(String(500), nullable=True)
+    file_name = Column(String(255), nullable=True)
+    file_size = Column(BigInteger, nullable=True)
+    mime_type = Column(String(100), nullable=True)
+    priority = Column(String(20), nullable=False, default="normal")
+    mode = Column(String(20), nullable=False, default="async")
+    external_id = Column(String(255), nullable=True, index=True)
+    metadata_json = Column(JSONB, nullable=False, default={})
+    error_message = Column(Text, nullable=True)
+    error_code = Column(String(50), nullable=True)
+    retry_count = Column(Integer, nullable=False, default=0)
+    max_retries = Column(Integer, nullable=False, default=3)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Job locking for concurrent workers
+    locked_by = Column(String(255), nullable=True, index=True)
+    locked_at = Column(DateTime(timezone=True), nullable=True)
+    heartbeat_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Pipeline reference
+    pipeline_id = Column(UUID(as_uuid=True), ForeignKey('pipelines.id', ondelete='SET NULL'), nullable=True)
+    pipeline_config = Column(JSONB, nullable=True)
+    
+    # Relationships
+    detection_results = relationship("JobDetectionResultModel", back_populates="job", cascade="all, delete-orphan")
+    result = relationship("JobResultModel", back_populates="job", uselist=False, cascade="all, delete-orphan")
+    pipeline = relationship("PipelineModel", back_populates="jobs")
+    
+    def to_dict(self) -> dict:
+        """Convert job to dictionary."""
+        return {
+            "id": str(self.id),
+            "status": self.status,
+            "source_type": self.source_type,
+            "source_uri": self.source_uri,
+            "file_name": self.file_name,
+            "file_size": self.file_size,
+            "mime_type": self.mime_type,
+            "priority": self.priority,
+            "mode": self.mode,
+            "external_id": self.external_id,
+            "metadata": self.metadata_json,
+            "retry_count": self.retry_count,
+            "max_retries": self.max_retries,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "error": {
+                "message": self.error_message,
+                "code": self.error_code,
+            } if self.error_message or self.error_code else None,
+        }
+
+
+class PipelineModel(Base):
+    """Pipeline configuration model."""
+    
+    __tablename__ = 'pipelines'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    name = Column(String(255), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    config = Column(JSONB, nullable=False, default={})
+    version = Column(Integer, nullable=False, default=1)
+    is_active = Column(Integer, nullable=False, default=1)  # 1 = active, 0 = deleted
+    created_by = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    jobs = relationship("JobModel", back_populates="pipeline", foreign_keys="JobModel.pipeline_id")
+
+
+class JobResultModel(Base):
+    """Job processing result model."""
+    
+    __tablename__ = 'job_results'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    job_id = Column(UUID(as_uuid=True), ForeignKey('jobs.id', ondelete='CASCADE'), nullable=False, index=True, unique=True)
+    extracted_text = Column(Text, nullable=True)
+    output_data = Column(JSONB, nullable=True)
+    result_metadata = Column("metadata", JSONB, nullable=False, default={})
+    quality_score = Column(Float, nullable=True)
+    processing_time_ms = Column(Integer, nullable=True)
+    output_uri = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    
+    # Relationships
+    job = relationship("JobModel", back_populates="result")
+
+
+class AuditLogModel(Base):
+    """Audit log entry model."""
+    
+    __tablename__ = 'audit_logs'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False, index=True)
+    user_id = Column(String(255), nullable=True, index=True)
+    api_key_id = Column(String(255), nullable=True, index=True)
+    action = Column(String(50), nullable=False, index=True)
+    resource_type = Column(String(50), nullable=False, index=True)
+    resource_id = Column(String(255), nullable=True, index=True)
+    request_method = Column(String(10), nullable=True)
+    request_path = Column(String(500), nullable=True)
+    request_details = Column(JSONB, nullable=True)
+    success = Column(Integer, nullable=False, default=1)  # 1 = success, 0 = failure
+    error_message = Column(Text, nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+
+
+class ApiKeyModel(Base):
+    """API key model for service-to-service authentication."""
+    
+    __tablename__ = 'api_keys'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    key_hash = Column(String(64), nullable=False, index=True, unique=True)
+    name = Column(String(255), nullable=False)
+    permissions = Column(ARRAY(String), nullable=False, default=[])
+    is_active = Column(Integer, nullable=False, default=1)
+    created_by = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class WebhookSubscriptionModel(Base):
+    """Webhook subscription model."""
+    
+    __tablename__ = 'webhook_subscriptions'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(String(255), nullable=False, index=True)
+    url = Column(String(500), nullable=False)
+    events = Column(ARRAY(String), nullable=False, default=[])
+    secret = Column(String(255), nullable=True)
+    is_active = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class WebhookDeliveryModel(Base):
+    """Webhook delivery attempt model."""
+    
+    __tablename__ = 'webhook_deliveries'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    subscription_id = Column(UUID(as_uuid=True), ForeignKey('webhook_subscriptions.id', ondelete='CASCADE'), nullable=False, index=True)
+    event_type = Column(String(50), nullable=False, index=True)
+    payload = Column(JSONB, nullable=False, default={})
+    status = Column(String(20), nullable=False, default="pending")  # pending, delivered, failed
+    attempts = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=False, default=5)
+    http_status = Column(Integer, nullable=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+    next_retry_at = Column(DateTime(timezone=True), nullable=True)

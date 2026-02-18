@@ -18,7 +18,7 @@ from src.api.models import (
     SourceType,
 )
 from src.auth.base import User
-from src.auth.dependencies import require_permissions
+from src.auth.dependencies import require_create_jobs, require_read_jobs
 
 router = APIRouter(prefix="/bulk", tags=["Bulk Operations"])
 
@@ -179,7 +179,7 @@ _bulk_operations: dict[UUID, BulkOperationStatus] = {}
 async def bulk_ingest(
     request: Request,
     ingest_request: BulkIngestRequest,
-    user: User = Depends(require_permissions("jobs:write")),
+    user: User = Depends(require_create_jobs),
 ) -> ApiResponse:
     """Bulk ingest multiple documents.
     
@@ -265,7 +265,7 @@ async def bulk_ingest(
 async def bulk_retry(
     request: Request,
     retry_request: BulkRetryRequest,
-    user: User = Depends(require_permissions("jobs:write")),
+    user: User = Depends(require_create_jobs),
 ) -> ApiResponse:
     """Bulk retry failed jobs.
     
@@ -357,7 +357,7 @@ async def bulk_retry(
 async def bulk_export(
     request: Request,
     export_request: BulkExportRequest,
-    user: User = Depends(require_permissions("jobs:read")),
+    user: User = Depends(require_read_jobs),
 ) -> ApiResponse:
     """Bulk export job data.
     
@@ -412,7 +412,7 @@ async def bulk_export(
 @router.get("/status/{batch_id}", response_model=ApiResponse)
 async def get_bulk_operation_status(
     batch_id: UUID,
-    user: User = Depends(require_permissions("jobs:read")),
+    user: User = Depends(require_read_jobs),
 ) -> ApiResponse:
     """Get status of a bulk operation.
     
@@ -440,7 +440,7 @@ async def list_bulk_operations(
     status: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-    user: User = Depends(require_permissions("jobs:read")),
+    user: User = Depends(require_read_jobs),
 ) -> ApiResponse:
     """List bulk operations.
     
@@ -486,7 +486,7 @@ async def list_bulk_operations(
 @router.get("/export/{export_id}/download")
 async def download_bulk_export(
     export_id: UUID,
-    user: User = Depends(require_permissions("jobs:read")),
+    user: User = Depends(require_read_jobs),
 ):
     """Download a completed bulk export.
     
@@ -530,7 +530,7 @@ async def download_bulk_export(
 @router.post("/cancel/{batch_id}", response_model=ApiResponse)
 async def cancel_bulk_operation(
     batch_id: UUID,
-    user: User = Depends(require_permissions("jobs:write")),
+    user: User = Depends(require_create_jobs),
 ) -> ApiResponse:
     """Cancel a pending or processing bulk operation.
     

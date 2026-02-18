@@ -11,12 +11,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import structlog
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.dependencies import get_db
 from src.api.routes import health
 from src.config import settings
 from src.db.models import _engine as db_engine
@@ -335,9 +337,10 @@ def _add_routes(app: FastAPI) -> None:
 
         # Check database
         try:
+            from sqlalchemy import text
             from src.db.models import get_session
             async for session in get_session():
-                await session.execute("SELECT 1")
+                await session.execute(text("SELECT 1"))
                 components["database"] = ComponentHealth(status=HealthStatus.HEALTHY)
                 break
         except Exception as e:
@@ -396,6 +399,38 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import HealthAlive
         return HealthAlive().model_dump()
 
+    @app.get("/health/queue", tags=["System"])
+    async def get_queue_health(request: Request) -> dict:
+        """Queue health and status."""
+        from src.api.models import ApiResponse
+        from src.core.queue import get_queue
+
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+
+        try:
+            queue = get_queue()
+            depths = await queue.get_queue_depths()
+            processing = await queue.get_processing_count()
+            
+            return ApiResponse.create(
+                data={
+                    "status": "healthy",
+                    "queue_depths": depths,
+                    "processing": processing,
+                    "total_pending": sum(depths.values()),
+                    "total_processing": sum(processing.values()) if isinstance(processing, dict) else 0,
+                },
+                request_id=request_id,
+            ).model_dump()
+        except Exception as e:
+            return ApiResponse.create(
+                data={
+                    "status": "unhealthy",
+                    "error": str(e),
+                },
+                request_id=request_id,
+            ).model_dump()
+
     @app.get("/metrics", tags=["System"])
     async def get_metrics() -> PlainTextResponse:
         """Prometheus metrics endpoint."""
@@ -419,19 +454,93 @@ def _add_routes(app: FastAPI) -> None:
 
     # Job Management Routes
     @app.post(f"{api_prefix}/jobs", status_code=status.HTTP_202_ACCEPTED, tags=["Jobs"])
-    async def create_job(request: Request) -> dict:
+    async def create_job(
+        request: Request,
+        job_data: dict,
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
         """Submit a new ingestion job."""
-        from src.api.models import ApiResponse, JobStatus
+        from src.api.models import ApiResponse, JobResponse, SourceType
+        from src.core.queue import JobQueue, QueuePriority, get_queue
+        from src.db.repositories.job import JobRepository
+        from src.db.repositories.pipeline import PipelineRepository
 
-        # TODO: Implement actual job creation
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
+        # Validate required fields
+        if not job_data.get("source_type"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "MISSING_SOURCE_TYPE", "message": "source_type is required"}}
+            )
+
+        # Validate pipeline if provided
+        pipeline_id = job_data.get("pipeline_id")
+        pipeline_config = None
+        if pipeline_id:
+            pipeline_repo = PipelineRepository(db)
+            pipeline = await pipeline_repo.get_by_id(pipeline_id)
+            if pipeline is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"error": {"code": "INVALID_PIPELINE", "message": f"Pipeline '{pipeline_id}' not found"}},
+                )
+            pipeline_config = pipeline.config
+
+        # Create job via repository
+        repo = JobRepository(db)
+        job = await repo.create(
+            source_type=job_data.get("source_type"),
+            source_uri=job_data.get("source_uri"),
+            file_name=job_data.get("file_name"),
+            file_size=job_data.get("file_size"),
+            mime_type=job_data.get("mime_type"),
+            priority=job_data.get("priority", "normal"),
+            mode=job_data.get("mode", "async"),
+            external_id=job_data.get("external_id"),
+            metadata=job_data.get("metadata", {}),
+            pipeline_id=pipeline_id,
+            pipeline_config=pipeline_config,
+        )
+
+        # Enqueue job to Redis for processing
+        try:
+            queue = get_queue()
+            priority = job_data.get("priority", "normal")
+            queue_priority = QueuePriority.NORMAL
+            if priority == "high":
+                queue_priority = QueuePriority.HIGH
+            elif priority == "low":
+                queue_priority = QueuePriority.LOW
+            
+            await queue.enqueue(str(job.id), priority=queue_priority)
+            logger.info("job_enqueued", job_id=str(job.id), priority=priority)
+        except Exception as e:
+            # Log error but don't fail the request - job will be picked up by DB polling
+            logger.warning("failed_to_enqueue_job", job_id=str(job.id), error=str(e))
+
+        # Build response
+        response_data = JobResponse(
+            id=job.id,
+            status=job.status,
+            source_type=SourceType(job.source_type),
+            source_uri=job.source_uri or "",
+            file_name=job.file_name,
+            file_size=job.file_size,
+            mime_type=job.mime_type,
+            priority=5 if job.priority == "normal" else 10 if job.priority == "high" else 1,
+            mode=job.mode,
+            external_id=job.external_id,
+            retry_count=job.retry_count,
+            max_retries=job.max_retries,
+            created_at=job.created_at,
+            updated_at=job.updated_at,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+        )
+
         return ApiResponse.create(
-            data={
-                "id": str(uuid.uuid4()),
-                "status": JobStatus.CREATED.value,
-                "message": "Job accepted for processing",
-            },
+            data=response_data.model_dump(),
             request_id=request_id,
         ).model_dump()
 
@@ -441,130 +550,715 @@ def _add_routes(app: FastAPI) -> None:
         page: int = 1,
         limit: int = 20,
         status: str | None = None,
+        source_type: str | None = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+        db: AsyncSession = Depends(get_db),
     ) -> dict:
         """List jobs with filtering."""
-        from src.api.models import ApiLinks, ApiResponse
+        from src.api.models import ApiLinks, ApiResponse, JobListResponse, JobResponse, SourceType
+        from src.db.repositories.job import JobRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
-        # TODO: Implement actual job listing
+        # Get jobs from repository
+        repo = JobRepository(db)
+        jobs, total = await repo.list_jobs(
+            page=page,
+            limit=limit,
+            status=status,
+            source_type=source_type,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+
+        # Convert to response models
+        job_responses = []
+        for job in jobs:
+            job_responses.append(JobResponse(
+                id=job.id,
+                status=job.status,
+                source_type=SourceType(job.source_type) if job.source_type in [e.value for e in SourceType] else SourceType.UPLOAD,
+                source_uri=job.source_uri or "",
+                file_name=job.file_name,
+                file_size=job.file_size,
+                mime_type=job.mime_type,
+                priority=5 if job.priority == "normal" else 10 if job.priority == "high" else 1,
+                mode=job.mode,
+                external_id=job.external_id,
+                retry_count=job.retry_count,
+                max_retries=job.max_retries,
+                created_at=job.created_at,
+                updated_at=job.updated_at,
+                started_at=job.started_at,
+                completed_at=job.completed_at,
+            ))
+
+        # Build list response
+        list_response = JobListResponse(
+            items=job_responses,
+            total=total,
+            page=page,
+            page_size=limit,
+        )
+
+        # Build pagination links
+        links = ApiLinks(self=str(request.url))
+        base_url = str(request.url).split("?")[0]
+        
+        if page > 1:
+            links.prev = f"{base_url}?page={page-1}&limit={limit}"
+        if (page * limit) < total:
+            links.next = f"{base_url}?page={page+1}&limit={limit}"
+
         return ApiResponse.create(
-            data=[],
+            data=list_response.model_dump(),
             request_id=request_id,
-            links=ApiLinks(self=str(request.url)),
+            total_count=total,
+            links=links,
         ).model_dump()
 
     @app.get(f"{api_prefix}/jobs/{{job_id}}", tags=["Jobs"])
-    async def get_job(job_id: str, request: Request) -> dict:
+    async def get_job(
+        job_id: str,
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
         """Get job details."""
-        from src.api.models import ApiResponse
+        from src.api.models import ApiResponse, JobResponse, SourceType
+        from src.db.repositories.job import JobRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
-        # TODO: Implement actual job retrieval
+        # Get job from repository
+        repo = JobRepository(db)
+        job = await repo.get_by_id(job_id)
+
+        if job is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job with ID '{job_id}' not found",
+            )
+
+        # Build response
+        response_data = JobResponse(
+            id=job.id,
+            status=job.status,
+            source_type=SourceType(job.source_type) if job.source_type in [e.value for e in SourceType] else SourceType.UPLOAD,
+            source_uri=job.source_uri or "",
+            file_name=job.file_name,
+            file_size=job.file_size,
+            mime_type=job.mime_type,
+            priority=5 if job.priority == "normal" else 10 if job.priority == "high" else 1,
+            mode=job.mode,
+            external_id=job.external_id,
+            retry_count=job.retry_count,
+            max_retries=job.max_retries,
+            created_at=job.created_at,
+            updated_at=job.updated_at,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+            error={"message": job.error_message, "code": job.error_code} if job.error_message or job.error_code else None,
+        )
+
         return ApiResponse.create(
-            data={"id": job_id, "status": "created"},
+            data=response_data.model_dump(),
             request_id=request_id,
         ).model_dump()
 
     @app.delete(f"{api_prefix}/jobs/{{job_id}}", status_code=status.HTTP_204_NO_CONTENT, tags=["Jobs"])
-    async def cancel_job(job_id: str) -> None:
+    async def cancel_job(
+        job_id: str,
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
         """Cancel a job."""
-        # TODO: Implement actual job cancellation
-        pass
+        from src.db.models import JobStatus
+        from src.db.repositories.job import JobRepository
+
+        repo = JobRepository(db)
+        job = await repo.get_by_id(job_id)
+
+        if job is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job with ID '{job_id}' not found",
+            )
+
+        # Only allow cancellation of jobs that can be cancelled
+        if job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot cancel job with status '{job.status}'",
+            )
+
+        # Update status to cancelled
+        await repo.update_status(job_id, JobStatus.CANCELLED)
 
     @app.post(f"{api_prefix}/jobs/{{job_id}}/retry", status_code=status.HTTP_202_ACCEPTED, tags=["Jobs"])
-    async def retry_job(job_id: str, request: Request) -> dict:
+    async def retry_job(
+        job_id: str,
+        request: Request,
+        retry_data: dict | None = None,
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
         """Retry a failed job."""
-        from src.api.models import ApiResponse
+        from src.api.models import ApiResponse, JobResponse, SourceType
+        from src.db.models import JobStatus
+        from src.db.repositories.job import JobRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
-        # TODO: Implement actual job retry
+        repo = JobRepository(db)
+        
+        # Get original job
+        original_job = await repo.get_by_id(job_id)
+        if original_job is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job with ID '{job_id}' not found",
+            )
+
+        # Only allow retry of failed jobs
+        if original_job.status != JobStatus.FAILED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot retry job with status '{original_job.status}'. Only failed jobs can be retried.",
+            )
+
+        # Create new job with same configuration
+        new_job = await repo.create(
+            source_type=original_job.source_type,
+            source_uri=original_job.source_uri,
+            file_name=original_job.file_name,
+            file_size=original_job.file_size,
+            mime_type=original_job.mime_type,
+            priority=original_job.priority,
+            mode=original_job.mode,
+            external_id=original_job.external_id,
+            metadata=original_job.metadata_json,
+        )
+
+        # Increment retry count on original job
+        original_job.retry_count += 1
+        await db.commit()
+
+        # Build response
+        response_data = JobResponse(
+            id=new_job.id,
+            status=new_job.status,
+            source_type=SourceType(new_job.source_type) if new_job.source_type in [e.value for e in SourceType] else SourceType.UPLOAD,
+            source_uri=new_job.source_uri or "",
+            file_name=new_job.file_name,
+            file_size=new_job.file_size,
+            mime_type=new_job.mime_type,
+            priority=5 if new_job.priority == "normal" else 10 if new_job.priority == "high" else 1,
+            mode=new_job.mode,
+            external_id=new_job.external_id,
+            retry_count=new_job.retry_count,
+            max_retries=new_job.max_retries,
+            created_at=new_job.created_at,
+            updated_at=new_job.updated_at,
+            started_at=new_job.started_at,
+            completed_at=new_job.completed_at,
+        )
+
         return ApiResponse.create(
-            data={"id": job_id, "status": "retrying"},
+            data={
+                "original_job_id": str(job_id),
+                "new_job_id": str(new_job.id),
+                "status": new_job.status,
+                "message": "Job retry initiated",
+                "job": response_data.model_dump(),
+            },
             request_id=request_id,
         ).model_dump()
 
     @app.get(f"{api_prefix}/jobs/{{job_id}}/result", tags=["Jobs"])
-    async def get_job_result(job_id: str, request: Request) -> dict:
+    async def get_job_result(
+        job_id: str,
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
         """Get job processing result."""
         from src.api.models import ApiResponse
+        from src.db.models import JobStatus
+        from src.db.repositories.job import JobRepository
+        from src.db.repositories.job_result import JobResultRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
-        # TODO: Implement actual result retrieval
+        # Get job to check status
+        job_repo = JobRepository(db)
+        job = await job_repo.get_by_id(job_id)
+
+        if job is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job with ID '{job_id}' not found",
+            )
+
+        # Only return results for completed jobs
+        if job.status != JobStatus.COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": {
+                        "code": "JOB_NOT_COMPLETE",
+                        "message": f"Job is not complete. Current status: {job.status}",
+                        "status": job.status,
+                    }
+                },
+            )
+
+        # Get result
+        result_repo = JobResultRepository(db)
+        result = await result_repo.get_by_job_id(job_id)
+
+        if result is None:
+            # Job is completed but no result stored yet
+            return ApiResponse.create(
+                data={
+                    "job_id": job_id,
+                    "status": job.status,
+                    "success": True,
+                    "message": "Job completed but result not yet available",
+                },
+                request_id=request_id,
+            ).model_dump()
+
+        # Build response
+        response_data = {
+            "job_id": job_id,
+            "status": job.status,
+            "success": True,
+            "extracted_text": result.extracted_text,
+            "output_data": result.output_data,
+            "metadata": result.result_metadata,
+            "quality_score": result.quality_score,
+            "processing_time_ms": result.processing_time_ms,
+            "output_uri": result.output_uri,
+            "created_at": result.created_at.isoformat() if result.created_at else None,
+        }
+
         return ApiResponse.create(
-            data={"job_id": job_id, "success": True},
+            data=response_data,
             request_id=request_id,
         ).model_dump()
 
     # File Upload Routes
     @app.post(f"{api_prefix}/upload", status_code=status.HTTP_202_ACCEPTED, tags=["Upload"])
-    async def upload_files(request: Request) -> dict:
+    async def upload_files(
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
         """Upload file(s) for processing."""
-        from src.api.models import ApiResponse
+        import shutil
+        from pathlib import Path
+        
+        from fastapi import UploadFile
+        from src.api.models import ApiResponse, UploadMultipleResponse, UploadResponse
+        from src.db.repositories.job import JobRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
-        # TODO: Implement actual file upload
+        # Parse multipart form data manually
+        content_type = request.headers.get("content-type", "")
+        if not content_type.startswith("multipart/form-data"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "INVALID_CONTENT_TYPE", "message": "Content-Type must be multipart/form-data"}}
+            )
+        
+        # Read and parse form data
+        form_data = await request.form()
+        
+        # Extract files from form data
+        files: list[UploadFile] = []
+        for key, value in form_data.multi_items():
+            if hasattr(value, 'filename') and value.filename:
+                files.append(value)
+
+        if not files:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "NO_FILES", "message": "No files provided"}}
+            )
+
+        # Create staging directory
+        staging_dir = Path("/tmp/pipeline/uploads")
+        staging_dir.mkdir(parents=True, exist_ok=True)
+
+        repo = JobRepository(db)
+        uploaded_jobs = []
+
+        for upload_file in files:
+            # Generate unique file path
+            file_id = str(uuid.uuid4())
+            file_ext = Path(upload_file.filename or "unknown").suffix
+            file_path = staging_dir / f"{file_id}{file_ext}"
+
+            try:
+                # Save uploaded file
+                content = await upload_file.read()
+                with open(file_path, "wb") as buffer:
+                    buffer.write(content)
+
+                # Get file size
+                file_size = file_path.stat().st_size
+
+                # Create job for this file
+                job = await repo.create(
+                    source_type="upload",
+                    source_uri=str(file_path),
+                    file_name=upload_file.filename,
+                    file_size=file_size,
+                    mime_type=upload_file.content_type or "application/octet-stream",
+                    priority="normal",
+                    mode="async",
+                    metadata={"original_filename": upload_file.filename},
+                )
+
+                uploaded_jobs.append({
+                    "job_id": job.id,
+                    "file_name": upload_file.filename,
+                    "file_size": file_size,
+                })
+
+            except Exception as e:
+                # Clean up file on error
+                if file_path.exists():
+                    file_path.unlink()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail={"error": {"code": "UPLOAD_FAILED", "message": f"Failed to process {upload_file.filename}: {str(e)}"}}
+                )
+
+        # Build response
+        if len(uploaded_jobs) == 1:
+            response_data = UploadResponse(
+                message="File uploaded successfully",
+                job_id=uploaded_jobs[0]["job_id"],
+                file_name=uploaded_jobs[0]["file_name"],
+                file_size=uploaded_jobs[0]["file_size"],
+            )
+        else:
+            response_data = UploadMultipleResponse(
+                message=f"{len(uploaded_jobs)} files uploaded successfully",
+                job_ids=[j["job_id"] for j in uploaded_jobs],
+                files=[j["file_name"] for j in uploaded_jobs],
+            )
+
         return ApiResponse.create(
-            data={"message": "Files accepted", "job_id": str(uuid.uuid4())},
+            data=response_data.model_dump(),
             request_id=request_id,
         ).model_dump()
 
     @app.post(f"{api_prefix}/upload/url", status_code=status.HTTP_202_ACCEPTED, tags=["Upload"])
-    async def ingest_from_url(request: Request) -> dict:
+    async def ingest_from_url(
+        request: Request,
+        url_data: dict,
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
         """Ingest from URL."""
-        from src.api.models import ApiResponse
+        import httpx
+        from pathlib import Path
+        
+        from src.api.models import ApiResponse, UploadResponse
+        from src.db.repositories.job import JobRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
-        # TODO: Implement actual URL ingestion
-        return ApiResponse.create(
-            data={"message": "URL ingestion started", "job_id": str(uuid.uuid4())},
-            request_id=request_id,
-        ).model_dump()
+        url = url_data.get("url")
+        if not url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "MISSING_URL", "message": "URL is required"}}
+            )
+
+        # Create staging directory
+        staging_dir = Path("/tmp/pipeline/staging")
+        staging_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # Download file from URL
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, timeout=30.0, follow_redirects=True)
+                response.raise_for_status()
+                
+                # Determine filename
+                filename = url_data.get("filename")
+                if not filename:
+                    # Try to get from Content-Disposition header
+                    content_disp = response.headers.get("content-disposition", "")
+                    if "filename=" in content_disp:
+                        filename = content_disp.split("filename=")[1].strip('"\'')
+                    else:
+                        # Extract from URL
+                        from urllib.parse import urlparse
+                        parsed = urlparse(url)
+                        filename = Path(parsed.path).name or "downloaded_file"
+                
+                # Save file
+                file_id = str(uuid.uuid4())
+                file_ext = Path(filename).suffix
+                file_path = staging_dir / f"{file_id}{file_ext}"
+                
+                with open(file_path, "wb") as f:
+                    f.write(response.content)
+                
+                file_size = len(response.content)
+                content_type = response.headers.get("content-type", "application/octet-stream")
+
+            # Create job
+            repo = JobRepository(db)
+            job = await repo.create(
+                source_type="url",
+                source_uri=url,
+                file_name=filename,
+                file_size=file_size,
+                mime_type=content_type,
+                priority=url_data.get("priority", "normal"),
+                mode=url_data.get("mode", "async"),
+                external_id=url_data.get("external_id"),
+                metadata={"source_url": url, "headers": dict(url_data.get("headers", {}))},
+            )
+
+            response_data = UploadResponse(
+                message="URL ingestion started",
+                job_id=job.id,
+                file_name=filename,
+                file_size=file_size,
+            )
+
+            return ApiResponse.create(
+                data=response_data.model_dump(),
+                request_id=request_id,
+            ).model_dump()
+
+        except httpx.HTTPError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "DOWNLOAD_FAILED", "message": f"Failed to download from URL: {str(e)}"}}
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"error": {"code": "INGESTION_FAILED", "message": f"Failed to process URL: {str(e)}"}}
+            )
 
     # Pipeline Configuration Routes
     @app.get(f"{api_prefix}/pipelines", tags=["Pipelines"])
-    async def list_pipelines(request: Request) -> dict:
+    async def list_pipelines(
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+        page: int = 1,
+        limit: int = 20,
+    ) -> dict:
         """List pipeline configurations."""
-        from src.api.models import ApiResponse
+        from src.api.models import ApiResponse, ApiLinks
+        from src.db.repositories.pipeline import PipelineRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
-        # TODO: Implement actual pipeline listing
+        repo = PipelineRepository(db)
+        pipelines, total = await repo.list_pipelines(page=page, limit=limit)
+
+        # Build response
+        pipeline_data = []
+        for p in pipelines:
+            pipeline_data.append({
+                "id": str(p.id),
+                "name": p.name,
+                "description": p.description,
+                "config": p.config,
+                "version": p.version,
+                "is_active": bool(p.is_active),
+                "created_by": p.created_by,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+            })
+
+        # Build pagination links
+        links = ApiLinks(self=str(request.url))
+        base_url = str(request.url).split("?")[0]
+        
+        if page > 1:
+            links.prev = f"{base_url}?page={page-1}&limit={limit}"
+        if (page * limit) < total:
+            links.next = f"{base_url}?page={page+1}&limit={limit}"
+
         return ApiResponse.create(
-            data=[],
+            data={
+                "items": pipeline_data,
+                "total": total,
+                "page": page,
+                "page_size": limit,
+            },
             request_id=request_id,
+            total_count=total,
+            links=links,
         ).model_dump()
 
     @app.post(f"{api_prefix}/pipelines", status_code=status.HTTP_201_CREATED, tags=["Pipelines"])
-    async def create_pipeline(request: Request) -> dict:
+    async def create_pipeline(
+        request: Request,
+        pipeline_data: dict,
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
         """Create pipeline configuration."""
         from src.api.models import ApiResponse
+        from src.db.repositories.pipeline import PipelineRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
-        # TODO: Implement actual pipeline creation
+        # Validate required fields
+        name = pipeline_data.get("name")
+        if not name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "MISSING_NAME", "message": "Pipeline name is required"}},
+            )
+
+        config = pipeline_data.get("config", {})
+        
+        # Validate config
+        repo = PipelineRepository(db)
+        is_valid, errors = repo.validate_config(config)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "INVALID_CONFIG", "message": "Invalid configuration", "errors": errors}},
+            )
+
+        # Create pipeline
+        pipeline = await repo.create(
+            name=name,
+            description=pipeline_data.get("description"),
+            config=config,
+            created_by=pipeline_data.get("created_by"),
+        )
+
         return ApiResponse.create(
-            data={"id": str(uuid.uuid4()), "name": "new-pipeline"},
+            data={
+                "id": str(pipeline.id),
+                "name": pipeline.name,
+                "description": pipeline.description,
+                "config": pipeline.config,
+                "version": pipeline.version,
+                "created_at": pipeline.created_at.isoformat() if pipeline.created_at else None,
+            },
             request_id=request_id,
         ).model_dump()
 
     @app.get(f"{api_prefix}/pipelines/{{pipeline_id}}", tags=["Pipelines"])
-    async def get_pipeline(pipeline_id: str, request: Request) -> dict:
+    async def get_pipeline(
+        pipeline_id: str,
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
         """Get pipeline configuration."""
         from src.api.models import ApiResponse
+        from src.db.repositories.pipeline import PipelineRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
-        # TODO: Implement actual pipeline retrieval
+        repo = PipelineRepository(db)
+        pipeline = await repo.get_by_id(pipeline_id)
+
+        if pipeline is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Pipeline with ID '{pipeline_id}' not found",
+            )
+
         return ApiResponse.create(
-            data={"id": pipeline_id, "name": "example"},
+            data={
+                "id": str(pipeline.id),
+                "name": pipeline.name,
+                "description": pipeline.description,
+                "config": pipeline.config,
+                "version": pipeline.version,
+                "is_active": bool(pipeline.is_active),
+                "created_by": pipeline.created_by,
+                "created_at": pipeline.created_at.isoformat() if pipeline.created_at else None,
+                "updated_at": pipeline.updated_at.isoformat() if pipeline.updated_at else None,
+            },
             request_id=request_id,
         ).model_dump()
+
+    @app.put(f"{api_prefix}/pipelines/{{pipeline_id}}", tags=["Pipelines"])
+    async def update_pipeline(
+        pipeline_id: str,
+        request: Request,
+        pipeline_data: dict,
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
+        """Update pipeline configuration."""
+        from src.api.models import ApiResponse
+        from src.db.repositories.pipeline import PipelineRepository
+
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+
+        repo = PipelineRepository(db)
+        
+        # Check if pipeline exists
+        existing = await repo.get_by_id(pipeline_id)
+        if existing is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Pipeline with ID '{pipeline_id}' not found",
+            )
+
+        # Validate config if provided
+        config = pipeline_data.get("config")
+        if config is not None:
+            is_valid, errors = repo.validate_config(config)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"error": {"code": "INVALID_CONFIG", "message": "Invalid configuration", "errors": errors}},
+                )
+
+        # Update pipeline
+        pipeline = await repo.update(
+            pipeline_id=pipeline_id,
+            name=pipeline_data.get("name"),
+            config=config,
+            description=pipeline_data.get("description"),
+        )
+
+        return ApiResponse.create(
+            data={
+                "id": str(pipeline.id),
+                "name": pipeline.name,
+                "description": pipeline.description,
+                "config": pipeline.config,
+                "version": pipeline.version,
+                "updated_at": pipeline.updated_at.isoformat() if pipeline.updated_at else None,
+            },
+            request_id=request_id,
+        ).model_dump()
+
+    @app.delete(f"{api_prefix}/pipelines/{{pipeline_id}}", status_code=status.HTTP_204_NO_CONTENT, tags=["Pipelines"])
+    async def delete_pipeline(
+        pipeline_id: str,
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
+        """Delete pipeline configuration."""
+        from src.db.repositories.pipeline import PipelineRepository
+
+        repo = PipelineRepository(db)
+        
+        # Check if pipeline exists
+        existing = await repo.get_by_id(pipeline_id)
+        if existing is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Pipeline with ID '{pipeline_id}' not found",
+            )
+
+        # Delete pipeline (soft delete)
+        await repo.delete(pipeline_id, soft_delete=True)
 
     # Sources & Destinations Routes
     @app.get(f"{api_prefix}/sources", tags=["Sources"])
@@ -605,18 +1299,463 @@ def _add_routes(app: FastAPI) -> None:
             request_id=request_id,
         ).model_dump()
 
-    # Audit Routes
-    @app.get(f"{api_prefix}/audit/logs", tags=["Audit"])
-    async def query_audit_logs(request: Request) -> dict:
-        """Query audit logs."""
+    # Authentication Routes
+    @app.post(f"{api_prefix}/auth/login", tags=["Authentication"])
+    async def login(
+        request: Request,
+        credentials: dict,
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
+        """Login and get JWT token."""
+        from uuid import uuid4
+        
         from src.api.models import ApiResponse
+        from src.auth.jwt import JWTHandler
+        from src.config import settings
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
-        # TODO: Implement actual audit log querying
+        # Validate credentials (simplified - in production use proper user auth)
+        username = credentials.get("username")
+        password = credentials.get("password")
+        
+        if not username or not password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "MISSING_CREDENTIALS", "message": "Username and password are required"}},
+            )
+
+        # Create JWT handler
+        jwt_handler = JWTHandler(
+            secret_key=settings.security.secret_key,
+            algorithm=settings.security.algorithm,
+            access_token_expire_minutes=settings.security.access_token_expire_minutes,
+        )
+
+        # Generate tokens
+        user_id = uuid4()  # In production, look up user from database
+        access_token = jwt_handler.create_access_token(
+            user_id=user_id,
+            username=username,
+            roles=credentials.get("roles", ["operator"]),
+        )
+        refresh_token = jwt_handler.create_refresh_token(user_id=user_id)
+
         return ApiResponse.create(
-            data=[],
+            data={
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+                "expires_in": settings.security.access_token_expire_minutes * 60,
+            },
             request_id=request_id,
+        ).model_dump()
+
+    @app.post(f"{api_prefix}/auth/refresh", tags=["Authentication"])
+    async def refresh_token(
+        request: Request,
+        refresh_data: dict,
+    ) -> dict:
+        """Refresh access token."""
+        from src.api.models import ApiResponse
+        from src.auth.jwt import JWTHandler
+        from src.config import settings
+
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+
+        refresh_token = refresh_data.get("refresh_token")
+        if not refresh_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "MISSING_TOKEN", "message": "Refresh token is required"}},
+            )
+
+        try:
+            jwt_handler = JWTHandler(
+                secret_key=settings.security.secret_key,
+                algorithm=settings.security.algorithm,
+                access_token_expire_minutes=settings.security.access_token_expire_minutes,
+            )
+
+            new_token = jwt_handler.refresh_access_token(refresh_token)
+
+            return ApiResponse.create(
+                data={
+                    "access_token": new_token,
+                    "token_type": "bearer",
+                    "expires_in": settings.security.access_token_expire_minutes * 60,
+                },
+                request_id=request_id,
+            ).model_dump()
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"error": {"code": "INVALID_TOKEN", "message": str(e)}},
+            )
+
+    @app.post(f"{api_prefix}/auth/api-keys", status_code=status.HTTP_201_CREATED, tags=["Authentication"])
+    async def create_api_key(
+        request: Request,
+        key_data: dict,
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
+        """Create a new API key."""
+        from datetime import datetime, timedelta
+        
+        from src.api.models import ApiResponse
+        from src.db.repositories.api_key import APIKeyRepository
+
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+
+        repo = APIKeyRepository(db)
+        
+        # Parse expiration
+        expires_at = None
+        expires_in_days = key_data.get("expires_in_days")
+        if expires_in_days:
+            expires_at = datetime.utcnow() + timedelta(days=expires_in_days)
+
+        # Create API key
+        api_key, raw_key = await repo.create(
+            name=key_data.get("name", "API Key"),
+            permissions=key_data.get("permissions", []),
+            created_by=key_data.get("created_by"),
+            expires_at=expires_at,
+        )
+
+        return ApiResponse.create(
+            data={
+                "id": str(api_key.id),
+                "name": api_key.name,
+                "api_key": raw_key,  # Only returned once
+                "permissions": api_key.permissions,
+                "created_at": api_key.created_at.isoformat() if api_key.created_at else None,
+                "expires_at": api_key.expires_at.isoformat() if api_key.expires_at else None,
+            },
+            request_id=request_id,
+        ).model_dump()
+
+    @app.get(f"{api_prefix}/auth/api-keys", tags=["Authentication"])
+    async def list_api_keys(
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+        page: int = 1,
+        limit: int = 20,
+    ) -> dict:
+        """List API keys."""
+        from src.api.models import ApiResponse, ApiLinks
+        from src.db.repositories.api_key import APIKeyRepository
+
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+
+        repo = APIKeyRepository(db)
+        keys, total = await repo.list_keys(page=page, limit=limit)
+
+        # Build response (excluding key_hash)
+        key_data = []
+        for k in keys:
+            key_data.append({
+                "id": str(k.id),
+                "name": k.name,
+                "permissions": k.permissions,
+                "is_active": bool(k.is_active),
+                "created_by": k.created_by,
+                "created_at": k.created_at.isoformat() if k.created_at else None,
+                "expires_at": k.expires_at.isoformat() if k.expires_at else None,
+                "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
+            })
+
+        links = ApiLinks(self=str(request.url))
+        base_url = str(request.url).split("?")[0]
+        if page > 1:
+            links.prev = f"{base_url}?page={page-1}&limit={limit}"
+        if (page * limit) < total:
+            links.next = f"{base_url}?page={page+1}&limit={limit}"
+
+        return ApiResponse.create(
+            data={
+                "items": key_data,
+                "total": total,
+                "page": page,
+                "page_size": limit,
+            },
+            request_id=request_id,
+            total_count=total,
+            links=links,
+        ).model_dump()
+
+    @app.delete(f"{api_prefix}/auth/api-keys/{{key_id}}", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
+    async def revoke_api_key(
+        key_id: str,
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
+        """Revoke an API key."""
+        from src.db.repositories.api_key import APIKeyRepository
+
+        repo = APIKeyRepository(db)
+        deactivated = await repo.deactivate(key_id)
+
+        if not deactivated:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"API key '{key_id}' not found",
+            )
+
+    # Webhook Routes
+    @app.post(f"{api_prefix}/webhooks", status_code=status.HTTP_201_CREATED, tags=["Webhooks"])
+    async def create_webhook(
+        request: Request,
+        webhook_data: dict,
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
+        """Create a webhook subscription."""
+        from src.api.models import ApiResponse
+        from src.db.repositories.webhook import WebhookRepository
+
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+
+        # Validate required fields
+        url = webhook_data.get("url")
+        events = webhook_data.get("events", [])
+        
+        if not url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "MISSING_URL", "message": "Webhook URL is required"}},
+            )
+        
+        if not events:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "MISSING_EVENTS", "message": "At least one event type is required"}},
+            )
+
+        # Create subscription
+        repo = WebhookRepository(db)
+        sub = await repo.create_subscription(
+            user_id=webhook_data.get("user_id", "anonymous"),
+            url=url,
+            events=events,
+            secret=webhook_data.get("secret"),
+        )
+
+        return ApiResponse.create(
+            data={
+                "id": str(sub.id),
+                "url": sub.url,
+                "events": sub.events,
+                "secret": sub.secret,
+                "created_at": sub.created_at.isoformat() if sub.created_at else None,
+            },
+            request_id=request_id,
+        ).model_dump()
+
+    @app.get(f"{api_prefix}/webhooks", tags=["Webhooks"])
+    async def list_webhooks(
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+        user_id: str | None = None,
+        page: int = 1,
+        limit: int = 20,
+    ) -> dict:
+        """List webhook subscriptions."""
+        from src.api.models import ApiResponse, ApiLinks
+        from src.db.repositories.webhook import WebhookRepository
+
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+
+        repo = WebhookRepository(db)
+        subs, total = await repo.list_subscriptions(
+            user_id=user_id,
+            page=page,
+            limit=limit,
+        )
+
+        # Build response (excluding secret)
+        sub_data = []
+        for s in subs:
+            sub_data.append({
+                "id": str(s.id),
+                "url": s.url,
+                "events": s.events,
+                "is_active": bool(s.is_active),
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            })
+
+        links = ApiLinks(self=str(request.url))
+        base_url = str(request.url).split("?")[0]
+        if page > 1:
+            links.prev = f"{base_url}?page={page-1}&limit={limit}"
+        if (page * limit) < total:
+            links.next = f"{base_url}?page={page+1}&limit={limit}"
+
+        return ApiResponse.create(
+            data={
+                "items": sub_data,
+                "total": total,
+                "page": page,
+                "page_size": limit,
+            },
+            request_id=request_id,
+            total_count=total,
+            links=links,
+        ).model_dump()
+
+    @app.delete(f"{api_prefix}/webhooks/{{webhook_id}}", status_code=status.HTTP_204_NO_CONTENT, tags=["Webhooks"])
+    async def delete_webhook(
+        webhook_id: str,
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
+        """Delete a webhook subscription."""
+        from src.db.repositories.webhook import WebhookRepository
+
+        repo = WebhookRepository(db)
+        deleted = await repo.delete_subscription(webhook_id)
+
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Webhook '{webhook_id}' not found",
+            )
+
+    @app.get(f"{api_prefix}/webhooks/{{webhook_id}}/deliveries", tags=["Webhooks"])
+    async def list_webhook_deliveries(
+        webhook_id: str,
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+        status: str | None = None,
+        page: int = 1,
+        limit: int = 20,
+    ) -> dict:
+        """List webhook deliveries for a subscription."""
+        from uuid import UUID
+        
+        from src.api.models import ApiResponse, ApiLinks
+        from src.db.repositories.webhook import WebhookRepository
+
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+
+        repo = WebhookRepository(db)
+        
+        # Verify subscription exists
+        sub = await repo.get_subscription(UUID(webhook_id))
+        if not sub:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Webhook '{webhook_id}' not found",
+            )
+
+        deliveries, total = await repo.list_deliveries(
+            subscription_id=webhook_id,
+            status=status,
+            page=page,
+            limit=limit,
+        )
+
+        # Build response
+        delivery_data = []
+        for d in deliveries:
+            delivery_data.append({
+                "id": str(d.id),
+                "event_type": d.event_type,
+                "status": d.status,
+                "attempts": d.attempts,
+                "max_attempts": d.max_attempts,
+                "http_status": d.http_status,
+                "last_error": d.last_error,
+                "created_at": d.created_at.isoformat() if d.created_at else None,
+                "delivered_at": d.delivered_at.isoformat() if d.delivered_at else None,
+                "next_retry_at": d.next_retry_at.isoformat() if d.next_retry_at else None,
+            })
+
+        links = ApiLinks(self=str(request.url))
+        base_url = str(request.url).split("?")[0]
+        if page > 1:
+            links.prev = f"{base_url}?page={page-1}&limit={limit}"
+        if (page * limit) < total:
+            links.next = f"{base_url}?page={page+1}&limit={limit}"
+
+        return ApiResponse.create(
+            data={
+                "items": delivery_data,
+                "total": total,
+                "page": page,
+                "page_size": limit,
+            },
+            request_id=request_id,
+            total_count=total,
+            links=links,
+        ).model_dump()
+
+    # Audit Routes
+    @app.get(f"{api_prefix}/audit/logs", tags=["Audit"])
+    async def query_audit_logs(
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+        page: int = 1,
+        limit: int = 20,
+        user_id: str | None = None,
+        action: str | None = None,
+        resource_type: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict:
+        """Query audit logs."""
+        from src.api.models import ApiResponse, ApiLinks
+        from src.db.repositories.audit import AuditLogRepository
+
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+
+        repo = AuditLogRepository(db)
+        logs, total = await repo.query_logs(
+            page=page,
+            limit=limit,
+            user_id=user_id,
+            action=action,
+            resource_type=resource_type,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        # Build response
+        log_data = []
+        for log in logs:
+            log_data.append({
+                "id": str(log.id),
+                "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+                "user_id": log.user_id,
+                "api_key_id": log.api_key_id,
+                "action": log.action,
+                "resource_type": log.resource_type,
+                "resource_id": log.resource_id,
+                "request_method": log.request_method,
+                "request_path": log.request_path,
+                "request_details": log.request_details,
+                "success": bool(log.success),
+                "error_message": log.error_message,
+                "ip_address": log.ip_address,
+                "user_agent": log.user_agent,
+                "duration_ms": log.duration_ms,
+            })
+
+        links = ApiLinks(self=str(request.url))
+        base_url = str(request.url).split("?")[0]
+        if page > 1:
+            links.prev = f"{base_url}?page={page-1}&limit={limit}"
+        if (page * limit) < total:
+            links.next = f"{base_url}?page={page+1}&limit={limit}"
+
+        return ApiResponse.create(
+            data={
+                "items": log_data,
+                "total": total,
+                "page": page,
+                "page_size": limit,
+            },
+            request_id=request_id,
+            total_count=total,
+            links=links,
         ).model_dump()
 
 

@@ -626,7 +626,7 @@ class TextSearchService:
         if metadata_filters := filters.get("metadata"):
             if isinstance(metadata_filters, dict):
                 query = query.where(
-                    DocumentChunkModel.metadata.op("@>")(metadata_filters)
+                    DocumentChunkModel.chunk_metadata.op("@>")(metadata_filters)
                 )
 
         # Filter by chunk_index

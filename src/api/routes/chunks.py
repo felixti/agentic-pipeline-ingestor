@@ -68,7 +68,7 @@ def _chunk_to_list_item(chunk: Any) -> DocumentChunkListItem:
         chunk_index=chunk.chunk_index,
         content=chunk.content,
         content_hash=chunk.content_hash,
-        metadata=chunk.metadata or {},
+        metadata=chunk.chunk_metadata or {},
         created_at=chunk.created_at,
     )
 
@@ -98,7 +98,7 @@ def _chunk_to_response(
         content=chunk.content,
         content_hash=chunk.content_hash,
         embedding=embedding,
-        metadata=chunk.metadata or {},
+        metadata=chunk.chunk_metadata or {},
         created_at=chunk.created_at,
     )
 

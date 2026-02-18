@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 import structlog
 
-from src.config.vector_store import get_vector_store_config
+from src.vector_store_config import get_vector_store_config
 from src.core.content_detection.models import ContentAnalysisResult
 from src.core.content_detection.service import ContentDetectionService
 from src.core.job_context import JobContext

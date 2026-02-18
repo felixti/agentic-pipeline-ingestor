@@ -39,7 +39,7 @@ def upgrade() -> None:
         sa.Column('content', sa.Text(), nullable=False),
         sa.Column('content_hash', sa.String(64), nullable=True),
         sa.Column('embedding', sa.Text(), nullable=True),  # Stored as vector type via SQL
-        sa.Column('metadata', JSONB(), nullable=False, server_default='{}'),
+        sa.Column('chunk_metadata', JSONB(), nullable=False, server_default='{}'),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
         
         # Primary key

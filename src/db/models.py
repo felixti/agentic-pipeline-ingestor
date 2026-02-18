@@ -327,7 +327,7 @@ class DocumentChunkModel(Base):
         content: Text content of the chunk
         content_hash: SHA-256 hash for deduplication
         embedding: Vector embedding for semantic search (nullable initially)
-        metadata: JSONB metadata (source, page numbers, etc.)
+        chunk_metadata: JSONB metadata (source, page numbers, etc.)
         created_at: Timestamp of record creation
     """
     
@@ -365,7 +365,7 @@ class DocumentChunkModel(Base):
     embedding = Column(Vector(dimensions=1536), nullable=True)
     
     # Flexible metadata storage
-    metadata = Column(JSONB, nullable=False, default={})
+    chunk_metadata = Column(JSONB, nullable=False, default={})
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

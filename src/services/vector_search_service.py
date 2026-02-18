@@ -457,7 +457,7 @@ class VectorSearchService:
                 from sqlalchemy.dialects.postgresql import JSONB
 
                 query = query.where(
-                    DocumentChunkModel.metadata.op("@>")(metadata_filters)
+                    DocumentChunkModel.chunk_metadata.op("@>")(metadata_filters)
                 )
 
         # Filter by chunk_index

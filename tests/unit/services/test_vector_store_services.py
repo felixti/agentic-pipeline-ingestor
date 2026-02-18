@@ -86,7 +86,7 @@ def sample_chunk():
     chunk.chunk_index = 0
     chunk.content = "This is a sample chunk content for testing purposes."
     chunk.content_hash = "abc123"
-    chunk.metadata = {"page": 1, "source": "test"}
+    chunk.chunk_metadata = {"page": 1, "source": "test"}
     chunk.created_at = datetime.utcnow()
     chunk.has_embedding = True
     chunk.embedding = sample_embedding()
@@ -102,7 +102,7 @@ def sample_chunk_without_embedding():
     chunk.chunk_index = 1
     chunk.content = "This chunk has no embedding."
     chunk.content_hash = "def456"
-    chunk.metadata = {"page": 2}
+    chunk.chunk_metadata = {"page": 2}
     chunk.created_at = datetime.utcnow()
     chunk.has_embedding = False
     chunk.embedding = None

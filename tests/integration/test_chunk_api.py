@@ -59,7 +59,7 @@ def mock_chunk():
     chunk.content = "This is a sample chunk content for testing purposes."
     chunk.content_hash = "abc123"
     chunk.embedding = [0.1] * 1536
-    chunk.metadata = {"page": 1, "source": "test"}
+    chunk.chunk_metadata = {"page": 1, "source": "test"}
     chunk.created_at = datetime.utcnow()
     return chunk
 
@@ -530,7 +530,7 @@ class TestChunkApiSecurity:
             xss_chunk.chunk_index = 0
             xss_chunk.content = "<script>alert('XSS')</script>"
             xss_chunk.content_hash = "xss_hash"
-            xss_chunk.metadata = {}
+            xss_chunk.chunk_metadata = {}
             xss_chunk.created_at = datetime.utcnow()
             
             mock_chunk_repo_instance = MagicMock()

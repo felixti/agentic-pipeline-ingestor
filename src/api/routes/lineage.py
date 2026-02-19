@@ -96,7 +96,7 @@ async def get_job_lineage(
     job_id: UUID,
     stage: str | None = None,
     user: User = Depends(require_read_lineage),
-):
+) -> list[LineageRecordResponse]:
     """Get lineage records for a job.
     
     Retrieves all transformation records for a specific job.
@@ -131,7 +131,7 @@ async def get_job_lineage(
 async def get_lineage_graph(
     job_id: UUID,
     user: User = Depends(require_read_lineage),
-):
+) -> LineageGraphResponse:
     """Get lineage as a graph structure.
     
     Returns the lineage records as a graph of nodes and edges
@@ -160,8 +160,8 @@ async def get_lineage_graph(
                     "to": edge.to_node,
                     "transformation": edge.transformation,
                     "duration_ms": edge.duration_ms,
-                    "metadata": edge.metadata,
-                }
+                    "metadata": dict(edge.metadata),
+                }  # type: ignore[arg-type]
             )
             for edge in graph.edges
         ],
@@ -174,7 +174,7 @@ async def get_lineage_graph(
 async def get_lineage_summary(
     job_id: UUID,
     user: User = Depends(require_read_lineage),
-):
+) -> LineageSummaryResponse:
     """Get lineage summary for a job.
     
     Returns aggregated statistics about the job's processing lineage.
@@ -199,7 +199,7 @@ async def verify_data_integrity(
     job_id: UUID,
     stage: str,
     user: User = Depends(require_read_lineage),
-):
+) -> DataIntegrityResponse:
     """Verify data integrity for a specific stage.
     
     This endpoint would typically accept the data to verify
@@ -238,7 +238,7 @@ async def verify_data_integrity(
 async def get_job_stages(
     job_id: UUID,
     user: User = Depends(require_read_lineage),
-):
+) -> dict[str, Any]:
     """Get list of stages for a job."""
     tracker = get_lineage_tracker()
 
@@ -256,7 +256,7 @@ async def get_stage_input_hash(
     job_id: UUID,
     stage: str,
     user: User = Depends(require_read_lineage),
-):
+) -> dict[str, Any]:
     """Get input hash for a specific stage."""
     tracker = get_lineage_tracker()
 
@@ -284,7 +284,7 @@ async def get_stage_output_hash(
     job_id: UUID,
     stage: str,
     user: User = Depends(require_read_lineage),
-):
+) -> dict[str, Any]:
     """Get output hash for a specific stage."""
     tracker = get_lineage_tracker()
 

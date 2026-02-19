@@ -6,7 +6,7 @@ large file streaming, schema detection, and semantic chunking.
 
 import csv
 import logging
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -259,7 +259,9 @@ class CSVParser(ParserPlugin):
                     escapechar=options.get("escapechar", "\\"),
                 )
 
-                headers = reader.fieldnames or []
+                fieldnames = reader.fieldnames
+                if fieldnames is not None:
+                    headers = list(fieldnames)
 
                 for row in reader:
                     # Convert empty strings to None for better processing
@@ -350,7 +352,7 @@ class CSVParser(ParserPlugin):
 
                 # Return most common
                 if any(delimiters.values()):
-                    return max(delimiters, key=delimiters.get)
+                    return max(delimiters.items(), key=lambda x: x[1])[0]
 
         except Exception as e:
             logger.warning(f"Failed to detect delimiter: {e}")
@@ -517,7 +519,7 @@ class CSVParser(ParserPlugin):
         file_path: str,
         chunk_size: int,
         options: dict[str, Any] | None = None,
-    ) -> Iterator[dict[str, Any]]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """Parse CSV in chunks for memory-efficient processing.
         
         Args:
@@ -544,7 +546,7 @@ class CSVParser(ParserPlugin):
                 quotechar=opts.get("quotechar", '"'),
             )
 
-            headers = reader.fieldnames or []
+            headers: Sequence[str] = reader.fieldnames or []
             chunk_num = 0
             current_chunk: list[dict[str, Any]] = []
 
@@ -554,9 +556,9 @@ class CSVParser(ParserPlugin):
                 if len(current_chunk) >= chunk_size:
                     yield {
                         "chunk_num": chunk_num,
-                        "headers": headers,
+                        "headers": list(headers),
                         "rows": current_chunk,
-                        "text": self._format_chunk(current_chunk, headers),
+                        "text": self._format_chunk(current_chunk, list(headers)),
                     }
                     chunk_num += 1
                     current_chunk = []
@@ -565,9 +567,9 @@ class CSVParser(ParserPlugin):
             if current_chunk:
                 yield {
                     "chunk_num": chunk_num,
-                    "headers": headers,
+                    "headers": list(headers),
                     "rows": current_chunk,
-                    "text": self._format_chunk(current_chunk, headers),
+                    "text": self._format_chunk(current_chunk, list(headers)),
                 }
 
     async def health_check(self, config: dict[str, Any] | None = None) -> HealthStatus:

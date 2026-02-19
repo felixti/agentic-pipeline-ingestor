@@ -383,7 +383,8 @@ class GraphRAGDestination(DestinationPlugin):
                 },
             )
             response.raise_for_status()
-            return response.json()
+            result: dict[str, Any] = response.json()
+            return result
 
         except Exception as e:
             logger.error(f"GraphRAG search failed: {e}")
@@ -409,16 +410,17 @@ class GraphRAGDestination(DestinationPlugin):
             raise RuntimeError("GraphRAG client not initialized")
 
         try:
-            params = {"limit": limit}
+            params: dict[str, Any] = {"limit": limit}
             if entity_type:
-                params["type"] = entity_type
+                params["type"] = str(entity_type)
 
             response = await self._client.get(
                 f"/v1/graphs/{graph_id}/entities",
                 params=params,
             )
             response.raise_for_status()
-            return response.json().get("entities", [])
+            entities_result: list[dict[str, Any]] = response.json().get("entities", [])
+            return entities_result
 
         except Exception as e:
             logger.error(f"Failed to get entities: {e}")
@@ -444,16 +446,17 @@ class GraphRAGDestination(DestinationPlugin):
             raise RuntimeError("GraphRAG client not initialized")
 
         try:
-            params = {"limit": limit}
+            params: dict[str, Any] = {"limit": limit}
             if entity_id:
-                params["entity_id"] = entity_id
+                params["entity_id"] = str(entity_id)
 
             response = await self._client.get(
                 f"/v1/graphs/{graph_id}/relationships",
                 params=params,
             )
             response.raise_for_status()
-            return response.json().get("relationships", [])
+            relationships_result: list[dict[str, Any]] = response.json().get("relationships", [])
+            return relationships_result
 
         except Exception as e:
             logger.error(f"Failed to get relationships: {e}")

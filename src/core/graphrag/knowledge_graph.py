@@ -65,10 +65,10 @@ class Entity:
     confidence: float = 0.0
     created_at: datetime = field(default_factory=datetime.utcnow)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self.id)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, Entity):
             return self.id == other.id
         return False
@@ -120,10 +120,10 @@ class Relationship:
     confidence: float = 0.0
     created_at: datetime = field(default_factory=datetime.utcnow)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self.id)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, Relationship):
             return self.id == other.id
         return False
@@ -335,7 +335,7 @@ class KnowledgeGraphBuilder:
         ... )
     """
 
-    def __init__(self, entity_extractor=None):
+    def __init__(self, entity_extractor: Any = None):
         """Initialize the graph builder.
         
         Args:

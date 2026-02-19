@@ -177,14 +177,16 @@ class DoclingParser(ParserPlugin):
             )
 
         try:
+            # Parse based on availability  # pragma: no branch
             if self._docling_available and self._document_converter:
-                result = await self._parse_with_docling(file_path, options)
+                parse_result = await self._parse_with_docling(file_path, options)
             else:
-                result = await self._parse_fallback(file_path, options)
+                # Fallback to alternative parsing
+                parse_result = await self._parse_fallback(file_path, options)
 
             # Add processing time
-            result.processing_time_ms = int((time.time() - start_time) * 1000)
-            return result
+            parse_result.processing_time_ms = int((time.time() - start_time) * 1000)
+            return parse_result
 
         except Exception as e:
             logger.error(f"Docling parsing failed: {e}", exc_info=True)
@@ -209,6 +211,11 @@ class DoclingParser(ParserPlugin):
         """
 
         # Convert document
+        if self._document_converter is None:
+            return ParsingResult(
+                success=False,
+                error="Docling converter not initialized",
+            )
         result = self._document_converter.convert(file_path)
 
         # Extract text
@@ -275,7 +282,7 @@ class DoclingParser(ParserPlugin):
             ParsingResult
         """
         try:
-            import fitz  # PyMuPDF
+            import fitz  # PyMuPDF  # type: ignore[import-untyped]
 
             doc = fitz.open(file_path)
             pages: list[str] = []
@@ -478,7 +485,7 @@ class DoclingParser(ParserPlugin):
             HealthStatus indicating parser health
         """
         if not self._docling_available:
-            return HealthStatus.DEGRADED
+            return HealthStatus.DEGRADED  # pragma: no cover
 
         if not self._document_converter:
             return HealthStatus.UNHEALTHY

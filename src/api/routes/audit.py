@@ -154,8 +154,8 @@ async def query_audit_logs(
     sort_by: str = Query("timestamp"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     user: User = Depends(require_read_audit),
-    audit_logger=Depends(get_audit_logger),
-):
+    audit_logger: Any = Depends(get_audit_logger),
+) -> AuditLogListResponse:
     """Query audit logs.
     
     Retrieves audit events matching the specified filters.
@@ -215,8 +215,8 @@ async def query_audit_logs(
 async def export_audit_logs(
     export_request: AuditExportRequest,
     user: User = Depends(require_export_audit),
-    audit_logger=Depends(get_audit_logger),
-):
+    audit_logger: Any = Depends(get_audit_logger),
+) -> Response:
     """Export audit logs.
     
     Exports audit events matching the specified filters in the requested format.
@@ -257,8 +257,8 @@ async def get_audit_summary(
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     user: User = Depends(require_read_audit),
-    audit_logger=Depends(get_audit_logger),
-):
+    audit_logger: Any = Depends(get_audit_logger),
+) -> AuditSummaryResponse:
     """Get audit log summary.
     
     Returns aggregated statistics about audit events.
@@ -307,7 +307,7 @@ async def get_audit_summary(
 @router.get("/events/types")
 async def list_event_types(
     user: User = Depends(get_current_user),
-):
+) -> dict[str, Any]:
     """List available audit event types."""
     return {
         "event_types": [
@@ -321,8 +321,8 @@ async def list_event_types(
 async def get_event_details(
     event_id: str,
     user: User = Depends(require_read_audit),
-    audit_logger=Depends(get_audit_logger),
-):
+    audit_logger: Any = Depends(get_audit_logger),
+) -> AuditLogEntryResponse:
     """Get details of a specific audit event.
     
     Requires audit:read permission.

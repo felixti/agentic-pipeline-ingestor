@@ -12,7 +12,7 @@ from typing import Any
 # Try to import litellm, provide fallback if not available
 try:
     import litellm
-    from litellm import Router, acompletion
+    from litellm import acompletion
     LITELLM_AVAILABLE = True
 except ImportError:
     LITELLM_AVAILABLE = False
@@ -126,7 +126,7 @@ class ChatCompletionResponse:
     content: str
     role: str = "assistant"
     finish_reason: str = "stop"
-    usage: dict[str, int] = None  # type: ignore
+    usage: dict[str, int] | None = None
     raw_response: Any = None
 
     def __post_init__(self) -> None:
@@ -209,7 +209,7 @@ class LLMProvider:
             )
 
         self.config = config or load_llm_config()
-        self._router: Any | None = None
+        self._router: Any = None
         self._initialize_router()
 
     def _initialize_router(self) -> None:
@@ -221,9 +221,10 @@ class LLMProvider:
             return
 
         try:
+            from litellm import Router  # type: ignore[attr-defined]
             self._router = Router(
                 model_list=model_list,
-                default_fallbacks=True,
+                default_fallbacks=[],
                 cooldown_time=60,  # Cooldown period for failed models
                 num_retries=self.config.retry_attempts,
                 retry_after=5,
@@ -341,7 +342,7 @@ class LLMProvider:
                 span.set_attribute("gen_ai.response.finish_reason", chat_response.finish_reason)
 
                 # Add token usage to span
-                usage = chat_response.usage
+                usage = chat_response.usage or {}
                 if usage:
                     span.set_attribute("gen_ai.usage.input_tokens", usage.get("prompt_tokens", 0))
                     span.set_attribute("gen_ai.usage.output_tokens", usage.get("completion_tokens", 0))
@@ -360,7 +361,7 @@ class LLMProvider:
 
                 logger.debug(
                     f"LLM completion successful: model={chat_response.model}, "
-                    f"tokens={chat_response.usage.get('total_tokens', 0)}"
+                    f"tokens={chat_response.usage.get('total_tokens', 0) if chat_response.usage else 0}"
                 )
 
                 return chat_response
@@ -454,7 +455,7 @@ class LLMProvider:
         )
 
         # Parse and return JSON
-        return json.loads(content)
+        return json.loads(content)  # type: ignore[no-any-return]
 
     def _get_system_from_model(self, model: str) -> str:
         """Determine the AI system from model name.
@@ -486,7 +487,8 @@ class LLMProvider:
         Returns:
             List of configured model group names
         """
-        return [router.model_name for router in self.config.routers]
+        router_names: list[str] = [router.model_name for router in self.config.routers]
+        return router_names
 
     async def health_check(self, model: str | None = None) -> dict[str, Any]:
         """Check health of LLM providers.

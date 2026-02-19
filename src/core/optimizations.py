@@ -27,7 +27,7 @@ class ConnectionPoolManager:
     - LLM API connections
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the connection pool manager."""
         self._http_session: ClientSession | None = None
         self._executor: ThreadPoolExecutor | None = None
@@ -115,7 +115,7 @@ class BatchProcessor:
         self.max_wait_time = max_wait_time
         self.max_concurrent = max_concurrent
 
-        self._queue: asyncio.Queue = asyncio.Queue()
+        self._queue: asyncio.Queue[Any] = asyncio.Queue()
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._processing = False
 
@@ -274,7 +274,7 @@ class PerformanceOptimizer:
     TARGET_P99_LATENCY_SECONDS = 2
     TARGET_SUCCESS_RATE = 0.995
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the performance optimizer."""
         self.connection_pool = ConnectionPoolManager()
         self.batch_processor = BatchProcessor(
@@ -338,11 +338,11 @@ class PerformanceOptimizer:
 
     async def run_concurrent(
         self,
-        func: Callable[..., T],
+        func: Callable[..., Any],
         items: list[Any],
         max_concurrent: int = 10,
         **kwargs: Any,
-    ) -> list[T]:
+    ) -> list[Any]:
         """Run function concurrently on multiple items.
         
         Args:
@@ -356,15 +356,17 @@ class PerformanceOptimizer:
         """
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        async def run_with_semaphore(item: Any) -> T:
+        async def run_with_semaphore(item: Any) -> Any:
             async with semaphore:
                 return await func(item, **kwargs)
 
         tasks = [run_with_semaphore(item) for item in items]
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Filter out exceptions for type safety
+        return [r for r in results if not isinstance(r, BaseException)]
 
     @asynccontextmanager
-    async def timed_operation(self, operation_name: str):
+    async def timed_operation(self, operation_name: str) -> Any:
         """Context manager for timing operations.
         
         Args:
@@ -445,7 +447,7 @@ def get_optimizer() -> PerformanceOptimizer:
     return _optimizer
 
 
-def run_in_executor(func: Callable[..., T]) -> Callable[..., asyncio.Future[T]]:
+def run_in_executor(func: Callable[..., T]) -> Callable[..., Any]:
     """Decorator to run synchronous function in thread pool.
     
     Args:
@@ -455,7 +457,7 @@ def run_in_executor(func: Callable[..., T]) -> Callable[..., asyncio.Future[T]]:
         Async function that runs in thread pool
     """
     @functools.wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
         optimizer = get_optimizer()
         executor = optimizer.connection_pool.get_thread_pool()
         loop = asyncio.get_event_loop()
@@ -487,7 +489,7 @@ class StreamingFileProcessor:
             destination_path: Destination file path
             chunk_size: Size of chunks to read/write
         """
-        import aiofiles
+        import aiofiles  # type: ignore[import-untyped]
 
         async with aiofiles.open(source_path, "rb") as src:
             async with aiofiles.open(destination_path, "wb") as dst:

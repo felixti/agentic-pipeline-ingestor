@@ -125,38 +125,38 @@ class WebhookDeliveryService:
             success = 200 <= response.status_code < 300
             
             if success:
-                logger.info(
+                logger.info(  # type: ignore[call-arg]
                     "webhook_delivered",
-                    subscription_id=str(subscription.id),  # type: ignore[call-arg]
-                    event=event_type,  # type: ignore[call-arg]
-                    status_code=response.status_code,  # type: ignore[call-arg]
+                    subscription_id=str(subscription.id),
+                    event=event_type,
+                    status_code=response.status_code,
                 )
             else:
-                logger.warning(
+                logger.warning(  # type: ignore[call-arg]
                     "webhook_delivery_failed",
-                    subscription_id=str(subscription.id),  # type: ignore[call-arg]
-                    event=event_type,  # type: ignore[call-arg]
-                    status_code=response.status_code,  # type: ignore[call-arg]
-                    response=response.text[:200],  # type: ignore[call-arg]
+                    subscription_id=str(subscription.id),
+                    event=event_type,
+                    status_code=response.status_code,
+                    response=response.text[:200],
                 )
             
             return success, response.status_code, None
             
         except httpx.TimeoutException:
-            logger.warning(
+            logger.warning(  # type: ignore[call-arg]
                 "webhook_delivery_timeout",
-                subscription_id=str(subscription.id),  # type: ignore[call-arg]
-                event=event_type,  # type: ignore[call-arg]
-                url=subscription.url,  # type: ignore[call-arg]
+                subscription_id=str(subscription.id),
+                event=event_type,
+                url=subscription.url,
             )
             return False, None, "Request timeout"
             
         except Exception as e:
-            logger.error(
+            logger.error(  # type: ignore[call-arg]
                 "webhook_delivery_error",
-                subscription_id=str(subscription.id),  # type: ignore[call-arg]
-                event=event_type,  # type: ignore[call-arg]
-                error=str(e),  # type: ignore[call-arg]
+                subscription_id=str(subscription.id),
+                event=event_type,
+                error=str(e),
             )
             return False, None, str(e)
     

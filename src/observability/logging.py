@@ -66,7 +66,7 @@ class StructuredLogger:
         )
 
         # Build processor chain
-        processors = [
+        processors: list[Any] = [
             structlog.stdlib.filter_by_level,
             structlog.stdlib.add_logger_name,
             structlog.stdlib.add_log_level,
@@ -223,7 +223,7 @@ def get_logger(name: str) -> FilteringBoundLogger:
     global _structured_logger
     if _structured_logger is None:
         _structured_logger = StructuredLogger()
-    return _structured_logger.get_logger(name)
+    return _structured_logger.get_logger(name)  # type: ignore[no-any-return]
 
 
 def setup_logging(
@@ -403,7 +403,7 @@ class LogContext:
             self.tokens.append(("ctx", _request_context.set(self.context)))
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Exit the context."""
         for name, token in reversed(self.tokens):
             if name == "corr":

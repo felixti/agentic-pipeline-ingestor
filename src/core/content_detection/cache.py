@@ -1,7 +1,8 @@
 """Redis caching layer for content detection results."""
 
 import json
-from typing import Optional
+from datetime import datetime
+from typing import Any, Optional
 
 import redis.asyncio as redis
 
@@ -95,47 +96,47 @@ class DetectionCache:
     
     async def delete(self, file_hash: str) -> bool:
         """Delete cached detection result.
-        
+
         Args:
             file_hash: SHA-256 file hash
-            
+
         Returns:
             True if deleted, False otherwise
         """
         try:
             key = self._make_key(file_hash)
             result = await self.redis.delete(key)
-            return result > 0
+            return bool(result > 0)
         except Exception:
             return False
     
     async def exists(self, file_hash: str) -> bool:
         """Check if detection result is cached.
-        
+
         Args:
             file_hash: SHA-256 file hash
-            
+
         Returns:
             True if cached, False otherwise
         """
         try:
             key = self._make_key(file_hash)
-            return await self.redis.exists(key) > 0
+            return bool(await self.redis.exists(key) > 0)
         except Exception:
             return False
     
     async def get_ttl(self, file_hash: str) -> int:
         """Get remaining TTL for cached item.
-        
+
         Args:
             file_hash: SHA-256 file hash
-            
+
         Returns:
             Remaining TTL in seconds, -1 if no expiry, -2 if not found
         """
         try:
             key = self._make_key(file_hash)
-            return await self.redis.ttl(key)
+            return int(await self.redis.ttl(key))
         except Exception:
             return -2
     
@@ -154,12 +155,12 @@ class DetectionCache:
                 keys.append(key)
             
             if keys:
-                return await self.redis.delete(*keys)
+                return int(await self.redis.delete(*keys))
             return 0
         except Exception:
             return 0
     
-    def _model_to_dict(self, record: ContentDetectionRecord) -> dict:
+    def _model_to_dict(self, record: ContentDetectionRecord) -> dict[str, Any]:
         """Convert model to dictionary for JSON serialization.
         
         Args:
@@ -186,7 +187,7 @@ class DetectionCache:
             "last_accessed_at": record.last_accessed_at.isoformat() if record.last_accessed_at else None,
         }
     
-    def _dict_to_model(self, data: dict) -> ContentDetectionRecord:
+    def _dict_to_model(self, data: dict[str, Any]) -> ContentDetectionRecord:
         """Convert dictionary to model.
         
         Args:
@@ -195,7 +196,6 @@ class DetectionCache:
         Returns:
             Detection record model
         """
-        from datetime import datetime
         from uuid import UUID
         
         return ContentDetectionRecord(
@@ -210,10 +210,10 @@ class DetectionCache:
             image_statistics=ImageStatistics(**data["image_statistics"]),
             page_results=[PageAnalysis(**p) for p in data["page_results"]],
             processing_time_ms=data["processing_time_ms"],
-            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None,
-            expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None,
+            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.utcnow(),
+            expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else datetime.utcnow(),
             access_count=data.get("access_count", 1),
-            last_accessed_at=datetime.fromisoformat(data["last_accessed_at"]) if data.get("last_accessed_at") else None,
+            last_accessed_at=datetime.fromisoformat(data["last_accessed_at"]) if data.get("last_accessed_at") else datetime.utcnow(),
         )
 
 
@@ -224,7 +224,7 @@ class NullDetectionCache:
         """Always returns None."""
         return None
     
-    async def set(self, file_hash: str, record, ttl=None) -> bool:
+    async def set(self, file_hash: str, record: Any, ttl: int | None = None) -> bool:
         """Always returns False."""
         return False
     

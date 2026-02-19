@@ -357,7 +357,8 @@ class PineconeDestination(DestinationPlugin):
         response.raise_for_status()
 
         result = response.json()
-        return result.get("matches", [])
+        matches: list[dict[str, Any]] = result.get("matches", [])
+        return matches
 
     async def delete(
         self,
@@ -380,14 +381,14 @@ class PineconeDestination(DestinationPlugin):
         if not self._client:
             raise RuntimeError("Pinecone client not initialized")
 
-        payload = {"namespace": namespace}
+        payload: dict[str, Any] = {"namespace": str(namespace)}
 
         if delete_all:
             payload["deleteAll"] = True
         elif ids:
-            payload["ids"] = ids
+            payload["ids"] = list(ids)
         elif filter_dict:
-            payload["filter"] = filter_dict
+            payload["filter"] = dict(filter_dict)
 
         response = await self._client.post("/vectors/delete", json=payload)
         response.raise_for_status()

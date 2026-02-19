@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 class VectorSearchError(Exception):
     """Base exception for vector search errors."""
 
-    def __init__(self, message: str, context: dict | None = None):
+    def __init__(self, message: str, context: dict[str, Any] | None = None):
         super().__init__(message)
         self.context = context or {}
 
@@ -415,14 +415,14 @@ class VectorSearchService:
         distance_expr = text(f"embedding <=> '{vector_str}'::vector")
 
         # Build base query
-        stmt = (
+        stmt: Any = (
             select(
                 DocumentChunkModel,
                 distance_expr.label("distance"),
             )
             .where(DocumentChunkModel.embedding.isnot(None))
-            .where(distance_expr <= max_distance)
-            .order_by(distance_expr.asc())
+            .where(distance_expr <= max_distance)  # type: ignore[arg-type,operator]
+            .order_by(distance_expr.asc())  # type: ignore[attr-defined]
             .limit(top_k)
         )
 

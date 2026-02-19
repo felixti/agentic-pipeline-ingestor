@@ -161,7 +161,7 @@ class PluginLoader:
         except ImportError:
             # Python < 3.10
             try:
-                from importlib_metadata import entry_points
+                from importlib_metadata import entry_points  # type: ignore[no-redef]
             except ImportError:
                 logger.warning("entry_points not available, skipping entry point plugins")
                 return 0
@@ -173,7 +173,7 @@ class PluginLoader:
         except TypeError:
             # Older versions
             all_eps = entry_points()
-            eps = all_eps.get(group, [])
+            eps = all_eps.get(group, [])  # type: ignore[arg-type]
 
         for ep in eps:
             try:

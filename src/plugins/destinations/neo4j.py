@@ -315,10 +315,12 @@ class Neo4jDestination(DestinationPlugin):
             "lineage": json.dumps(data.lineage),
         }
 
+        if self._driver is None:
+            raise RuntimeError("Neo4j driver not initialized")
         async with self._driver.session(database=database) as session:
             result = await session.run(query, params)
             record = await result.single()
-            return record["id"]
+            return str(record["id"])
 
     async def _create_chunks(
         self,
@@ -351,6 +353,8 @@ class Neo4jDestination(DestinationPlugin):
         RETURN c.id as id
         """
 
+        if self._driver is None:
+            raise RuntimeError("Neo4j driver not initialized")
         async with self._driver.session(database=database) as session:
             for i, chunk in enumerate(data.chunks):
                 chunk_id = f"{document_id}_chunk_{i}"
@@ -414,6 +418,8 @@ class Neo4jDestination(DestinationPlugin):
         if "organization" in metadata:
             doc_entities.append(("organization", metadata["organization"], 0.9))
 
+        if self._driver is None:
+            return 0
         async with self._driver.session(database=database) as session:
             for chunk_id in chunk_ids[:3]:  # Limit to first 3 chunks
                 for entity_type, entity_name, confidence in doc_entities:
@@ -465,6 +471,8 @@ class Neo4jDestination(DestinationPlugin):
         document_id = str(data.job_id)
         rel_count = 0
 
+        if self._driver is None:
+            return 0
         async with self._driver.session(database=database) as session:
             for i in range(len(chunk_ids) - 1):
                 params = {
@@ -627,7 +635,7 @@ class Neo4jMockDestination(Neo4jDestination):
     def __init__(self) -> None:
         """Initialize the mock destination."""
         super().__init__()
-        self._storage: dict[str, dict[str, Any]] = {
+        self._storage: dict[str, Any] = {
             "documents": {},
             "chunks": {},
             "entities": {},
@@ -707,7 +715,8 @@ class Neo4jMockDestination(Neo4jDestination):
 
     def get_stored_documents(self) -> dict[str, Any]:
         """Get stored documents for testing."""
-        return self._storage["documents"]
+        documents: dict[str, Any] = self._storage["documents"]
+        return documents
 
     def clear_storage(self) -> None:
         """Clear all stored data."""

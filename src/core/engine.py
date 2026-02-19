@@ -81,10 +81,10 @@ class OrchestrationEngine:
             PipelineExecutor instance
         """
         if self._pipeline_executor is None:
-            self._pipeline_executor = PipelineExecutor(
-                config=pipeline_config,  # type: ignore[call-arg]
-                plugin_registry=self.registry,  # type: ignore[call-arg]
-                llm_provider=self.llm,  # type: ignore[call-arg]
+            self._pipeline_executor = PipelineExecutor(  # type: ignore[call-arg]
+                config=pipeline_config,
+                plugin_registry=self.registry,
+                llm_provider=self.llm,
             )
         return self._pipeline_executor
 
@@ -116,12 +116,12 @@ class OrchestrationEngine:
 
         self._active_jobs[job.id] = job
 
-        self.logger.info(
+        self.logger.info(  # type: ignore[call-arg]
             "job_created",
-            job_id=str(job.id),  # type: ignore[call-arg]
-            source_type=job.source_type.value,  # type: ignore[call-arg]
-            file_name=job.file_name,  # type: ignore[call-arg]
-            mode=job.mode.value,  # type: ignore[call-arg]
+            job_id=str(job.id),
+            source_type=job.source_type.value,
+            file_name=job.file_name,
+            mode=job.mode.value,
         )
 
         return job
@@ -147,33 +147,33 @@ class OrchestrationEngine:
         if not job:
             raise ValueError(f"Job not found: {job_id}")
 
-        self.logger.info(
+        self.logger.info(  # type: ignore[call-arg]
             "processing_job",
-            job_id=str(job_id),  # type: ignore[call-arg]
-            stages=enabled_stages,  # type: ignore[call-arg]
+            job_id=str(job_id),
+            stages=enabled_stages,
         )
 
         # Create executor and run pipeline
         executor = self._get_executor(job.pipeline_config)
 
         try:
-            context = await executor.execute(job, enabled_stages)  # type: ignore[call-arg,arg-type]
+            context = await executor.execute(job, enabled_stages)  # type: ignore[arg-type]
 
-            self.logger.info(
+            self.logger.info(  # type: ignore[call-arg]
                 "job_processing_completed",
-                job_id=str(job_id),  # type: ignore[call-arg]
-                status=job.status.value,  # type: ignore[call-arg]
-                stages_executed=list(context.stage_results.keys()),  # type: ignore[call-arg]
+                job_id=str(job_id),
+                status=job.status.value,
+                stages_executed=list(context.stage_results.keys()),
             )
 
             return context
 
         except Exception as e:
-            self.logger.error(
+            self.logger.error(  # type: ignore[call-arg]
                 "job_processing_failed",
-                job_id=str(job_id),  # type: ignore[call-arg]
-                error=str(e),  # type: ignore[call-arg]
-                stage=job.current_stage,  # type: ignore[call-arg]
+                job_id=str(job_id),
+                error=str(e),
+                stage=job.current_stage,
             )
             raise
 
@@ -196,10 +196,10 @@ class OrchestrationEngine:
             if error:
                 job.error = JobError(**error)
 
-        self.logger.info(
+        self.logger.info(  # type: ignore[call-arg]
             "job_status_updated",
-            job_id=str(job_id),  # type: ignore[call-arg]
-            status=status.value,  # type: ignore[call-arg]
+            job_id=str(job_id),
+            status=status.value,
         )
 
     async def update_stage_progress(
@@ -219,12 +219,12 @@ class OrchestrationEngine:
         if job:
             job.stage_progress[stage] = progress
 
-        self.logger.info(
+        self.logger.info(  # type: ignore[call-arg]
             "stage_progress_updated",
-            job_id=str(job_id),  # type: ignore[call-arg]
-            stage=stage,  # type: ignore[call-arg]
-            status=progress.status.value,  # type: ignore[call-arg]
-            progress_percent=progress.progress_percent,  # type: ignore[call-arg]
+            job_id=str(job_id),
+            stage=stage,
+            status=progress.status.value,
+            progress_percent=progress.progress_percent,
         )
 
     async def retry_job(
@@ -253,12 +253,12 @@ class OrchestrationEngine:
         if job.status not in (JobStatus.FAILED, JobStatus.DEAD_LETTER):
             raise ValueError(f"Job cannot be retried in status: {job.status}")
 
-        self.logger.info(
+        self.logger.info(  # type: ignore[call-arg]
             "job_retry_initiated",
-            job_id=str(job_id),  # type: ignore[call-arg]
-            previous_status=job.status.value,  # type: ignore[call-arg]
-            attempt=job.retry_count + 1,  # type: ignore[call-arg]
-            strategy=strategy,  # type: ignore[call-arg]
+            job_id=str(job_id),
+            previous_status=job.status.value,
+            attempt=job.retry_count + 1,
+            strategy=strategy,
         )
 
         # If strategy specified, apply it
@@ -281,11 +281,11 @@ class OrchestrationEngine:
                     if result.updated_config:
                         job.pipeline_config = result.updated_config
 
-                    self.logger.info(
+                    self.logger.info(  # type: ignore[call-arg]
                         "retry_strategy_applied",
-                        job_id=str(job_id),  # type: ignore[call-arg]
-                        strategy=strategy,  # type: ignore[call-arg]
-                        success=result.success,  # type: ignore[call-arg]
+                        job_id=str(job_id),
+                        strategy=strategy,
+                        success=result.success,
                     )
             except ValueError:
                 self.logger.warning(f"Unknown retry strategy: {strategy}")
@@ -330,10 +330,10 @@ class OrchestrationEngine:
             retry_history=job.retry_history,
         )
 
-        self.logger.info(
+        self.logger.info(  # type: ignore[call-arg]
             "job_moved_to_dlq",
-            job_id=str(job_id),  # type: ignore[call-arg]
-            error_type=type(error).__name__,  # type: ignore[call-arg]
+            job_id=str(job_id),
+            error_type=type(error).__name__,
         )
 
     async def cancel_job(self, job_id: UUID) -> bool:
@@ -350,10 +350,10 @@ class OrchestrationEngine:
             return False
 
         if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
-            self.logger.warning(
+            self.logger.warning(  # type: ignore[call-arg]
                 "job_cannot_be_cancelled",
-                job_id=str(job_id),  # type: ignore[call-arg]
-                status=job.status.value,  # type: ignore[call-arg]
+                job_id=str(job_id),
+                status=job.status.value,
             )
             return False
 

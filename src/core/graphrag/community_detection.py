@@ -80,7 +80,7 @@ class CommunityDetector:
         ...     print(f"Community: {community.name} ({len(community.entity_ids)} entities)")
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the community detector."""
         self._algorithms = {
             GraphClusteringAlgorithm.LABEL_PROPAGATION: self._label_propagation,
@@ -307,7 +307,7 @@ class CommunityDetector:
                     )
 
                     if delta_q > best_delta_q:
-                        best_delta_q = delta_q
+                        best_delta_q = float(delta_q)  # type: ignore[assignment]
                         best_merge = (ci, cj)
 
             # Perform best merge if it improves modularity
@@ -412,7 +412,7 @@ class CommunityDetector:
             communities[comm_id].append(node)
 
         # Create community objects
-        result = []
+        result: list[Community] = []
         for comm_id, entity_ids in communities.items():
             if len(entity_ids) >= min_size:
                 community = Community(
@@ -472,7 +472,7 @@ class CommunityDetector:
             if entity:
                 type_counts[entity.type.value] = type_counts.get(entity.type.value, 0) + 1
 
-        dominant_type = max(type_counts, key=type_counts.get) if type_counts else "unknown"
+        dominant_type = max(type_counts.items(), key=lambda x: x[1])[0] if type_counts else "unknown"
 
         return (
             f"Community of {len(community.entity_ids)} entities "

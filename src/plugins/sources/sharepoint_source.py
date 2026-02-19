@@ -53,7 +53,7 @@ class SharePointConfig:
     certificate_thumbprint: str | None = None
     drive_id: str | None = None
     folder_path: str = "/"
-    scopes: list[str] = None  # type: ignore
+    scopes: list[str] | None = None
 
     def __post_init__(self) -> None:
         """Initialize default values."""
@@ -133,7 +133,7 @@ class SharePointSourcePlugin(SourcePlugin):
         token_data = {
             "grant_type": "client_credentials",
             "client_id": config.client_id,
-            "scope": " ".join(config.scopes),
+            "scope": " ".join(config.scopes or ["https://graph.microsoft.com/.default"]),
         }
 
         # Add client secret or certificate
@@ -167,7 +167,7 @@ class SharePointSourcePlugin(SourcePlugin):
         config: SharePointConfig,
         endpoint: str,
         method: str = "GET",
-        data: dict | None = None,
+        data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Make a Microsoft Graph API request.
         
@@ -201,7 +201,8 @@ class SharePointSourcePlugin(SourcePlugin):
                     error_text = await response.text()
                     raise RuntimeError(f"Graph API error {response.status}: {error_text}")
 
-                return await response.json()
+                result: dict[str, Any] = await response.json()
+                return result
 
     async def _get_site_id(self, config: SharePointConfig) -> str:
         """Get SharePoint site ID from URL.
@@ -222,7 +223,7 @@ class SharePointSourcePlugin(SourcePlugin):
         endpoint = f"/sites/{hostname}:/{site_path}"
         response = await self._make_graph_request(config, endpoint)
 
-        return response["id"]
+        return str(response["id"])
 
     async def _get_drive_id(self, config: SharePointConfig) -> str:
         """Get default document library drive ID.
@@ -242,7 +243,7 @@ class SharePointSourcePlugin(SourcePlugin):
         endpoint = f"/sites/{site_id}/drive"
         response = await self._make_graph_request(config, endpoint)
 
-        return response["id"]
+        return str(response["id"])
 
     async def connect(self, config: dict[str, Any]) -> Connection:
         """Establish connection to SharePoint.

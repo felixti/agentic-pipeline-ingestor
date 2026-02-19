@@ -263,12 +263,12 @@ class DeadLetterQueue:
         self._entries[entry_id] = entry
         self._job_id_to_entry[job.id] = entry_id
 
-        self.logger.warning(
+        self.logger.warning(  # type: ignore[call-arg]
             "job_moved_to_dlq",
-            entry_id=str(entry_id),  # type: ignore[call-arg]
-            job_id=str(job.id),  # type: ignore[call-arg]
-            failure_category=failure_category.value,  # type: ignore[call-arg]
-            retry_count=job.retry_count,  # type: ignore[call-arg]
+            entry_id=str(entry_id),
+            job_id=str(job.id),
+            failure_category=failure_category.value,
+            retry_count=job.retry_count,
         )
 
         return entry
@@ -430,12 +430,12 @@ class DeadLetterQueue:
         from uuid import uuid4
         new_job_id = uuid4()
 
-        self.logger.info(
+        self.logger.info(  # type: ignore[call-arg]
             "dlq_retry_initiated",
-            entry_id=str(entry_id),  # type: ignore[call-arg]
-            job_id=str(entry.job_id),  # type: ignore[call-arg]
-            new_job_id=str(new_job_id),  # type: ignore[call-arg]
-            reviewed_by=reviewed_by,  # type: ignore[call-arg]
+            entry_id=str(entry_id),
+            job_id=str(entry.job_id),
+            new_job_id=str(new_job_id),
+            reviewed_by=reviewed_by,
         )
 
         # Create result
@@ -478,10 +478,10 @@ class DeadLetterQueue:
         if notes:
             entry.resolution_notes = notes
 
-        self.logger.info(
+        self.logger.info(  # type: ignore[call-arg]
             "dlq_entry_reviewed",
-            entry_id=str(entry_id),  # type: ignore[call-arg]
-            reviewed_by=reviewed_by,  # type: ignore[call-arg]
+            entry_id=str(entry_id),
+            reviewed_by=reviewed_by,
         )
 
         return entry
@@ -538,11 +538,11 @@ class DeadLetterQueue:
         entry.reviewed_by = discarded_by
         entry.resolution_notes = f"Discarded: {reason}"
 
-        self.logger.info(
+        self.logger.info(  # type: ignore[call-arg]
             "dlq_entry_discarded",
-            entry_id=str(entry_id),  # type: ignore[call-arg]
-            reason=reason,  # type: ignore[call-arg]
-            discarded_by=discarded_by,  # type: ignore[call-arg]
+            entry_id=str(entry_id),
+            reason=reason,
+            discarded_by=discarded_by,
         )
 
         return entry

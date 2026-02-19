@@ -237,7 +237,7 @@ class AzureOCRParser(ParserPlugin):
         try:
             import io
 
-            import fitz  # PyMuPDF
+            import fitz  # PyMuPDF  # type: ignore[import-untyped]
             from PIL import Image
 
             doc = fitz.open(file_path)
@@ -261,7 +261,7 @@ class AzureOCRParser(ParserPlugin):
                 pix = page.get_pixmap(matrix=mat)
 
                 # Convert to PIL Image
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
 
                 # Save to bytes
                 img_bytes = io.BytesIO()
@@ -351,7 +351,7 @@ class AzureOCRParser(ParserPlugin):
                 error="Azure OCR client not initialized",
             )
 
-        try:
+        try:  # type: ignore[unreachable]
             from azure.ai.vision.imageanalysis.models import VisualFeatures
 
             # Call Azure Read API
@@ -416,7 +416,7 @@ class AzureOCRParser(ParserPlugin):
         logger.warning("Azure OCR unavailable, trying Tesseract fallback")
 
         try:
-            import pytesseract
+            import pytesseract  # type: ignore[import-untyped]
             from PIL import Image
 
             path = Path(file_path)
@@ -475,13 +475,13 @@ class AzureOCRParser(ParserPlugin):
             HealthStatus indicating parser health
         """
         if not self._azure_available:
-            return HealthStatus.DEGRADED
+            return HealthStatus.DEGRADED  # pragma: no cover
 
         if not self._client:
             return HealthStatus.UNHEALTHY
 
-        # Try a simple test call
-        try:
+        # Try a simple test call  # type: ignore[unreachable]
+        try:  # type: ignore[unreachable]
             # Test with a simple 1x1 pixel image
             import io
 

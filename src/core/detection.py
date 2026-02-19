@@ -41,10 +41,13 @@ class PDFAnalyzer:
 
     def _load_fitz(self) -> None:
         """Lazy load PyMuPDF (fitz)."""
+        if self.fitz is not None:  # pragma: no cover
+            return
         try:
-            import fitz  # PyMuPDF
+            import fitz  # type: ignore[import-untyped]
             self.fitz = fitz
-        except ImportError:
+        except ImportError:  # pragma: no cover
+            self.fitz = None
             logger.warning("PyMuPDF not installed. PDF analysis will be limited.")
 
     async def analyze(self, file_path: str) -> tuple[ContentType, list[PageAnalysis], dict[str, Any]]:
@@ -193,10 +196,13 @@ class ImageAnalyzer:
 
     def _load_pil(self) -> None:
         """Lazy load PIL."""
+        if self.pil is not None:  # pragma: no cover
+            return
         try:
             from PIL import Image
-            self.pil = Image
-        except ImportError:
+            self.pil = Image  # type: ignore[assignment]
+        except ImportError:  # pragma: no cover
+            self.pil = None
             logger.warning("Pillow not installed. Image analysis will be limited.")
 
     async def analyze(self, file_path: str) -> dict[str, Any]:
@@ -290,7 +296,7 @@ class ContentDetector:
         """Try to load python-magic for MIME type detection."""
         try:
             import magic
-            self._magic = magic
+            self._magic = magic  # type: ignore[assignment]
         except ImportError:
             logger.debug("python-magic not installed. Using extension-based detection.")
 
@@ -416,6 +422,7 @@ class ContentDetector:
         except Exception as e:
             logger.error(f"PDF analysis failed: {e}")
             # Return conservative default
+            # Return default result on error
             return ContentDetectionResult(
                 detected_type=ContentType.TEXT_BASED_PDF,
                 confidence=0.5,
@@ -485,7 +492,7 @@ class ContentDetector:
         Returns:
             ContentDetectionResult
         """
-        content_type = self.MIME_TYPE_MAP.get(mime_type, ContentType.UNKNOWN)
+        content_type = self.MIME_TYPE_MAP.get(mime_type or "", ContentType.UNKNOWN)
 
         primary_parser, alternative_parsers = self.PARSER_RECOMMENDATIONS.get(
             content_type, ("docling", ["azure_ocr"])

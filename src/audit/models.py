@@ -166,7 +166,7 @@ class AuditEvent(BaseModel):
         user_id: str | None = None,
         status: AuditEventStatus = AuditEventStatus.SUCCESS,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "AuditEvent":
         """Create an audit event for a job-related action.
         
@@ -200,7 +200,7 @@ class AuditEvent(BaseModel):
         ip_address: str | None = None,
         status: AuditEventStatus = AuditEventStatus.SUCCESS,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "AuditEvent":
         """Create an audit event for an authentication action.
         
@@ -234,7 +234,7 @@ class AuditEvent(BaseModel):
         user_id: str | None = None,
         status: AuditEventStatus = AuditEventStatus.SUCCESS,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "AuditEvent":
         """Create an audit event for a source-related action.
         
@@ -294,7 +294,7 @@ class AuditLogQuery(BaseModel):
 
     def to_db_filters(self) -> dict[str, Any]:
         """Convert query to database filter dictionary."""
-        filters = {}
+        filters: dict[str, Any] = {}
 
         if self.start_time:
             filters["timestamp__gte"] = self.start_time

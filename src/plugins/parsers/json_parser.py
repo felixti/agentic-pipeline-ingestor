@@ -565,7 +565,7 @@ class JSONParser(ParserPlugin):
 
         if isinstance(data, list):
             # Split array into chunks
-            current_chunk = []
+            current_chunk: list[Any] = []
             current_size = 0
 
             for item in data:
@@ -585,7 +585,7 @@ class JSONParser(ParserPlugin):
 
         elif isinstance(data, dict):
             # For objects, create chunks by top-level keys
-            current_chunk_keys = []
+            current_chunk_keys: list[str] = []
             current_size = 0
 
             for key, value in data.items():
@@ -662,7 +662,7 @@ class JSONParser(ParserPlugin):
             return {}
 
         schema: dict[str, str] = {}
-        all_keys = set()
+        all_keys: set[str] = set()
 
         for record in records:
             all_keys.update(record.keys())

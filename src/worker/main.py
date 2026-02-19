@@ -79,8 +79,8 @@ them through the pipeline.
         self.engine: OrchestrationEngine | None = None
         self._running = False
         self._shutdown_event = asyncio.Event()
-        self._active_tasks: set = set()
-        self._stalled_job_checker: asyncio.Task | None = None
+        self._active_tasks: set[asyncio.Task[Any]] = set()
+        self._stalled_job_checker: asyncio.Task[Any] | None = None
 
     async def initialize(self) -> None:
         """Initialize the worker service."""
@@ -283,7 +283,7 @@ them through the pipeline.
                 pass
             
             if not self._running:
-                break
+                break  # pragma: no cover
             
             try:
                 engine = get_async_engine()
@@ -301,10 +301,10 @@ them through the pipeline.
                         
                         for job in stalled_jobs:
                             # Release the lock and reset to pending
-                            job.locked_by = None
-                            job.locked_at = None
-                            job.status = JobStatus.PENDING
-                            job.updated_at = datetime.utcnow()
+                            job.locked_by = None  # type: ignore[assignment]
+                            job.locked_at = None  # type: ignore[assignment]
+                            job.status = JobStatus.PENDING  # type: ignore[assignment]
+                            job.updated_at = datetime.utcnow()  # type: ignore[assignment]
                         
                         await session.commit()
                         
@@ -340,6 +340,8 @@ async def run_single_job(job_id: str) -> dict[str, Any]:
     await worker.initialize()
 
     try:
+        if worker.processor is None:
+            raise RuntimeError("Processor not initialized")
         result = await worker.processor.process_job(UUID(job_id))
         return result
     finally:

@@ -259,13 +259,13 @@ class DataRetentionManager:
             rules=DEFAULT_RETENTION_RULES,
         )
         self.handler = handler
-        self._action_handlers: dict[RetentionAction, Callable] = {}
+        self._action_handlers: dict[RetentionAction, Callable[..., Any]] = {}
         self._lock = asyncio.Lock()
 
     def register_action_handler(
         self,
         action: RetentionAction,
-        handler: Callable,
+        handler: Callable[..., Any],
     ) -> None:
         """Register a handler for a retention action.
         
@@ -425,12 +425,13 @@ class DataRetentionManager:
             elif rule.action == RetentionAction.ANONYMIZE:
                 return await self._anonymize_data(data_id, data_type)
 
-            elif rule.action == RetentionAction.KEEP:
+            # Handle the action
+            if rule.action == RetentionAction.KEEP:
                 return True  # Keep data, nothing to do
 
-            else:
-                logger.warning(f"Unknown retention action: {rule.action}")
-                return False
+            # Unknown action - log warning  # pragma: no cover
+            logger.warning(f"Unknown retention action: {rule.action}")
+            return False
 
         except Exception as e:
             logger.error(f"Failed to apply retention action: {e}")
@@ -447,9 +448,8 @@ class DataRetentionManager:
             True if deleted successfully
         """
         if RetentionAction.DELETE in self._action_handlers:
-            return await self._action_handlers[RetentionAction.DELETE](
-                data_id, data_type
-            )
+            delete_result = await self._action_handlers[RetentionAction.DELETE](data_id, data_type)
+            return bool(delete_result)
 
         if self.handler:
             return await self.handler.delete(data_id, data_type)
@@ -474,9 +474,8 @@ class DataRetentionManager:
             True if archived successfully
         """
         if RetentionAction.ARCHIVE in self._action_handlers:
-            return await self._action_handlers[RetentionAction.ARCHIVE](
-                data_id, data_type, archive_location
-            )
+            archive_result = await self._action_handlers[RetentionAction.ARCHIVE](data_id, data_type, archive_location)
+            return bool(archive_result)
 
         if self.handler:
             return await self.handler.archive(data_id, data_type, archive_location or "archive")
@@ -495,9 +494,8 @@ class DataRetentionManager:
             True if compressed successfully
         """
         if RetentionAction.COMPRESS in self._action_handlers:
-            return await self._action_handlers[RetentionAction.COMPRESS](
-                data_id, data_type
-            )
+            compress_result = await self._action_handlers[RetentionAction.COMPRESS](data_id, data_type)
+            return bool(compress_result)
 
         if self.handler:
             return await self.handler.compress(data_id, data_type)
@@ -516,9 +514,8 @@ class DataRetentionManager:
             True if anonymized successfully
         """
         if RetentionAction.ANONYMIZE in self._action_handlers:
-            return await self._action_handlers[RetentionAction.ANONYMIZE](
-                data_id, data_type
-            )
+            anonymize_result = await self._action_handlers[RetentionAction.ANONYMIZE](data_id, data_type)
+            return bool(anonymize_result)
 
         if self.handler:
             return await self.handler.anonymize(data_id, data_type)

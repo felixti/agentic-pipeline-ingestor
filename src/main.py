@@ -5,11 +5,11 @@ and lifecycle management for the document processing pipeline.
 """
 
 import time
-import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid4
 
 import structlog
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -277,7 +277,7 @@ def _add_middleware(app: FastAPI) -> None:
     @app.middleware("http")
     async def add_request_metadata(request: Request, call_next: "Callable[[Request], Awaitable[Response]]") -> Response:
         """Add request ID and track timing."""
-        request_id = str(uuid.uuid4())
+        request_id = str(uuid4())
         start_time = time.time()
 
         # Store request ID in request state
@@ -286,7 +286,7 @@ def _add_middleware(app: FastAPI) -> None:
         # Add request ID to logger context
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
             method=request.method,
             path=request.url.path,
         )
@@ -330,7 +330,7 @@ def _add_routes(app: FastAPI) -> None:
 
     # Health checks
     @app.get("/health", tags=["System"])
-    async def get_health(request: Request) -> dict[str, Any]:  # type: ignore[return]
+    async def get_health(request: Request) -> dict[str, Any]:
         """Comprehensive health check endpoint."""
         from src.api.models import (
             ComponentHealth,
@@ -396,24 +396,24 @@ def _add_routes(app: FastAPI) -> None:
         ).model_dump()
 
     @app.get("/health/ready", tags=["System"])
-    async def get_readiness() -> dict:
+    async def get_readiness() -> dict[str, Any]:
         """Kubernetes readiness probe."""
         from src.api.models import HealthReady
         return HealthReady().model_dump()
 
     @app.get("/health/live", tags=["System"])
-    async def get_liveness() -> dict:
+    async def get_liveness() -> dict[str, Any]:
         """Kubernetes liveness probe."""
         from src.api.models import HealthAlive
         return HealthAlive().model_dump()
 
     @app.get("/health/queue", tags=["System"])
-    async def get_queue_health(request: Request) -> dict:
+    async def get_queue_health(request: Request) -> dict[str, Any]:
         """Queue health and status."""
         from src.api.models import ApiResponse
         from src.core.queue import get_queue
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         try:
             queue = get_queue()
@@ -428,7 +428,7 @@ def _add_routes(app: FastAPI) -> None:
                     "total_pending": sum(depths.values()),
                     "total_processing": sum(processing.values()) if isinstance(processing, dict) else 0,
                 },
-                request_id=request_id,
+                request_id=UUID(str(request_id)),
             ).model_dump()
         except Exception as e:
             return ApiResponse.create(
@@ -436,7 +436,7 @@ def _add_routes(app: FastAPI) -> None:
                     "status": "unhealthy",
                     "error": str(e),
                 },
-                request_id=request_id,
+                request_id=UUID(str(request_id)),
             ).model_dump()
 
     @app.get("/metrics", tags=["System"])
@@ -473,7 +473,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.db.repositories.job import JobRepository
         from src.db.repositories.pipeline import PipelineRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         # Validate required fields
         if not job_data.get("source_type"):
@@ -531,7 +531,7 @@ def _add_routes(app: FastAPI) -> None:
         response_data = JobResponse(
             id=job.id,  # type: ignore[arg-type]
             status=job.status,  # type: ignore[arg-type]
-            source_type=SourceType(job.source_type),  # type: ignore[arg-type]
+            source_type=SourceType(job.source_type),
             source_uri=job.source_uri or "",  # type: ignore[arg-type]
             file_name=job.file_name,  # type: ignore[arg-type]
             file_size=job.file_size,  # type: ignore[arg-type]
@@ -549,7 +549,7 @@ def _add_routes(app: FastAPI) -> None:
 
         return ApiResponse.create(
             data=response_data.model_dump(),
-            request_id=request_id,  # type: ignore[arg-type]
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     @app.get(f"{api_prefix}/jobs", tags=["Jobs"])
@@ -567,7 +567,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiLinks, ApiResponse, JobListResponse, JobResponse, SourceType
         from src.db.repositories.job import JobRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         # Get jobs from repository
         repo = JobRepository(db)
@@ -586,7 +586,7 @@ def _add_routes(app: FastAPI) -> None:
             job_responses.append(JobResponse(
                 id=job.id,  # type: ignore[arg-type]
                 status=job.status,  # type: ignore[arg-type]
-                source_type=SourceType(job.source_type) if job.source_type in [e.value for e in SourceType] else SourceType.UPLOAD,  # type: ignore[arg-type]
+                source_type=SourceType(job.source_type) if job.source_type in [e.value for e in SourceType] else SourceType.UPLOAD,
                 source_uri=job.source_uri or "",  # type: ignore[arg-type]
                 file_name=job.file_name,  # type: ignore[arg-type]
                 file_size=job.file_size,  # type: ignore[arg-type]
@@ -605,7 +605,7 @@ def _add_routes(app: FastAPI) -> None:
         # Build list response
         list_response = JobListResponse(
             items=job_responses,
-            total=total,
+            total=total if total is not None else 0,
             page=page,
             page_size=limit,
         )
@@ -616,12 +616,12 @@ def _add_routes(app: FastAPI) -> None:
         
         if page > 1:
             links.prev = f"{base_url}?page={page-1}&limit={limit}"
-        if (page * limit) < total:
+        if total is not None and (page * limit) < total:
             links.next = f"{base_url}?page={page+1}&limit={limit}"
 
         return ApiResponse.create(
             data=list_response.model_dump(),
-            request_id=request_id,  # type: ignore[arg-type]
+            request_id=UUID(str(request_id)),
             total_count=total,
             links=links,
         ).model_dump()
@@ -636,7 +636,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiResponse, JobResponse, SourceType
         from src.db.repositories.job import JobRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         # Get job from repository
         repo = JobRepository(db)
@@ -652,7 +652,7 @@ def _add_routes(app: FastAPI) -> None:
         response_data = JobResponse(
             id=job.id,  # type: ignore[arg-type]
             status=job.status,  # type: ignore[arg-type]
-            source_type=SourceType(job.source_type) if job.source_type in [e.value for e in SourceType] else SourceType.UPLOAD,  # type: ignore[arg-type]
+            source_type=SourceType(job.source_type) if job.source_type in [e.value for e in SourceType] else SourceType.UPLOAD,
             source_uri=job.source_uri or "",  # type: ignore[arg-type]
             file_name=job.file_name,  # type: ignore[arg-type]
             file_size=job.file_size,  # type: ignore[arg-type]
@@ -671,7 +671,7 @@ def _add_routes(app: FastAPI) -> None:
 
         return ApiResponse.create(
             data=response_data.model_dump(),
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     @app.delete(f"{api_prefix}/jobs/{{job_id}}", status_code=status.HTTP_204_NO_CONTENT, tags=["Jobs"])
@@ -714,7 +714,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.db.models import JobStatus
         from src.db.repositories.job import JobRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = JobRepository(db)
         
@@ -755,7 +755,7 @@ def _add_routes(app: FastAPI) -> None:
         response_data = JobResponse(
             id=new_job.id,  # type: ignore[arg-type]
             status=new_job.status,  # type: ignore[arg-type]
-            source_type=SourceType(new_job.source_type) if new_job.source_type in [e.value for e in SourceType] else SourceType.UPLOAD,  # type: ignore[arg-type]
+            source_type=SourceType(new_job.source_type) if new_job.source_type in [e.value for e in SourceType] else SourceType.UPLOAD,
             source_uri=new_job.source_uri or "",  # type: ignore[arg-type]
             file_name=new_job.file_name,  # type: ignore[arg-type]
             file_size=new_job.file_size,  # type: ignore[arg-type]
@@ -779,7 +779,7 @@ def _add_routes(app: FastAPI) -> None:
                 "message": "Job retry initiated",
                 "job": response_data.model_dump(),
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     @app.get(f"{api_prefix}/jobs/{{job_id}}/result", tags=["Jobs"])
@@ -794,7 +794,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.db.repositories.job import JobRepository
         from src.db.repositories.job_result import JobResultRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         # Get job to check status
         job_repo = JobRepository(db)
@@ -832,7 +832,7 @@ def _add_routes(app: FastAPI) -> None:
                     "success": True,
                     "message": "Job completed but result not yet available",
                 },
-                request_id=request_id,
+                request_id=UUID(str(request_id)),
             ).model_dump()
 
         # Build response
@@ -851,7 +851,7 @@ def _add_routes(app: FastAPI) -> None:
 
         return ApiResponse.create(
             data=response_data,
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     # File Upload Routes
@@ -869,7 +869,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiResponse, UploadMultipleResponse, UploadResponse
         from src.db.repositories.job import JobRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         # Parse multipart form data manually
         content_type = request.headers.get("content-type", "")
@@ -903,7 +903,7 @@ def _add_routes(app: FastAPI) -> None:
 
         for upload_file in files:
             # Generate unique file path
-            file_id = str(uuid.uuid4())
+            file_id = str(uuid4())
             file_ext = Path(upload_file.filename or "unknown").suffix
             file_path = staging_dir / f"{file_id}{file_ext}"
 
@@ -961,7 +961,7 @@ def _add_routes(app: FastAPI) -> None:
 
         return ApiResponse.create(
             data=response_data.model_dump(),
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     @app.post(f"{api_prefix}/upload/url", status_code=status.HTTP_202_ACCEPTED, tags=["Upload"])
@@ -978,7 +978,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiResponse, UploadResponse
         from src.db.repositories.job import JobRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         url = url_data.get("url")
         if not url:
@@ -1011,7 +1011,7 @@ def _add_routes(app: FastAPI) -> None:
                         filename = Path(parsed.path).name or "downloaded_file"
                 
                 # Save file
-                file_id = str(uuid.uuid4())
+                file_id = str(uuid4())
                 file_ext = Path(filename).suffix
                 file_path = staging_dir / f"{file_id}{file_ext}"
                 
@@ -1044,7 +1044,7 @@ def _add_routes(app: FastAPI) -> None:
 
             return ApiResponse.create(
                 data=response_data.model_dump(),
-                request_id=request_id,
+                request_id=UUID(str(request_id)),
             ).model_dump()
 
         except httpx.HTTPError as e:
@@ -1070,7 +1070,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiLinks, ApiResponse
         from src.db.repositories.pipeline import PipelineRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = PipelineRepository(db)
         pipelines, total = await repo.list_pipelines(page=page, limit=limit)
@@ -1096,7 +1096,7 @@ def _add_routes(app: FastAPI) -> None:
         
         if page > 1:
             links.prev = f"{base_url}?page={page-1}&limit={limit}"
-        if (page * limit) < total:
+        if total is not None and (page * limit) < total:
             links.next = f"{base_url}?page={page+1}&limit={limit}"
 
         return ApiResponse.create(
@@ -1106,7 +1106,7 @@ def _add_routes(app: FastAPI) -> None:
                 "page": page,
                 "page_size": limit,
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
             total_count=total,
             links=links,
         ).model_dump()
@@ -1121,7 +1121,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiResponse
         from src.db.repositories.pipeline import PipelineRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         # Validate required fields
         name = pipeline_data.get("name")
@@ -1159,7 +1159,7 @@ def _add_routes(app: FastAPI) -> None:
                 "version": pipeline.version,
                 "created_at": pipeline.created_at.isoformat() if pipeline.created_at else None,
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     @app.get(f"{api_prefix}/pipelines/{{pipeline_id}}", tags=["Pipelines"])
@@ -1172,7 +1172,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiResponse
         from src.db.repositories.pipeline import PipelineRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = PipelineRepository(db)
         pipeline = await repo.get_by_id(pipeline_id)
@@ -1195,7 +1195,7 @@ def _add_routes(app: FastAPI) -> None:
                 "created_at": pipeline.created_at.isoformat() if pipeline.created_at else None,
                 "updated_at": pipeline.updated_at.isoformat() if pipeline.updated_at else None,
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     @app.put(f"{api_prefix}/pipelines/{{pipeline_id}}", tags=["Pipelines"])
@@ -1209,7 +1209,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiResponse
         from src.db.repositories.pipeline import PipelineRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = PipelineRepository(db)
         
@@ -1239,6 +1239,12 @@ def _add_routes(app: FastAPI) -> None:
             description=pipeline_data.get("description"),
         )
 
+        if pipeline is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update pipeline",
+            )
+
         return ApiResponse.create(
             data={
                 "id": str(pipeline.id),
@@ -1248,7 +1254,7 @@ def _add_routes(app: FastAPI) -> None:
                 "version": pipeline.version,
                 "updated_at": pipeline.updated_at.isoformat() if pipeline.updated_at else None,
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     @app.delete(f"{api_prefix}/pipelines/{{pipeline_id}}", status_code=status.HTTP_204_NO_CONTENT, tags=["Pipelines"])
@@ -1279,7 +1285,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiResponse
         from src.plugins.registry import get_registry
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
         registry = get_registry()
 
         plugins = registry.list_sources()
@@ -1289,7 +1295,7 @@ def _add_routes(app: FastAPI) -> None:
                 "plugins": [p.__dict__ for p in plugins],
                 "configurations": [],
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     @app.get(f"{api_prefix}/destinations", tags=["Destinations"])
@@ -1298,7 +1304,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiResponse
         from src.plugins.registry import get_registry
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
         registry = get_registry()
 
         plugins = registry.list_destinations()
@@ -1308,7 +1314,7 @@ def _add_routes(app: FastAPI) -> None:
                 "plugins": [p.__dict__ for p in plugins],
                 "configurations": [],
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     # Authentication Routes
@@ -1325,7 +1331,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.auth.jwt import JWTHandler
         from src.config import settings
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         # Validate credentials (simplified - in production use proper user auth)
         username = credentials.get("username")
@@ -1360,7 +1366,7 @@ def _add_routes(app: FastAPI) -> None:
                 "token_type": "bearer",
                 "expires_in": settings.security.access_token_expire_minutes * 60,
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     @app.post(f"{api_prefix}/auth/refresh", tags=["Authentication"])
@@ -1373,7 +1379,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.auth.jwt import JWTHandler
         from src.config import settings
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         refresh_token = refresh_data.get("refresh_token")
         if not refresh_token:
@@ -1397,7 +1403,7 @@ def _add_routes(app: FastAPI) -> None:
                     "token_type": "bearer",
                     "expires_in": settings.security.access_token_expire_minutes * 60,
                 },
-                request_id=request_id,
+                request_id=UUID(str(request_id)),
             ).model_dump()
 
         except Exception as e:
@@ -1418,7 +1424,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiResponse
         from src.db.repositories.api_key import APIKeyRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = APIKeyRepository(db)
         
@@ -1445,7 +1451,7 @@ def _add_routes(app: FastAPI) -> None:
                 "created_at": api_key.created_at.isoformat() if api_key.created_at else None,
                 "expires_at": api_key.expires_at.isoformat() if api_key.expires_at else None,
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     @app.get(f"{api_prefix}/auth/api-keys", tags=["Authentication"])
@@ -1459,7 +1465,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiLinks, ApiResponse
         from src.db.repositories.api_key import APIKeyRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = APIKeyRepository(db)
         keys, total = await repo.list_keys(page=page, limit=limit)
@@ -1482,7 +1488,7 @@ def _add_routes(app: FastAPI) -> None:
         base_url = str(request.url).split("?")[0]
         if page > 1:
             links.prev = f"{base_url}?page={page-1}&limit={limit}"
-        if (page * limit) < total:
+        if total is not None and (page * limit) < total:
             links.next = f"{base_url}?page={page+1}&limit={limit}"
 
         return ApiResponse.create(
@@ -1492,7 +1498,7 @@ def _add_routes(app: FastAPI) -> None:
                 "page": page,
                 "page_size": limit,
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
             total_count=total,
             links=links,
         ).model_dump()
@@ -1525,7 +1531,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiResponse
         from src.db.repositories.webhook import WebhookRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         # Validate required fields
         url = webhook_data.get("url")
@@ -1560,7 +1566,7 @@ def _add_routes(app: FastAPI) -> None:
                 "secret": sub.secret,
                 "created_at": sub.created_at.isoformat() if sub.created_at else None,
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
         ).model_dump()
 
     @app.get(f"{api_prefix}/webhooks", tags=["Webhooks"])
@@ -1575,7 +1581,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiLinks, ApiResponse
         from src.db.repositories.webhook import WebhookRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = WebhookRepository(db)
         subs, total = await repo.list_subscriptions(
@@ -1599,7 +1605,7 @@ def _add_routes(app: FastAPI) -> None:
         base_url = str(request.url).split("?")[0]
         if page > 1:
             links.prev = f"{base_url}?page={page-1}&limit={limit}"
-        if (page * limit) < total:
+        if total is not None and (page * limit) < total:
             links.next = f"{base_url}?page={page+1}&limit={limit}"
 
         return ApiResponse.create(
@@ -1609,7 +1615,7 @@ def _add_routes(app: FastAPI) -> None:
                 "page": page,
                 "page_size": limit,
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
             total_count=total,
             links=links,
         ).model_dump()
@@ -1646,15 +1652,16 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiLinks, ApiResponse
         from src.db.repositories.webhook import WebhookRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = WebhookRepository(db)
         
         # Verify subscription exists
         sub = await repo.get_subscription(UUID(webhook_id))
         if not sub:
+            from fastapi import status as fastapi_status
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=fastapi_status.HTTP_404_NOT_FOUND,
                 detail=f"Webhook '{webhook_id}' not found",
             )
 
@@ -1685,7 +1692,7 @@ def _add_routes(app: FastAPI) -> None:
         base_url = str(request.url).split("?")[0]
         if page > 1:
             links.prev = f"{base_url}?page={page-1}&limit={limit}"
-        if (page * limit) < total:
+        if total is not None and (page * limit) < total:
             links.next = f"{base_url}?page={page+1}&limit={limit}"
 
         return ApiResponse.create(
@@ -1695,7 +1702,7 @@ def _add_routes(app: FastAPI) -> None:
                 "page": page,
                 "page_size": limit,
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
             total_count=total,
             links=links,
         ).model_dump()
@@ -1717,7 +1724,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.api.models import ApiLinks, ApiResponse
         from src.db.repositories.audit import AuditLogRepository
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = AuditLogRepository(db)
         logs, total = await repo.query_logs(
@@ -1755,7 +1762,7 @@ def _add_routes(app: FastAPI) -> None:
         base_url = str(request.url).split("?")[0]
         if page > 1:
             links.prev = f"{base_url}?page={page-1}&limit={limit}"
-        if (page * limit) < total:
+        if total is not None and (page * limit) < total:
             links.next = f"{base_url}?page={page+1}&limit={limit}"
 
         return ApiResponse.create(
@@ -1765,7 +1772,7 @@ def _add_routes(app: FastAPI) -> None:
                 "page": page,
                 "page_size": limit,
             },
-            request_id=request_id,
+            request_id=UUID(str(request_id)),
             total_count=total,
             links=links,
         ).model_dump()

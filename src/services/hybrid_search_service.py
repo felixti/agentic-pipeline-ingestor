@@ -428,13 +428,13 @@ the specified fusion method.
         vector_map: dict[str, SearchResult] = {}
         text_map: dict[str, TextSearchResult] = {}
 
-        for rank, result in enumerate(vector_results, start=1):
-            chunk_id = str(result.chunk.id)
-            vector_map[chunk_id] = result
+        for rank, v_res in enumerate(vector_results, start=1):
+            chunk_id = str(v_res.chunk.id)
+            vector_map[chunk_id] = v_res
 
-        for rank, result in enumerate(text_results, start=1):
-            chunk_id = str(result.chunk.id)
-            text_map[chunk_id] = result
+        for rank, t_res in enumerate(text_results, start=1):
+            chunk_id = str(t_res.chunk.id)
+            text_map[chunk_id] = t_res
 
         # Get all unique chunk IDs
         all_chunk_ids = set(vector_map.keys()) | set(text_map.keys())
@@ -460,11 +460,11 @@ the specified fusion method.
             hybrid_score = (vector_weight * vector_score) + (text_weight * text_score)
 
             # Get the chunk (prefer vector result if available, otherwise text)
-            chunk = vector_result.chunk if vector_result else text_result.chunk
+            chunk = vector_result.chunk if vector_result else text_result.chunk if text_result else None
 
             fused_results.append(
                 HybridSearchResult(
-                    chunk=chunk,
+                    chunk=chunk,  # type: ignore[arg-type]
                     hybrid_score=round(hybrid_score, 4),
                     vector_score=round(vector_score, 4) if vector_result else None,
                     text_score=round(text_score, 4) if text_result else None,
@@ -502,16 +502,16 @@ the specified fusion method.
             List of HybridSearchResult with RRF scores
         """
         # Build lookup maps by chunk ID with ranks
-        vector_map: dict[str, tuple[SearchResult, int]] = {}
-        text_map: dict[str, tuple[TextSearchResult, int]] = {}
+        vector_map: dict[str, tuple[Any, int]] = {}
+        text_map: dict[str, tuple[Any, int]] = {}
 
-        for rank, result in enumerate(vector_results, start=1):
-            chunk_id = str(result.chunk.id)
-            vector_map[chunk_id] = (result, rank)
+        for v_rank, v_res in enumerate(vector_results, start=1):
+            chunk_id = str(v_res.chunk.id)
+            vector_map[chunk_id] = (v_res, v_rank)
 
-        for rank, result in enumerate(text_results, start=1):
-            chunk_id = str(result.chunk.id)
-            text_map[chunk_id] = (result, rank)
+        for t_rank, t_res in enumerate(text_results, start=1):
+            chunk_id = str(t_res.chunk.id)
+            text_map[chunk_id] = (t_res, t_rank)
 
         # Get all unique chunk IDs
         all_chunk_ids = set(vector_map.keys()) | set(text_map.keys())
@@ -528,23 +528,23 @@ the specified fusion method.
 
             # Add contribution from vector search if present
             if chunk_id in vector_map:
-                vector_result, rank = vector_map[chunk_id]
-                rrf_score += 1.0 / (k + rank)
-                vector_rank = rank
-                vector_score = vector_result.similarity_score
-                chunk = vector_result.chunk
+                v_result, v_rank = vector_map[chunk_id]
+                rrf_score += 1.0 / (k + v_rank)
+                vector_rank = v_rank
+                vector_score = v_result.similarity_score
+                chunk = v_result.chunk
 
             # Add contribution from text search if present
             if chunk_id in text_map:
-                text_result, rank = text_map[chunk_id]
-                rrf_score += 1.0 / (k + rank)
-                text_rank = rank
-                text_score = text_result.rank_score
-                chunk = text_result.chunk
+                t_result, t_rank = text_map[chunk_id]
+                rrf_score += 1.0 / (k + t_rank)
+                text_rank = t_rank
+                text_score = t_result.rank_score
+                chunk = t_result.chunk
 
             fused_results.append(
                 HybridSearchResult(
-                    chunk=chunk,
+                    chunk=chunk,  # type: ignore[arg-type]
                     hybrid_score=round(rrf_score, 4),
                     vector_score=round(vector_score, 4) if vector_score else None,
                     text_score=round(text_score, 4) if text_score else None,

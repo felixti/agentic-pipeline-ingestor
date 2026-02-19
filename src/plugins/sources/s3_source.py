@@ -101,7 +101,7 @@ class S3SourcePlugin(SourcePlugin):
             },
         )
 
-    def _get_s3_client(self, config: S3Config):
+    def _get_s3_client(self, config: S3Config) -> Any:
         """Get or create S3 client.
         
         Args:
@@ -346,7 +346,7 @@ class S3SourcePlugin(SourcePlugin):
         conn: Connection,
         path: str,
         chunk_size: int = 8192,
-    ):
+    ) -> Any:
         """Stream a file from S3.
         
         Args:

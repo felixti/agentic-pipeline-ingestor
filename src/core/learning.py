@@ -221,7 +221,7 @@ class ProcessingHistory:
 
         await self._add_record(record)
 
-        self.logger.debug(
+        self.logger.debug(  # type: ignore[call-arg]
             "recorded_success",
             job_id=str(job.id),
             parser=parser_used,
@@ -274,7 +274,7 @@ class ProcessingHistory:
 
         await self._add_record(record)
 
-        self.logger.debug(
+        self.logger.debug(  # type: ignore[call-arg]
             "recorded_failure",
             job_id=str(job.id),
             parser=parser_used,
@@ -410,7 +410,7 @@ class ProcessingHistory:
             ),
         )
 
-        self.logger.info(
+        self.logger.info(  # type: ignore[call-arg]
             "generated_optimal_config",
             content_type=content_type,
             parser=best_parser,

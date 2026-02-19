@@ -113,8 +113,9 @@ class JobQueue:
         queue_key = self._queue_key(priority)
         
         try:
+            assert self._redis is not None, "Redis not connected"
             # Add job to priority queue (using LPUSH for FIFO)
-            await self._redis.lpush(queue_key, job_id)
+            await self._redis.lpush(queue_key, job_id)  # type: ignore[misc]
             
             # Set TTL on queue
             await self._redis.expire(queue_key, ttl)
@@ -150,8 +151,9 @@ class JobQueue:
         queue_keys = [self._queue_key(p) for p in QueuePriority.ALL]
         
         try:
+            assert self._redis is not None, "Redis not connected"
             # Use BRPOP to block and pop from the right (FIFO)
-            result = await self._redis.brpop(
+            result = await self._redis.brpop(  # type: ignore[misc]
                 queue_keys,
                 timeout=timeout,
             )
@@ -161,12 +163,12 @@ class JobQueue:
                 
                 # Track job as processing
                 processing_key = self._processing_key(worker_id)
-                await self._redis.sadd(processing_key, job_id)
+                await self._redis.sadd(processing_key, job_id)  # type: ignore[misc]
                 await self._redis.expire(processing_key, 3600)  # 1 hour
                 
                 logger.debug("job_dequeued: job_id=%s worker_id=%s", job_id, worker_id)
                 
-                return job_id
+                return job_id  # type: ignore[no-any-return]
             
             return None
             
@@ -191,8 +193,9 @@ class JobQueue:
         await self.connect()
         
         try:
+            assert self._redis is not None, "Redis not connected"
             processing_key = self._processing_key(worker_id)
-            await self._redis.srem(processing_key, job_id)
+            await self._redis.srem(processing_key, job_id)  # type: ignore[misc]
             
             logger.debug("job_acknowledged: job_id=%s worker_id=%s", job_id, worker_id)
             
@@ -221,13 +224,14 @@ class JobQueue:
         await self.connect()
         
         try:
+            assert self._redis is not None, "Redis not connected"
             # Remove from processing
             processing_key = self._processing_key(worker_id)
-            await self._redis.srem(processing_key, job_id)
+            await self._redis.srem(processing_key, job_id)  # type: ignore[misc]
             
             # Requeue
             queue_key = self._queue_key(priority)
-            await self._redis.lpush(queue_key, job_id)
+            await self._redis.lpush(queue_key, job_id)  # type: ignore[misc]
             
             logger.debug("job_requeued: job_id=%s worker_id=%s", job_id, worker_id)
             
@@ -248,9 +252,10 @@ class JobQueue:
         depths = {}
         
         try:
+            assert self._redis is not None, "Redis not connected"
             for priority in QueuePriority.ALL:
                 queue_key = self._queue_key(priority)
-                count = await self._redis.llen(queue_key)
+                count = await self._redis.llen(queue_key)  # type: ignore[misc]
                 depths[priority] = count
                 
         except Exception as e:
@@ -270,24 +275,25 @@ class JobQueue:
         await self.connect()
         
         try:
+            assert self._redis is not None, "Redis not connected"
             if worker_id:
                 processing_key = self._processing_key(worker_id)
-                return await self._redis.scard(processing_key)
+                return await self._redis.scard(processing_key)  # type: ignore[no-any-return,misc]
             else:
                 # Get all workers
                 pattern = f"{self.prefix}:processing:*"
                 keys = await self._redis.keys(pattern)
                 
-                counts = {}
+                counts: dict[str, int] = {}
                 for key in keys:
                     worker = key.split(":")[-1]
-                    counts[worker] = await self._redis.scard(key)
+                    counts[worker] = await self._redis.scard(key)  # type: ignore[misc]
                     
                 return counts
                 
         except Exception as e:
             logger.error("failed_to_get_processing_count: %s", e)
-            return {} if worker_id is None else 0
+            return {} if worker_id is None else 0  # type: ignore[return]
     
     async def clear_queue(self, priority: str | None = None) -> int:
         """Clear queue(s).
@@ -301,18 +307,19 @@ class JobQueue:
         await self.connect()
         
         try:
+            assert self._redis is not None, "Redis not connected"
             if priority:
                 queue_key = self._queue_key(priority)
-                count = await self._redis.llen(queue_key)
+                count = await self._redis.llen(queue_key)  # type: ignore[misc]
                 await self._redis.delete(queue_key)
-                return count
+                return count  # type: ignore[no-any-return]
             else:
                 # Clear all queues
                 total = 0
                 for p in QueuePriority.ALL:
                     queue_key = self._queue_key(p)
-                    count = await self._redis.llen(queue_key)
-                    await self._redis.delete(queue_key)
+                    count = await self._redis.llen(queue_key)  # type: ignore[misc]
+                    await self._redis.delete(queue_key)  # type: ignore[misc]
                     total += count
                 return total
                 

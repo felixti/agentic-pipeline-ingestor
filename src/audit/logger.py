@@ -5,10 +5,12 @@ audit events in the system.
 """
 
 import asyncio
+import csv
+import io
 import json
 import logging
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any
 from uuid import UUID
 
 from src.audit.models import (
@@ -23,7 +25,7 @@ from src.audit.models import (
 logger = logging.getLogger(__name__)
 
 
-class AuditLogStore(Protocol):
+class AuditLogStore:
     """Protocol for audit log storage backends.
     
     Implementations can use PostgreSQL, OpenSearch, or other storage.
@@ -35,7 +37,7 @@ class AuditLogStore(Protocol):
         Args:
             event: Event to save
         """
-        ...
+        raise NotImplementedError("Subclasses must implement save_event")
 
     async def query_events(
         self,
@@ -49,7 +51,7 @@ class AuditLogStore(Protocol):
         Returns:
             Query result
         """
-        ...
+        raise NotImplementedError("Subclasses must implement query_events")
 
     async def export_events(
         self,
@@ -63,7 +65,7 @@ class AuditLogStore(Protocol):
         Returns:
             Exported data as bytes
         """
-        ...
+        raise NotImplementedError("Subclasses must implement export_events")
 
 
 class InMemoryAuditStore:
@@ -72,7 +74,7 @@ class InMemoryAuditStore:
     This store keeps events in memory and does not persist them.
     """
 
-    def __init__(self, max_events: int = 10000):
+    def __init__(self, max_events: int = 10000) -> None:
         """Initialize in-memory store.
         
         Args:
@@ -204,7 +206,7 @@ class InMemoryAuditStore:
         result = await self.query_events(query)
 
         if request.format == "json":
-            data = {
+            data: dict[str, Any] = {
                 "exported_at": datetime.utcnow().isoformat(),
                 "total": result.total,
                 "events": [e.to_dict() for e in result.events],
@@ -221,9 +223,6 @@ class InMemoryAuditStore:
             return "\n".join(lines).encode("utf-8")
 
         elif request.format == "csv":
-            import csv
-            import io
-
             output = io.StringIO()
             writer = csv.writer(output)
 
@@ -275,7 +274,7 @@ class AuditLogger:
         )
     """
 
-    def __init__(self, store: AuditLogStore | None = None):
+    def __init__(self, store: AuditLogStore | None = None) -> None:
         """Initialize audit logger.
         
         Args:
@@ -302,14 +301,14 @@ class AuditLogger:
         job_id: UUID,
         user_id: str | None = None,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Log job creation."""
         event = AuditEvent.from_job_event(
             event_type=AuditEventType.JOB_CREATED,
             job_id=job_id,
             user_id=user_id,
-            details=details,
+            details=details or {},
             **kwargs,
         )
         await self.log_event(event)
@@ -319,14 +318,14 @@ class AuditLogger:
         job_id: UUID,
         user_id: str | None = None,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Log job start."""
         event = AuditEvent.from_job_event(
             event_type=AuditEventType.JOB_STARTED,
             job_id=job_id,
             user_id=user_id,
-            details=details,
+            details=details or {},
             **kwargs,
         )
         await self.log_event(event)
@@ -336,14 +335,14 @@ class AuditLogger:
         job_id: UUID,
         user_id: str | None = None,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Log job completion."""
         event = AuditEvent.from_job_event(
             event_type=AuditEventType.JOB_COMPLETED,
             job_id=job_id,
             user_id=user_id,
-            details=details,
+            details=details or {},
             **kwargs,
         )
         await self.log_event(event)
@@ -354,7 +353,7 @@ class AuditLogger:
         user_id: str | None = None,
         error: str | None = None,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Log job failure."""
         merged_details = details or {}
@@ -376,14 +375,14 @@ class AuditLogger:
         job_id: UUID,
         user_id: str | None = None,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Log job cancellation."""
         event = AuditEvent.from_job_event(
             event_type=AuditEventType.JOB_CANCELLED,
             job_id=job_id,
             user_id=user_id,
-            details=details,
+            details=details or {},
             **kwargs,
         )
         await self.log_event(event)
@@ -394,7 +393,7 @@ class AuditLogger:
         user_id: str | None = None,
         retry_count: int = 0,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Log job retry."""
         merged_details = details or {}
@@ -415,7 +414,7 @@ class AuditLogger:
         ip_address: str | None = None,
         success: bool = True,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Log authentication login."""
         event = AuditEvent.from_auth_event(
@@ -423,7 +422,7 @@ class AuditLogger:
             user_id=user_id,
             ip_address=ip_address,
             status=AuditEventStatus.SUCCESS if success else AuditEventStatus.FAILURE,
-            details=details,
+            details=details or {},
             **kwargs,
         )
         await self.log_event(event)
@@ -434,7 +433,7 @@ class AuditLogger:
         ip_address: str | None = None,
         reason: str | None = None,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Log authentication failure."""
         merged_details = details or {}
@@ -457,14 +456,18 @@ class AuditLogger:
         user_id: str | None = None,
         action: str = "read",
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Log source access."""
+        merged_details: dict[str, Any] = {"action": action}
+        if details:
+            merged_details.update(details)
+
         event = AuditEvent.from_source_event(
             event_type=AuditEventType.SOURCE_ACCESSED,
             source_id=source_id,
             user_id=user_id,
-            details={"action": action, **(details or {})},
+            details=merged_details,
             **kwargs,
         )
         await self.log_event(event)
@@ -474,7 +477,7 @@ class AuditLogger:
         key_id: str,
         user_id: str,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Log API key creation."""
         event = AuditEvent(
@@ -482,7 +485,7 @@ class AuditLogger:
             user_id=user_id,
             resource_type="api_key",
             resource_id=key_id,
-            details=details,
+            details=details or {},
             **kwargs,
         )
         await self.log_event(event)
@@ -492,7 +495,7 @@ class AuditLogger:
         key_id: str,
         user_id: str,
         details: dict[str, Any] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Log API key revocation."""
         event = AuditEvent(
@@ -500,7 +503,7 @@ class AuditLogger:
             user_id=user_id,
             resource_type="api_key",
             resource_id=key_id,
-            details=details,
+            details=details or {},
             **kwargs,
         )
         await self.log_event(event)

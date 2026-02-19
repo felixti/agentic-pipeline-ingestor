@@ -198,7 +198,7 @@ class RBACManager:
         },
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize RBAC manager."""
         self._custom_roles: dict[str, RoleDefinition] = {}
 
@@ -314,7 +314,7 @@ class RBACManager:
 
         return permissions
 
-    def require_permission(self, resource: str, action: str):
+    def require_permission(self, resource: str, action: str) -> Any:
         """Decorator to require permission for a function.
         
         Args:
@@ -324,8 +324,8 @@ class RBACManager:
         Returns:
             Decorator function
         """
-        def decorator(func):
-            async def wrapper(*args, user: User = None, **kwargs):
+        def decorator(func: Any) -> Any:
+            async def wrapper(*args: Any, user: User | None = None, **kwargs: Any) -> Any:
                 if user is None:
                     raise PermissionError("Authentication required")
 

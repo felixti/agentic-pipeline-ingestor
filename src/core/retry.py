@@ -185,8 +185,10 @@ class SameParserRetry(RetryStrategy):
         """
         self.logger.info(
             "executing_same_parser_retry",
-            job_id=str(context.job.id),
-            attempt=context.attempt_number,
+            extra={
+                "job_id": str(context.job.id),
+                "attempt": context.attempt_number,
+            }
         )
 
         # Calculate exponential backoff delay
@@ -269,8 +271,10 @@ class FallbackParserRetry(RetryStrategy):
         """
         self.logger.info(
             "executing_fallback_parser_retry",
-            job_id=str(context.job.id),
-            attempt=context.attempt_number,
+            extra={
+                "job_id": str(context.job.id),
+                "attempt": context.attempt_number,
+            }
         )
 
         if context.pipeline_config is None:
@@ -366,8 +370,10 @@ class PreprocessRetry(RetryStrategy):
         """
         self.logger.info(
             "executing_preprocess_retry",
-            job_id=str(context.job.id),
-            attempt=context.attempt_number,
+            extra={
+                "job_id": str(context.job.id),
+                "attempt": context.attempt_number,
+            }
         )
 
         from copy import deepcopy
@@ -461,9 +467,11 @@ class SplitProcessingRetry(RetryStrategy):
         """
         self.logger.info(
             "executing_split_processing_retry",
-            job_id=str(context.job.id),
-            attempt=context.attempt_number,
-            file_size=context.job.file_size,
+            extra={
+                "job_id": str(context.job.id),
+                "attempt": context.attempt_number,
+                "file_size": context.job.file_size,
+            }
         )
 
         from copy import deepcopy
@@ -591,16 +599,20 @@ class RetryStrategyRegistry:
             if strategy and await strategy.can_apply(context):
                 logger.info(
                     "selected_retry_strategy",
-                    job_id=str(context.job.id),
-                    strategy=strategy_type.value,
-                    attempt=context.attempt_number,
+                    extra={
+                        "job_id": str(context.job.id),
+                        "strategy": strategy_type.value,
+                        "attempt": context.attempt_number,
+                    }
                 )
                 return strategy
 
         logger.warning(
             "no_applicable_retry_strategy",
-            job_id=str(context.job.id),
-            attempt=context.attempt_number,
+            extra={
+                "job_id": str(context.job.id),
+                "attempt": context.attempt_number,
+            }
         )
         return None
 

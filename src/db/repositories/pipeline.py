@@ -1,7 +1,7 @@
 """Repository for pipeline configuration data access."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import asc, desc, func, select
@@ -24,7 +24,7 @@ class PipelineRepository:
     async def create(
         self,
         name: str,
-        config: dict,
+        config: dict[str, Any],
         description: str | None = None,
         created_by: str | None = None,
     ) -> PipelineModel:
@@ -113,7 +113,7 @@ class PipelineRepository:
         include_inactive: bool = False,
         sort_by: str = "created_at",
         sort_order: str = "desc",
-    ) -> tuple[list[PipelineModel], int]:
+    ) -> tuple[list[PipelineModel], int | None]:
         """List pipelines with pagination.
         
         Args:
@@ -159,7 +159,7 @@ class PipelineRepository:
         self,
         pipeline_id: str | UUID,
         name: str | None = None,
-        config: dict | None = None,
+        config: dict[str, Any] | None = None,
         description: str | None = None,
     ) -> PipelineModel | None:
         """Update pipeline configuration.
@@ -178,16 +178,16 @@ class PipelineRepository:
             return None
         
         if name is not None:
-            pipeline.name = name
+            pipeline.name = name  # type: ignore[assignment]
         
         if config is not None:
-            pipeline.config = config
+            pipeline.config = config  # type: ignore[assignment]
         
         if description is not None:
-            pipeline.description = description
+            pipeline.description = description  # type: ignore[assignment]
         
-        pipeline.version += 1
-        pipeline.updated_at = datetime.utcnow()
+        pipeline.version += 1  # type: ignore[assignment]
+        pipeline.updated_at = datetime.utcnow()  # type: ignore[assignment]
         
         await self.session.commit()
         await self.session.refresh(pipeline)
@@ -213,8 +213,8 @@ class PipelineRepository:
             return False
         
         if soft_delete:
-            pipeline.is_active = 0
-            pipeline.updated_at = datetime.utcnow()
+            pipeline.is_active = 0  # type: ignore[assignment]
+            pipeline.updated_at = datetime.utcnow()  # type: ignore[assignment]
             await self.session.commit()
         else:
             await self.session.delete(pipeline)
@@ -222,7 +222,7 @@ class PipelineRepository:
         
         return True
     
-    def validate_config(self, config: dict) -> tuple[bool, list[str]]:
+    def validate_config(self, config: dict[str, Any]) -> tuple[bool, list[str]]:
         """Validate pipeline configuration.
         
         Args:

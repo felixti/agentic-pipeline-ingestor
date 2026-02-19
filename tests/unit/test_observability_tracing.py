@@ -434,7 +434,6 @@ class TestStartSpan:
                 name="test-operation",
                 kind=SpanKind.INTERNAL,
                 attributes=None,
-                parent=None,
             )
 
     def test_start_span_with_attributes(self):
@@ -488,7 +487,7 @@ class TestStartSpan:
                 assert span == mock_span
 
             call_kwargs = mock_tracer.start_as_current_span.call_args[1]
-            assert call_kwargs["parent"] == mock_parent
+            assert call_kwargs["context"] == mock_parent
 
 
 @pytest.mark.unit

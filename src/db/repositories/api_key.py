@@ -151,7 +151,7 @@ class APIKeyRepository:
         key = result.scalar_one_or_none()
         
         if key:
-            key.last_used_at = datetime.utcnow()
+            key.last_used_at = datetime.utcnow()  # type: ignore[assignment]
             await self.session.commit()
             await self.session.refresh(key)
         
@@ -162,7 +162,7 @@ class APIKeyRepository:
         page: int = 1,
         limit: int = 20,
         include_inactive: bool = False,
-    ) -> tuple[list[ApiKeyModel], int]:
+    ) -> tuple[list[ApiKeyModel], int | None]:
         """List API keys.
         
         Args:
@@ -220,7 +220,7 @@ class APIKeyRepository:
         if not key:
             return False
         
-        key.is_active = 0
+        key.is_active = False  # type: ignore[assignment]
         await self.session.commit()
         
         return True

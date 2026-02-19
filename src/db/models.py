@@ -13,7 +13,7 @@ from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.types import UserDefinedType
 
 
-class Vector(UserDefinedType):
+class Vector(UserDefinedType[Any]):
     """SQLAlchemy type for pgvector VECTOR.
     
     This is a custom type that maps Python lists to PostgreSQL VECTOR columns.
@@ -31,8 +31,8 @@ class Vector(UserDefinedType):
     def get_col_spec(self, **kw: Any) -> str:
         return f"VECTOR({self.dimensions})"
     
-    def bind_processor(self, dialect):
-        def process(value):
+    def bind_processor(self, dialect: Any) -> Any:
+        def process(value: Any) -> Any:
             if value is None:
                 return None
             if isinstance(value, list):
@@ -40,8 +40,8 @@ class Vector(UserDefinedType):
             return value
         return process
     
-    def result_processor(self, dialect, coltype):
-        def process(value):
+    def result_processor(self, dialect: Any, coltype: Any) -> Any:
+        def process(value: Any) -> Any:
             if value is None:
                 return None
             # Parse vector string representation into list of floats
@@ -51,11 +51,12 @@ class Vector(UserDefinedType):
             return value
         return process
 
-Base = declarative_base()
+
+Base: Any = declarative_base()
 
 # Async engine (initialized on demand)
-_async_engine = None
-_engine = None  # Alias for backward compatibility
+_async_engine: Any = None
+_engine: Any = None  # Alias for backward compatibility
 
 
 def init_engine(
@@ -63,7 +64,7 @@ def init_engine(
     echo: bool = False,
     pool_size: int = 5,
     max_overflow: int = 10,
-):
+) -> Any:
     """Initialize the async engine (for backward compatibility).
     
     Args:
@@ -93,7 +94,7 @@ def init_engine(
     return _engine
 
 
-async def init_db(engine=None):
+async def init_db(engine: Any = None) -> None:
     """Initialize the database (create tables).
     
     This is a placeholder - actual migrations should be run via Alembic.
@@ -109,7 +110,7 @@ async def init_db(engine=None):
         pass
 
 
-def get_async_engine(database_url: str | None = None):
+def get_async_engine(database_url: str | None = None) -> Any:
     """Get or create async engine.
     
     Args:
@@ -152,7 +153,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-class ContentDetectionResultModel(Base):
+class ContentDetectionResultModel(Base):  # type: ignore[misc]
     """Database model for content detection results."""
     
     __tablename__ = "content_detection_results"
@@ -163,7 +164,7 @@ class ContentDetectionResultModel(Base):
     content_type = Column(String(20), nullable=False, index=True)
     confidence = Column(Float, nullable=False)
     recommended_parser = Column(String(50), nullable=False)
-    alternative_parsers = Column(ARRAY(String), nullable=False, default=[])
+    alternative_parsers: Any = Column(ARRAY(String), nullable=False, default=[])
     text_statistics = Column(JSONB, nullable=False)
     image_statistics = Column(JSONB, nullable=False)
     page_results = Column(JSONB, nullable=False)
@@ -177,7 +178,7 @@ class ContentDetectionResultModel(Base):
     jobs = relationship("JobDetectionResultModel", back_populates="detection_result")
 
 
-class JobDetectionResultModel(Base):
+class JobDetectionResultModel(Base):  # type: ignore[misc]
     """Link table between jobs and detection results."""
     
     __tablename__ = "job_detection_results"
@@ -202,7 +203,7 @@ class JobStatus(str, Enum):
     CANCELLING = "cancelling"
 
 
-class JobModel(Base):
+class JobModel(Base):  # type: ignore[misc]
     """Job model for pipeline processing jobs."""
     
     __tablename__ = "jobs"
@@ -247,7 +248,7 @@ class JobModel(Base):
         order_by="DocumentChunkModel.chunk_index",
     )
     
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert job to dictionary."""
         return {
             "id": str(self.id),
@@ -274,7 +275,7 @@ class JobModel(Base):
         }
 
 
-class PipelineModel(Base):
+class PipelineModel(Base):  # type: ignore[misc]
     """Pipeline configuration model."""
     
     __tablename__ = "pipelines"
@@ -293,7 +294,7 @@ class PipelineModel(Base):
     jobs = relationship("JobModel", back_populates="pipeline", foreign_keys="JobModel.pipeline_id")
 
 
-class JobResultModel(Base):
+class JobResultModel(Base):  # type: ignore[misc]
     """Job processing result model."""
     
     __tablename__ = "job_results"
@@ -313,7 +314,7 @@ class JobResultModel(Base):
     job = relationship("JobModel", back_populates="result")
 
 
-class DocumentChunkModel(Base):
+class DocumentChunkModel(Base):  # type: ignore[misc]
     """Document chunk model with vector embedding for semantic search.
     
     Stores chunks of text extracted from documents with their vector embeddings
@@ -362,7 +363,7 @@ class DocumentChunkModel(Base):
     content_hash = Column(String(64), nullable=True, index=True)
     
     # Vector embedding for semantic search (nullable during initial creation)
-    embedding = Column(Vector(dimensions=1536), nullable=True)
+    embedding: Any = Column(Vector(dimensions=1536), nullable=True)
     
     # Flexible metadata storage
     chunk_metadata = Column(JSONB, nullable=False, default={})
@@ -404,7 +405,7 @@ class DocumentChunkModel(Base):
         self.embedding = embedding
 
 
-class AuditLogModel(Base):
+class AuditLogModel(Base):  # type: ignore[misc]
     """Audit log entry model."""
     
     __tablename__ = "audit_logs"
@@ -426,7 +427,7 @@ class AuditLogModel(Base):
     duration_ms = Column(Integer, nullable=True)
 
 
-class ApiKeyModel(Base):
+class ApiKeyModel(Base):  # type: ignore[misc]
     """API key model for service-to-service authentication."""
     
     __tablename__ = "api_keys"
@@ -434,7 +435,7 @@ class ApiKeyModel(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     key_hash = Column(String(64), nullable=False, index=True, unique=True)
     name = Column(String(255), nullable=False)
-    permissions = Column(ARRAY(String), nullable=False, default=[])
+    permissions: Any = Column(ARRAY(String), nullable=False, default=[])
     is_active = Column(Integer, nullable=False, default=1)
     created_by = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
@@ -442,7 +443,7 @@ class ApiKeyModel(Base):
     last_used_at = Column(DateTime(timezone=True), nullable=True)
 
 
-class WebhookSubscriptionModel(Base):
+class WebhookSubscriptionModel(Base):  # type: ignore[misc]
     """Webhook subscription model."""
     
     __tablename__ = "webhook_subscriptions"
@@ -450,14 +451,14 @@ class WebhookSubscriptionModel(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     user_id = Column(String(255), nullable=False, index=True)
     url = Column(String(500), nullable=False)
-    events = Column(ARRAY(String), nullable=False, default=[])
+    events: Any = Column(ARRAY(String), nullable=False, default=[])
     secret = Column(String(255), nullable=True)
     is_active = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
-class WebhookDeliveryModel(Base):
+class WebhookDeliveryModel(Base):  # type: ignore[misc]
     """Webhook delivery attempt model."""
     
     __tablename__ = "webhook_deliveries"

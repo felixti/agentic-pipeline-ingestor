@@ -80,7 +80,7 @@ class WebhookDeliveryService:
         self,
         subscription: Any,
         event_type: str,
-        payload: dict,
+        payload: dict[str, Any],
     ) -> tuple[bool, int | None, str | None]:
         """Deliver event to a single subscription.
         
@@ -127,17 +127,17 @@ class WebhookDeliveryService:
             if success:
                 logger.info(
                     "webhook_delivered",
-                    subscription_id=str(subscription.id),
-                    event=event_type,
-                    status_code=response.status_code,
+                    subscription_id=str(subscription.id),  # type: ignore[call-arg]
+                    event=event_type,  # type: ignore[call-arg]
+                    status_code=response.status_code,  # type: ignore[call-arg]
                 )
             else:
                 logger.warning(
                     "webhook_delivery_failed",
-                    subscription_id=str(subscription.id),
-                    event=event_type,
-                    status_code=response.status_code,
-                    response=response.text[:200],
+                    subscription_id=str(subscription.id),  # type: ignore[call-arg]
+                    event=event_type,  # type: ignore[call-arg]
+                    status_code=response.status_code,  # type: ignore[call-arg]
+                    response=response.text[:200],  # type: ignore[call-arg]
                 )
             
             return success, response.status_code, None
@@ -145,26 +145,26 @@ class WebhookDeliveryService:
         except httpx.TimeoutException:
             logger.warning(
                 "webhook_delivery_timeout",
-                subscription_id=str(subscription.id),
-                event=event_type,
-                url=subscription.url,
+                subscription_id=str(subscription.id),  # type: ignore[call-arg]
+                event=event_type,  # type: ignore[call-arg]
+                url=subscription.url,  # type: ignore[call-arg]
             )
             return False, None, "Request timeout"
             
         except Exception as e:
             logger.error(
                 "webhook_delivery_error",
-                subscription_id=str(subscription.id),
-                event=event_type,
-                error=str(e),
+                subscription_id=str(subscription.id),  # type: ignore[call-arg]
+                event=event_type,  # type: ignore[call-arg]
+                error=str(e),  # type: ignore[call-arg]
             )
             return False, None, str(e)
     
     async def deliver_event(
         self,
         event_type: str,
-        payload: dict,
-    ) -> list[dict]:
+        payload: dict[str, Any],
+    ) -> list[dict[str, Any]]:
         """Deliver event to all matching subscriptions.
         
         Args:
@@ -204,13 +204,13 @@ class WebhookDeliveryService:
                 # Update delivery status
                 if success:
                     await repo.update_delivery_status(
-                        delivery.id,
+                        str(delivery.id),
                         status="delivered",
                         http_status=http_status,
                     )
                 else:
                     await repo.update_delivery_status(
-                        delivery.id,
+                        str(delivery.id),
                         status="pending",  # Will be retried
                         http_status=http_status,
                         error=error,
@@ -245,11 +245,11 @@ class WebhookDeliveryService:
             
             for delivery in pending:
                 # Get subscription
-                sub = await repo.get_subscription(delivery.subscription_id)
+                sub = await repo.get_subscription(str(delivery.subscription_id))
                 if not sub or not sub.is_active:
                     # Mark as failed if subscription is gone
                     await repo.update_delivery_status(
-                        delivery.id,
+                        str(delivery.id),
                         status="failed",
                         error="Subscription no longer active",
                     )
@@ -258,14 +258,14 @@ class WebhookDeliveryService:
                 # Attempt delivery
                 success, http_status, error = await self._deliver_to_subscription(
                     sub,
-                    delivery.event_type,
-                    delivery.payload,
+                    str(delivery.event_type),
+                    dict(delivery.payload),
                 )
                 
                 # Update status
                 if success:
                     await repo.update_delivery_status(
-                        delivery.id,
+                        str(delivery.id),
                         status="delivered",
                         http_status=http_status,
                     )
@@ -274,14 +274,14 @@ class WebhookDeliveryService:
                     # Check if max retries reached
                     if delivery.attempts + 1 >= delivery.max_attempts:
                         await repo.update_delivery_status(
-                            delivery.id,
+                            str(delivery.id),
                             status="failed",
                             http_status=http_status,
                             error=error,
                         )
                     else:
                         await repo.update_delivery_status(
-                            delivery.id,
+                            str(delivery.id),
                             status="retrying",
                             http_status=http_status,
                             error=error,

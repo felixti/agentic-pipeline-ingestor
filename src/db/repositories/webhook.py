@@ -1,7 +1,7 @@
 """Repository for webhook subscription and delivery data access."""
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import asc, desc, func, select
@@ -93,7 +93,7 @@ class WebhookRepository:
         event: str | None = None,
         page: int = 1,
         limit: int = 20,
-    ) -> tuple[list[WebhookSubscriptionModel], int]:
+    ) -> tuple[list[WebhookSubscriptionModel], int | None]:
         """List webhook subscriptions.
         
         Args:
@@ -178,13 +178,13 @@ class WebhookRepository:
             return None
         
         if url is not None:
-            sub.url = url
+            sub.url = url  # type: ignore[assignment]
         if events is not None:
             sub.events = events
         if secret is not None:
-            sub.secret = secret
+            sub.secret = secret  # type: ignore[assignment]
         
-        sub.updated_at = datetime.utcnow()
+        sub.updated_at = datetime.utcnow()  # type: ignore[assignment]
         await self.session.commit()
         await self.session.refresh(sub)
         
@@ -219,7 +219,7 @@ class WebhookRepository:
         self,
         subscription_id: str | UUID,
         event_type: str,
-        payload: dict,
+        payload: dict[str, Any],
     ) -> WebhookDeliveryModel:
         """Create a delivery record.
         
@@ -280,7 +280,7 @@ class WebhookRepository:
         status: str | None = None,
         page: int = 1,
         limit: int = 20,
-    ) -> tuple[list[WebhookDeliveryModel], int]:
+    ) -> tuple[list[WebhookDeliveryModel], int | None]:
         """List webhook deliveries.
         
         Args:
@@ -341,25 +341,25 @@ class WebhookRepository:
         if not delivery:
             return None
         
-        delivery.status = status
-        delivery.attempts += 1
+        delivery.status = status  # type: ignore[assignment]
+        delivery.attempts += 1  # type: ignore[assignment]
         
         if http_status is not None:
-            delivery.http_status = http_status
+            delivery.http_status = http_status  # type: ignore[assignment]
         
         if error is not None:
-            delivery.last_error = error
+            delivery.last_error = error  # type: ignore[assignment]
         
         if status == "delivered":
-            delivery.delivered_at = datetime.utcnow()
-            delivery.next_retry_at = None
+            delivery.delivered_at = datetime.utcnow()  # type: ignore[assignment]
+            delivery.next_retry_at = None  # type: ignore[assignment]
         elif status == "failed":
-            delivery.next_retry_at = None
+            delivery.next_retry_at = None  # type: ignore[assignment]
         else:
             # Schedule next retry with exponential backoff
-            retry_delays = [0, 60, 300, 900, 3600]  # 0, 1min, 5min, 15min, 1hour
-            delay = retry_delays[min(delivery.attempts, len(retry_delays) - 1)]
-            delivery.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
+            retry_delays: list[int] = [0, 60, 300, 900, 3600]  # 0, 1min, 5min, 15min, 1hour
+            delay = retry_delays[min(int(delivery.attempts), len(retry_delays) - 1)]
+            delivery.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)  # type: ignore[assignment]
         
         await self.session.commit()
         await self.session.refresh(delivery)

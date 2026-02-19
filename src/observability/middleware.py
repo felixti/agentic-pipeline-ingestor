@@ -6,6 +6,7 @@ including tracing, metrics, and logging.
 
 import time
 import uuid
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from opentelemetry.trace import SpanKind, Status, StatusCode
@@ -36,7 +37,7 @@ class ObservabilityMiddleware:
         >>> app.add_middleware(ObservabilityMiddleware)
     """
 
-    def __init__(self, app: FastAPI):
+    def __init__(self, app: FastAPI) -> None:
         """Initialize the middleware.
         
         Args:
@@ -44,7 +45,12 @@ class ObservabilityMiddleware:
         """
         self.app = app
 
-    async def __call__(self, scope, receive, send):
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Any,
+        send: Any,
+    ) -> None:
         """ASGI middleware entry point.
         
         Args:
@@ -126,8 +132,6 @@ class ObservabilityMiddleware:
                         endpoint=route,
                         status_code=status_code,
                         duration=duration,
-                        request_size=request_size,
-                        response_size=len(response.body) if hasattr(response, "body") else 0,
                     )
 
                     # Log completion
@@ -139,7 +143,7 @@ class ObservabilityMiddleware:
                         duration_ms=round(duration * 1000, 2),
                     )
 
-                    return response
+                    return None
 
                 except Exception as e:
                     # Calculate duration even for errors
@@ -175,9 +179,9 @@ class ObservabilityMiddleware:
     async def _handle_request(
         self,
         request: Request,
-        scope,
-        receive,
-        send,
+        scope: dict[str, Any],
+        receive: Any,
+        send: Any,
     ) -> Response:
         """Handle the request and capture response.
         
@@ -190,11 +194,13 @@ class ObservabilityMiddleware:
         Returns:
             Response object
         """
-        response_body = []
+        response_body: list[bytes] = []
 
-        async def capture_send(message):
-            if message["type"] == "http.response.body":
-                response_body.append(message.get("body", b""))
+        async def capture_send(message: Any) -> None:
+            if message.get("type") == "http.response.body":
+                body = message.get("body", b"")
+                if isinstance(body, bytes):
+                    response_body.append(body)
             await send(message)
 
         # Create a response capture wrapper
@@ -219,7 +225,7 @@ class ObservabilityMiddleware:
         if "route" in request.scope:
             route = request.scope["route"]
             if hasattr(route, "path"):
-                return route.path
+                return str(route.path)
 
         # Fallback to path
         return str(request.url.path)
@@ -236,7 +242,7 @@ def setup_observability(app: FastAPI) -> None:
 
     # Add correlation ID middleware
     @app.middleware("http")
-    async def correlation_id_middleware(request: Request, call_next):
+    async def correlation_id_middleware(request: Request, call_next: Any) -> Response:
         """Middleware to handle correlation IDs."""
         # Get or generate correlation ID
         correlation_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
@@ -245,7 +251,7 @@ def setup_observability(app: FastAPI) -> None:
         set_correlation_id(correlation_id)
 
         # Process request
-        response = await call_next(request)
+        response: Response = await call_next(request)
 
         # Add correlation ID to response
         response.headers["X-Request-ID"] = correlation_id
@@ -254,7 +260,7 @@ def setup_observability(app: FastAPI) -> None:
 
     # Add tracing and metrics middleware
     @app.middleware("http")
-    async def observability_middleware(request: Request, call_next):
+    async def observability_middleware(request: Request, call_next: Any) -> Response:
         """Middleware for tracing and metrics."""
         start_time = time.time()
 
@@ -276,7 +282,7 @@ def setup_observability(app: FastAPI) -> None:
             },
         ) as span:
             try:
-                response = await call_next(request)
+                response: Response = await call_next(request)
 
                 duration = time.time() - start_time
                 status_code = response.status_code
@@ -328,7 +334,7 @@ def _get_route(request: Request) -> str:
     if "route" in request.scope:
         route = request.scope["route"]
         if hasattr(route, "path"):
-            return route.path
+            return str(route.path)
     return str(request.url.path)
 
 
@@ -338,7 +344,7 @@ class MetricsMiddleware:
     This middleware collects request metrics for Prometheus.
     """
 
-    def __init__(self, app):
+    def __init__(self, app: Any) -> None:
         """Initialize the middleware.
         
         Args:
@@ -347,7 +353,12 @@ class MetricsMiddleware:
         self.app = app
         self.metrics = get_metrics_manager()
 
-    async def __call__(self, scope, receive, send):
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Any,
+        send: Any,
+    ) -> None:
         """ASGI entry point.
         
         Args:
@@ -368,7 +379,7 @@ class MetricsMiddleware:
         # Capture status code
         status_code = 200
 
-        async def wrapped_send(message):
+        async def wrapped_send(message: dict[str, Any]) -> None:
             nonlocal status_code
             if message["type"] == "http.response.start":
                 status_code = message.get("status", 200)

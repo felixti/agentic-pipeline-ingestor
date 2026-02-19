@@ -1,7 +1,7 @@
 """Repository for job data access."""
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import asc, desc, func, select, text
@@ -31,9 +31,9 @@ class JobRepository:
         priority: str = "normal",
         mode: str = "async",
         external_id: str | None = None,
-        metadata: dict | None = None,
+        metadata: dict[str, Any] | None = None,
         pipeline_id: str | None = None,
-        pipeline_config: dict | None = None,
+        pipeline_config: dict[str, Any] | None = None,
     ) -> JobModel:
         """Create a new job.
         
@@ -73,12 +73,12 @@ class JobRepository:
         if pipeline_id:
             from uuid import uuid4
             try:
-                job.pipeline_id = UUID(pipeline_id) if isinstance(pipeline_id, str) else pipeline_id
+                job.pipeline_id = UUID(pipeline_id) if isinstance(pipeline_id, str) else pipeline_id  # type: ignore[assignment]
             except ValueError:
                 pass
         
         if pipeline_config:
-            job.pipeline_config = pipeline_config
+            job.pipeline_config = pipeline_config  # type: ignore[assignment]
         
         self.session.add(job)
         await self.session.commit()
@@ -114,7 +114,7 @@ class JobRepository:
         source_type: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
-    ) -> tuple[list[JobModel], int]:
+    ) -> tuple[list[JobModel], int | None]:
         """List jobs with filtering and pagination.
         
         Args:
@@ -202,11 +202,11 @@ class JobRepository:
         
         if job:
             # Lock the job
-            job.locked_by = worker_id
-            job.locked_at = datetime.utcnow()
-            job.status = JobStatus.PROCESSING
-            job.started_at = datetime.utcnow()
-            job.updated_at = datetime.utcnow()
+            job.locked_by = worker_id  # type: ignore[assignment]
+            job.locked_at = datetime.utcnow()  # type: ignore[assignment]
+            job.status = JobStatus.PROCESSING  # type: ignore[assignment]
+            job.started_at = datetime.utcnow()  # type: ignore[assignment]
+            job.updated_at = datetime.utcnow()  # type: ignore[assignment]
             await self.session.commit()
             await self.session.refresh(job)
         
@@ -234,22 +234,22 @@ class JobRepository:
         if not job:
             return None
         
-        job.status = status
-        job.updated_at = datetime.utcnow()
+        job.status = status  # type: ignore[assignment]
+        job.updated_at = datetime.utcnow()  # type: ignore[assignment]
         
         if status == JobStatus.PROCESSING and not job.started_at:
-            job.started_at = datetime.utcnow()
+            job.started_at = datetime.utcnow()  # type: ignore[assignment]
         
         if status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
-            job.completed_at = datetime.utcnow()
-            job.locked_by = None
-            job.locked_at = None
+            job.completed_at = datetime.utcnow()  # type: ignore[assignment]
+            job.locked_by = None  # type: ignore[assignment]
+            job.locked_at = None  # type: ignore[assignment]
         
         if error_message:
-            job.error_message = error_message
+            job.error_message = error_message  # type: ignore[assignment]
         
         if error_code:
-            job.error_code = error_code
+            job.error_code = error_code  # type: ignore[assignment]
         
         await self.session.commit()
         await self.session.refresh(job)
@@ -272,8 +272,8 @@ class JobRepository:
         if not job:
             return None
         
-        job.heartbeat_at = datetime.utcnow()
-        job.updated_at = datetime.utcnow()
+        job.heartbeat_at = datetime.utcnow()  # type: ignore[assignment]
+        job.updated_at = datetime.utcnow()  # type: ignore[assignment]
         await self.session.commit()
         await self.session.refresh(job)
         
@@ -295,9 +295,9 @@ class JobRepository:
         if not job:
             return None
         
-        job.locked_by = None
-        job.locked_at = None
-        job.updated_at = datetime.utcnow()
+        job.locked_by = None  # type: ignore[assignment]
+        job.locked_at = None  # type: ignore[assignment]
+        job.updated_at = datetime.utcnow()  # type: ignore[assignment]
         await self.session.commit()
         await self.session.refresh(job)
         

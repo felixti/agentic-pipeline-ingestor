@@ -1,6 +1,6 @@
 """Parser selection service for routing documents to optimal parsers."""
 
-from typing import Optional
+from typing import Any, Optional
 
 from src.core.content_detection.models import (
     ContentAnalysisResult,
@@ -32,7 +32,7 @@ class ParserSelection:
         self.rationale = rationale
         self.overridden = overridden
     
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "primary_parser": self.primary_parser,
@@ -103,8 +103,8 @@ class ParserSelector:
         # Priority 2: Low confidence - use conservative approach
         if detection_result.confidence < cls.LOW_CONFIDENCE_THRESHOLD:
             return ParserSelection(
-                primary=cls.PARSER_DOC,
-                fallback=cls.PARSER_OCR,
+                primary_parser=cls.PARSER_DOC,
+                fallback_parser=cls.PARSER_OCR,
                 rationale=(
                     f"Low detection confidence ({detection_result.confidence:.2f}), "
                     f"using conservative strategy with both parsers"
@@ -136,8 +136,8 @@ class ParserSelector:
         """
         if config.force_ocr:
             return ParserSelection(
-                primary=cls.PARSER_OCR,
-                fallback=config.fallback_parser or cls.PARSER_DOC,
+                primary_parser=cls.PARSER_OCR,
+                fallback_parser=config.fallback_parser or cls.PARSER_DOC,
                 rationale=(
                     f"OCR forced by user configuration. "
                     f"Detected type was {detection_result.content_type} "
@@ -147,8 +147,8 @@ class ParserSelector:
             )
         
         return ParserSelection(
-            primary=config.primary_parser,
-            fallback=config.fallback_parser,
+            primary_parser=config.primary_parser,
+            fallback_parser=config.fallback_parser,
             rationale=(
                 f"User-specified configuration. "
                 f"Detected type was {detection_result.content_type} "
@@ -171,8 +171,8 @@ class ParserSelector:
             Parser selection
         """
         return ParserSelection(
-            primary=cls.PARSER_DOC,
-            fallback=cls.PARSER_OCR,
+            primary_parser=cls.PARSER_DOC,
+            fallback_parser=cls.PARSER_OCR,
             rationale=(
                 f"Text-based PDF detected (confidence: {detection_result.confidence:.2f}, "
                 f"text ratio: {detection_result.text_statistics.average_chars_per_page:.0f} chars/page). "
@@ -194,8 +194,8 @@ class ParserSelector:
             Parser selection
         """
         return ParserSelection(
-            primary=cls.PARSER_OCR,
-            fallback=cls.PARSER_DOC,
+            primary_parser=cls.PARSER_OCR,
+            fallback_parser=cls.PARSER_DOC,
             rationale=(
                 f"Scanned PDF detected (confidence: {detection_result.confidence:.2f}, "
                 f"image ratio: {detection_result.image_statistics.image_area_ratio:.1%}). "
@@ -217,8 +217,8 @@ class ParserSelector:
             Parser selection
         """
         return ParserSelection(
-            primary=cls.PARSER_DOC,
-            fallback=cls.PARSER_OCR,
+            primary_parser=cls.PARSER_DOC,
+            fallback_parser=cls.PARSER_OCR,
             rationale=(
                 f"Mixed content detected (confidence: {detection_result.confidence:.2f}, "
                 f"text ratio: {detection_result.text_statistics.total_characters} chars, "
@@ -246,10 +246,11 @@ class ParserSelector:
         # Docling: ~1s per page
         # Azure OCR: ~5s per page
         
+        seconds: float
         if selection.primary_parser == cls.PARSER_DOC:
-            seconds = page_count * 1
+            seconds = page_count * 1.0
         else:
-            seconds = page_count * 5
+            seconds = page_count * 5.0
         
         # Add fallback time if needed
         if selection.fallback_parser:
@@ -297,7 +298,7 @@ class ParserSelector:
 
 def select_parser_for_job(
     detection_result: ContentAnalysisResult,
-    explicit_config: dict | None = None
+    explicit_config: dict[str, Any] | None = None
 ) -> ParserSelection:
     """Convenience function to select parser for a job.
     

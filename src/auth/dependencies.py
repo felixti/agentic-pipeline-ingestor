@@ -5,6 +5,8 @@ protecting routes with authentication and RBAC.
 """
 
 
+from typing import Any
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -23,16 +25,16 @@ class AuthManager:
     a unified interface for authenticating requests.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize authentication manager."""
-        self.backends: dict[AuthProvider, any] = {}
+        self.backends: dict[AuthProvider, Any] = {}
         self.jwt_handler: JWTHandler | None = None
         self._rbac: RBACManager | None = None
 
     def register_backend(
         self,
         provider: AuthProvider,
-        backend: any,
+        backend: Any,
     ) -> None:
         """Register an authentication backend.
         
@@ -81,7 +83,7 @@ class AuthManager:
                 "UNKNOWN_PROVIDER"
             )
 
-        return await backend.authenticate(credentials)
+        return await backend.authenticate(credentials)  # type: ignore[no-any-return]
 
     async def authenticate_request(
         self,
@@ -127,8 +129,8 @@ class AuthManager:
                         id=payload.sub,
                         email=payload.email,
                         username=payload.username,
-                        roles=payload.roles,
-                        permissions=payload.permissions,
+                        roles=payload.roles or [],
+                        permissions=payload.permissions or [],
                         auth_provider=AuthProvider.JWT,
                     )
                     return AuthResult.success_result(
@@ -217,13 +219,14 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return result.user
+    return result.user  # type: ignore[return-value]
 
 
 async def get_optional_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> User | None:
+
     """Get current user if authenticated, None otherwise.
     
     This is useful for endpoints that can work with or without authentication.
@@ -241,7 +244,7 @@ async def get_optional_user(
         return None
 
 
-def require_permissions(resource: str, action: str):
+def require_permissions(resource: str, action: str) -> Any:
     """Create dependency to require specific permissions.
     
     Args:
@@ -267,7 +270,7 @@ def require_permissions(resource: str, action: str):
     return check
 
 
-def require_role(role: str):
+def require_role(role: str) -> Any:
     """Create dependency to require a specific role.
     
     Args:
@@ -327,7 +330,7 @@ class PermissionChecker:
             # ... create job
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize permission checker."""
         self.rbac = get_rbac_manager()
 

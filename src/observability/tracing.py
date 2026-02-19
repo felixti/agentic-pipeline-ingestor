@@ -28,7 +28,9 @@ except ImportError:
     OTLP_GRPC_AVAILABLE = False
 
 try:
-    from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+    from opentelemetry.exporter.jaeger.thrift import (
+        JaegerExporter,  # type: ignore[import-not-found]
+    )
     JAEGER_AVAILABLE = True
 except ImportError:
     JAEGER_AVAILABLE = False
@@ -78,11 +80,11 @@ class TelemetryManager:
         ... )
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the telemetry manager."""
         self._provider: TracerProvider | None = None
         self._initialized = False
-        self._exporters: list = []
+        self._exporters: list[str] = []
 
     def setup_tracing(
         self,
@@ -119,7 +121,7 @@ class TelemetryManager:
             raise RuntimeError("Tracing is already initialized")
 
         # Build resource attributes
-        resource_attrs = {
+        resource_attrs: dict[str, Any] = {
             SERVICE_NAME: service_name,
             SERVICE_VERSION: service_version,
             DEPLOYMENT_ENVIRONMENT: environment,
@@ -169,6 +171,9 @@ class TelemetryManager:
             azure_connection_string: Azure Monitor connection string
             console_export: Enable console export
         """
+        if self._provider is None:
+            return
+
         # Jaeger exporter
         if jaeger_endpoint and JAEGER_AVAILABLE:
             jaeger_exporter = JaegerExporter(
@@ -236,7 +241,7 @@ class TelemetryManager:
         return self._initialized
 
     @property
-    def active_exporters(self) -> list:
+    def active_exporters(self) -> list[str]:
         """List of active exporter names."""
         return self._exporters.copy()
 
@@ -293,7 +298,7 @@ def start_span(
     name: str,
     kind: SpanKind = SpanKind.INTERNAL,
     attributes: dict[str, Any] | None = None,
-    parent=None,
+    parent: Any = None,
 ) -> Generator[trace.Span, None, None]:
     """Context manager for starting a span.
     
@@ -312,12 +317,15 @@ def start_span(
         ...     process_document(doc_id)
     """
     tracer = get_tracer()
-    with tracer.start_as_current_span(
-        name=name,
-        kind=kind,
-        attributes=attributes,
-        parent=parent,
-    ) as span:
+    # Build span kwargs - only add parent if provided
+    span_kwargs: dict[str, Any] = {
+        "name": name,
+        "kind": kind,
+        "attributes": attributes,
+    }
+    if parent is not None:
+        span_kwargs["context"] = parent
+    with tracer.start_as_current_span(**span_kwargs) as span:
         yield span
 
 
@@ -337,7 +345,7 @@ def start_pipeline_stage_span(
     Yields:
         Active span with pipeline context
     """
-    attrs = {
+    attrs: dict[str, Any] = {
         "pipeline.stage": stage_name,
     }
     if job_id:

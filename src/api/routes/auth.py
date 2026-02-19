@@ -4,20 +4,30 @@ This module provides endpoints for authentication, token management,
 and API key management.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from src.audit.logger import get_audit_logger
 from src.auth.api_key import generate_api_key
 from src.auth.base import AuthProvider, Credentials, User
+
+# Type alias for auth manager to avoid attribute errors
+AuthManagerType = Any
 from src.auth.dependencies import (
     get_auth_manager,
     get_current_user,
     require_admin,
 )
+
+if TYPE_CHECKING:
+    from src.audit.logger import AuditLogger
+
+
+def get_audit_logger() -> "AuditLogger":
+    from src.audit.logger import get_audit_logger as _get_audit_logger
+    return _get_audit_logger()
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -117,9 +127,9 @@ class OAuth2CallbackRequest(BaseModel):
 async def login(
     request: Request,
     login_data: LoginRequest,
-    auth_manager=Depends(get_auth_manager),
-    audit_logger=Depends(get_audit_logger),
-):
+    auth_manager: Any = Depends(get_auth_manager),
+    audit_logger: Any = Depends(get_audit_logger),
+) -> LoginResponse:
     """Login with credentials.
     
     Supports OAuth2 and Azure AD login flows.
@@ -136,8 +146,8 @@ async def login(
 @router.post("/token/refresh", response_model=TokenRefreshResponse)
 async def refresh_token(
     refresh_data: TokenRefreshRequest,
-    auth_manager=Depends(get_auth_manager),
-):
+    auth_manager: Any = Depends(get_auth_manager),
+) -> TokenRefreshResponse:
     """Refresh access token using refresh token."""
     if not auth_manager.jwt_handler:
         raise HTTPException(
@@ -164,7 +174,7 @@ async def refresh_token(
 @router.get("/me", response_model=CurrentUserResponse)
 async def get_me(
     user: User = Depends(get_current_user),
-):
+) -> CurrentUserResponse:
     """Get current authenticated user information."""
     return CurrentUserResponse(
         id=str(user.id),
@@ -181,8 +191,8 @@ async def get_me(
 @router.post("/logout")
 async def logout(
     user: User = Depends(get_current_user),
-    audit_logger=Depends(get_audit_logger),
-):
+    audit_logger: Any = Depends(get_audit_logger),
+) -> dict[str, str]:
     """Logout current user.
     
     Note: With JWT tokens, actual invalidation would require
@@ -204,8 +214,8 @@ async def logout(
 async def oauth2_authorize(
     redirect_uri: str,
     provider: str = "oauth2",  # oauth2 or azure_ad
-    auth_manager=Depends(get_auth_manager),
-):
+    auth_manager: Any = Depends(get_auth_manager),
+) -> OAuth2AuthorizeResponse:
     """Get OAuth2 authorization URL.
     
     Initiates the OAuth2 authorization flow by returning the
@@ -255,9 +265,9 @@ async def oauth2_callback(
     callback_data: OAuth2CallbackRequest,
     redirect_uri: str,
     provider: str = "oauth2",
-    auth_manager=Depends(get_auth_manager),
-    audit_logger=Depends(get_audit_logger),
-):
+    auth_manager: Any = Depends(get_auth_manager),
+    audit_logger: Any = Depends(get_audit_logger),
+) -> LoginResponse:
     """Handle OAuth2 callback.
     
     Exchanges authorization code for tokens and creates user session.
@@ -358,7 +368,7 @@ async def oauth2_callback(
 @router.get("/api-keys", response_model=list[APIKeyResponse])
 async def list_api_keys(
     user: User = Depends(require_admin),
-):
+) -> list[APIKeyResponse]:
     """List all API keys (admin only).
     
     Returns a list of all API keys in the system.
@@ -372,8 +382,8 @@ async def list_api_keys(
 async def create_api_key(
     request: APIKeyCreateRequest,
     user: User = Depends(require_admin),
-    audit_logger=Depends(get_audit_logger),
-):
+    audit_logger: Any = Depends(get_audit_logger),
+) -> APIKeyCreateResponse:
     """Create a new API key (admin only).
     
     Creates a new API key with specified permissions.
@@ -418,8 +428,8 @@ async def create_api_key(
 async def revoke_api_key(
     key_id: str,
     user: User = Depends(require_admin),
-    audit_logger=Depends(get_audit_logger),
-):
+    audit_logger: Any = Depends(get_audit_logger),
+) -> dict[str, str]:
     """Revoke an API key (admin only).
     
     Permanently deactivates an API key.
@@ -441,7 +451,7 @@ async def revoke_api_key(
 async def get_api_key_usage(
     key_id: str,
     user: User = Depends(require_admin),
-):
+) -> dict[str, Any]:
     """Get API key usage statistics (admin only).
     
     Returns usage statistics for a specific API key.

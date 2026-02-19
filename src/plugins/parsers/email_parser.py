@@ -307,7 +307,7 @@ class EmailParser(ParserPlugin):
             ParsedEmail structure
         """
         try:
-            import extract_msg
+            import extract_msg  # type: ignore[import-not-found]
 
             msg = extract_msg.Message(file_path)
 
@@ -344,7 +344,7 @@ class EmailParser(ParserPlugin):
                     filename=attachment.longFilename or attachment.shortFilename or "unnamed",
                     content_type=attachment.mimetype or "application/octet-stream",
                     size=len(attachment.data) if attachment.data else 0,
-                    content=attachment.data,
+                    content=attachment.data or None,
                     is_inline=attachment.isInline,
                 )
                 attachments.append(att)
@@ -536,9 +536,13 @@ class EmailParser(ParserPlugin):
             return ""
 
         try:
-            return payload.decode(charset, errors="replace")
+            if isinstance(payload, bytes):
+                return payload.decode(charset, errors="replace")
+            return str(payload)
         except Exception:
-            return payload.decode("utf-8", errors="replace")
+            if isinstance(payload, bytes):
+                return payload.decode("utf-8", errors="replace")
+            return str(payload)
 
     def _html_to_text(self, html: str) -> str:
         """Convert HTML to plain text.
@@ -553,27 +557,27 @@ class EmailParser(ParserPlugin):
             from html.parser import HTMLParser
 
             class TextExtractor(HTMLParser):
-                def __init__(self):
+                def __init__(self) -> None:
                     super().__init__()
-                    self.text = []
+                    self.text: list[str] = []
                     self.skip_tags = {"script", "style"}
-                    self.current_tag = None
+                    self.current_tag: str | None = None
 
-                def handle_starttag(self, tag, attrs):
+                def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
                     self.current_tag = tag
                     if tag == "br":
                         self.text.append("\n")
                     elif tag == "p":
                         self.text.append("\n\n")
 
-                def handle_endtag(self, tag):
+                def handle_endtag(self, tag: str) -> None:
                     self.current_tag = None
 
-                def handle_data(self, data):
+                def handle_data(self, data: str) -> None:
                     if self.current_tag not in self.skip_tags:
                         self.text.append(data)
 
-                def get_text(self):
+                def get_text(self) -> str:
                     return " ".join("".join(self.text).split())
 
             extractor = TextExtractor()
@@ -601,8 +605,8 @@ class EmailParser(ParserPlugin):
         Returns:
             Tuple of (attachments, embedded_images)
         """
-        attachments = []
-        embedded = []
+        attachments: list[EmailAttachment] = []
+        embedded: list[EmailAttachment] = []
 
         if not msg.is_multipart():
             return attachments, embedded
@@ -657,7 +661,7 @@ class EmailParser(ParserPlugin):
                 content_type=content_type,
                 size=size,
                 content_id=content_id or None,
-                content=content,
+                content=content if isinstance(content, (bytes, type(None))) else None,
                 is_inline=is_inline,
             )
 
@@ -735,7 +739,7 @@ class EmailParser(ParserPlugin):
                 chunks.append(body_text[i:i + chunk_size])
 
         # Metadata
-        metadata = {
+        metadata: dict[str, Any] = {
             "message_id": headers.message_id,
             "subject": headers.subject,
             "from": str(headers.from_addr) if headers.from_addr else None,

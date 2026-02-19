@@ -9,8 +9,8 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from jose import JWTError, jwt
-from jose.exceptions import ExpiredSignatureError
+from jose import JWTError, jwt  # type: ignore[import-untyped]
+from jose.exceptions import ExpiredSignatureError  # type: ignore[import-untyped]
 
 # Configuration constants - in production, these would come from environment/settings
 DEFAULT_ALGORITHM = "HS256"
@@ -37,15 +37,15 @@ class TokenPayload:
     sub: UUID
     email: str | None = None
     username: str | None = None
-    roles: list[str] = None
-    permissions: list[str] = None
+    roles: list[str] | None = None
+    permissions: list[str] | None = None
     type: str = "access"
     iat: datetime | None = None
     exp: datetime | None = None
     jti: str | None = None
-    extra: dict[str, Any] = None
+    extra: dict[str, Any] | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.roles is None:
             self.roles = []
         if self.permissions is None:
@@ -65,7 +65,7 @@ class TokenPayload:
             "iat": self.iat.timestamp() if self.iat else None,
             "exp": self.exp.timestamp() if self.exp else None,
             "jti": self.jti,
-            **self.extra,
+            **(self.extra or {}),
         }
 
     @classmethod
@@ -86,7 +86,7 @@ class TokenPayload:
         extra = {k: v for k, v in data.items() if k not in known_fields}
 
         return cls(
-            sub=UUID(data["sub"]) if "sub" in data else None,
+            sub=UUID(data["sub"]) if "sub" in data else None,  # type: ignore[arg-type]
             email=data.get("email"),
             username=data.get("username"),
             roles=data.get("roles", []),
@@ -192,7 +192,7 @@ class JWTHandler:
         )
 
         # Encode token
-        return jwt.encode(
+        return jwt.encode(  # type: ignore[no-any-return]
             payload.to_dict(),
             self.secret_key,
             algorithm=self.algorithm,

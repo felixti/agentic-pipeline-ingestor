@@ -55,7 +55,7 @@ class LivenessResponse(BaseModel):
 _health_check_latencies: dict[str, list[float]] = {}
 
 
-async def check_database() -> HealthCheckResult:
+async def check_database() -> HealthCheckResult:  # type: ignore[return]
     """Check database connectivity.
     
     Returns:
@@ -99,11 +99,13 @@ async def check_redis() -> HealthCheckResult:
         import redis.asyncio as redis
 
         # Parse Redis URL
-        redis_url = settings.redis_url
+        from src.config import settings as config_settings
+        redis_url = str(config_settings.redis.url if hasattr(config_settings, "redis") else config_settings.redis_url if hasattr(config_settings, "redis_url") else "redis://localhost:6379/0")
         client = redis.from_url(redis_url, socket_connect_timeout=5)
 
         # Test connection
-        pong = await client.ping()
+        pong_result = await client.ping()  # type: ignore[misc]
+        pong = bool(pong_result) if not isinstance(pong_result, bool) else pong_result
         await client.close()
 
         latency = (time.time() - start) * 1000
@@ -302,7 +304,7 @@ async def check_opentelemetry() -> HealthCheckResult:
         )
 
 
-async def check_vector_store() -> HealthCheckResult:
+async def check_vector_store() -> HealthCheckResult:  # type: ignore[return]
     """Check vector store (pgvector) extension availability.
     
     Checks if the PostgreSQL pgvector and pg_trgm extensions are installed
@@ -325,7 +327,7 @@ async def check_vector_store() -> HealthCheckResult:
                 WHERE extname IN ('vector', 'pg_trgm')
             """)
             result = await session.execute(query)
-            extensions = {row[0]: row[1] for row in result.fetchall()}
+            extensions: dict[str, str] = {row[0]: row[1] for row in result.fetchall()}
 
             latency = (time.time() - start) * 1000
 
@@ -436,14 +438,16 @@ async def health_check() -> ComprehensiveHealthResponse:
             all_healthy = False
             continue
 
-        status = HealthStatus.HEALTHY if check.healthy else HealthStatus.UNHEALTHY
-        if not check.healthy:
+        # Cast check to HealthCheckResult since we've filtered out exceptions
+        health_check: HealthCheckResult = check  # type: ignore[assignment]
+        check_status = HealthStatus.HEALTHY if health_check.healthy else HealthStatus.UNHEALTHY
+        if not health_check.healthy:
             all_healthy = False
 
-        components[check.component] = ComponentHealth(
-            status=status,
-            message=check.message,
-            latency_ms=check.latency_ms,
+        components[health_check.component] = ComponentHealth(
+            status=check_status,
+            message=health_check.message,
+            latency_ms=int(health_check.latency_ms) if health_check.latency_ms is not None else None,
         )
 
     # Determine overall status
@@ -491,8 +495,10 @@ async def readiness_probe() -> ReadinessResponse:
             check_results["unknown"] = False
             all_ready = False
         else:
-            check_results[check.component] = check.healthy
-            if not check.healthy:
+            # Cast check to HealthCheckResult since we've filtered out exceptions
+            health_check: HealthCheckResult = check  # type: ignore[assignment]
+            check_results[health_check.component] = health_check.healthy
+            if not health_check.healthy:
                 all_ready = False
 
     if not all_ready:
@@ -572,7 +578,7 @@ async def vector_store_health() -> VectorStoreHealthResponse:
     return VectorStoreHealthResponse(
         healthy=result.healthy,
         status=health_status,
-        message=result.message,
+        message=result.message or "",
         latency_ms=result.latency_ms,
         extensions=extensions,
         pgvector_version=extensions.get("vector"),

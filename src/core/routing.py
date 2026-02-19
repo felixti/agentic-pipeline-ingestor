@@ -158,9 +158,11 @@ class DestinationRouter:
 
         self.logger.info(
             "routing_to_destinations",
-            job_id=str(data.job_id),
-            destination_count=len(destinations),
-            parallel=parallel,
+            extra={
+                "job_id": str(data.job_id),
+                "destination_count": len(destinations),
+                "parallel": parallel,
+            }
         )
 
         results: list[DestinationRouteResult] = []
@@ -175,17 +177,19 @@ class DestinationRouter:
 
             # Route to all destinations in parallel
             tasks = [route_with_semaphore(dest) for dest in destinations]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            gather_results: list[DestinationRouteResult | BaseException] = await asyncio.gather(*tasks, return_exceptions=True)
 
             # Handle any exceptions
             processed_results: list[DestinationRouteResult] = []
-            for i, result in enumerate(results):
+            for i, result in enumerate(gather_results):
                 if isinstance(result, Exception):
                     self.logger.error(
                         "routing_task_failed",
-                        job_id=str(data.job_id),
-                        destination=destinations[i].name or str(destinations[i].type),
-                        error=str(result),
+                        extra={
+                            "job_id": str(data.job_id),
+                            "destination": destinations[i].name or str(destinations[i].type),
+                            "error": str(result),
+                        }
                     )
                     processed_results.append(DestinationRouteResult(
                         destination_id=str(destinations[i].id) if destinations[i].id else "unknown",
@@ -195,7 +199,8 @@ class DestinationRouter:
                         error=str(result),
                     ))
                 else:
-                    processed_results.append(result)
+                    # result is DestinationRouteResult (not BaseException)
+                    processed_results.append(result)  # type: ignore[arg-type]
             results = processed_results
         else:
             # Route sequentially
@@ -222,10 +227,12 @@ class DestinationRouter:
 
         self.logger.info(
             "routing_completed",
-            job_id=str(data.job_id),
-            success_count=success_count,
-            failure_count=failure_count,
-            total_latency_ms=total_latency,
+            extra={
+                "job_id": str(data.job_id),
+                "success_count": success_count,
+                "failure_count": failure_count,
+                "total_latency_ms": total_latency,
+            }
         )
 
         return MultiDestinationResult(
@@ -334,9 +341,11 @@ class DestinationRouter:
 
             self.logger.error(
                 "routing_to_destination_failed",
-                job_id=str(data.job_id),
-                destination=dest_id,
-                error=str(e),
+                extra={
+                    "job_id": str(data.job_id),
+                    "destination": dest_id,
+                    "error": str(e),
+                }
             )
 
             return DestinationRouteResult(
@@ -420,7 +429,8 @@ class DestinationRouter:
             except re.error:
                 return False
 
-        return True
+        # Default: return True for any unknown operators
+        return True  # type: ignore[unreachable]
 
     def _is_circuit_open(self, destination_id: str) -> bool:
         """Check if circuit breaker is open for a destination.
@@ -560,7 +570,7 @@ class CircuitBreaker:
                 # Open the circuit
                 self.state = CircuitBreakerState.OPEN
                 self.last_state_change = datetime.utcnow()
-                logger.warning("circuit_breaker_opened", failure_count=self.failure_count)
+                logger.warning("circuit_breaker_opened", extra={"failure_count": self.failure_count})
 
         elif self.state == CircuitBreakerState.HALF_OPEN:
             # Go back to open

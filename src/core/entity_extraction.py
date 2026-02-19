@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from src.llm.provider import LLMProvider
+from src.llm.provider import ChatMessage, LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,9 @@ class EntityType(str, Enum):
     ORDINAL = "ordinal"
     QUANTITY = "quantity"
     CUSTOM = "custom"
+    EMAIL = "email"
+    URL = "url"
+    PHONE = "phone"
 
 
 @dataclass
@@ -94,7 +97,7 @@ class ExtractionResult:
 
     def get_unique(self) -> list[Entity]:
         """Get unique entities (by text and type)."""
-        seen: set[tuple] = set()
+        seen: set[tuple[str, EntityType]] = set()
         unique = []
         for entity in self.entities:
             key = (entity.text.lower(), entity.type)
@@ -177,7 +180,7 @@ class EntityExtractor:
             return ExtractionResult(
                 entities=entities,
                 processing_time_ms=processing_time,
-                model_used=self._llm.get_model_name(),
+                model_used=getattr(self._llm, "get_model_name", lambda: "unknown")(),
             )
 
         except Exception as e:
@@ -220,7 +223,7 @@ class EntityExtractor:
         return ExtractionResult(
             entities=unique_entities,
             processing_time_ms=total_time,
-            model_used=self._llm.get_model_name(),
+            model_used=getattr(self._llm, "get_model_name", lambda: "unknown")(),
         )
 
     async def _extract_with_llm(
@@ -262,15 +265,15 @@ Rules:
         try:
             response = await self._llm.chat_completion(
                 messages=[
-                    {"role": "system", "content": "You are a precise named entity recognition system."},
-                    {"role": "user", "content": prompt},
+                    ChatMessage.system("You are a precise named entity recognition system."),
+                    ChatMessage.user(prompt),
                 ],
                 temperature=0.1,
                 max_tokens=2000,
             )
 
             # Parse the response
-            content = response.choices[0].message.content.strip()
+            content = response.content.strip()
 
             # Extract JSON from response
             entities_data = self._parse_json_response(content)
@@ -315,14 +318,16 @@ Rules:
         content = content.strip()
 
         try:
-            return json.loads(content)
+            result: list[dict[str, Any]] = json.loads(content)
+            return result
         except json.JSONDecodeError:
             # Try to extract JSON array
             import re
             match = re.search(r"\[.*\]", content, re.DOTALL)
             if match:
                 try:
-                    return json.loads(match.group())
+                    result = json.loads(match.group())
+                    return result
                 except json.JSONDecodeError:
                     pass
 
@@ -338,7 +343,7 @@ Rules:
         Returns:
             Deduplicated list
         """
-        seen: dict[tuple, Entity] = {}
+        seen: dict[tuple[str, EntityType], Entity] = {}
 
         for entity in entities:
             key = (entity.text.lower().strip(), entity.type)
@@ -402,14 +407,14 @@ Common relationship types: works_at, founded, located_in, part_of, owns, knows, 
         try:
             response = await self._llm.chat_completion(
                 messages=[
-                    {"role": "system", "content": "You are a relationship extraction system."},
-                    {"role": "user", "content": prompt},
+                    ChatMessage.system("You are a relationship extraction system."),
+                    ChatMessage.user(prompt),
                 ],
                 temperature=0.1,
                 max_tokens=2000,
             )
 
-            content = response.choices[0].message.content.strip()
+            content = response.content.strip()
             relationships = self._parse_json_response(content)
 
             return relationships

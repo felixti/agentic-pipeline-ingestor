@@ -1,7 +1,7 @@
 """Repository for job result data access."""
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import asc, desc, func, select
@@ -25,8 +25,8 @@ class JobResultRepository:
         self,
         job_id: str | UUID,
         extracted_text: str | None = None,
-        output_data: dict | None = None,
-        result_metadata: dict | None = None,
+        output_data: dict[str, Any] | None = None,
+        result_metadata: dict[str, Any] | None = None,
         quality_score: float | None = None,
         processing_time_ms: int | None = None,
         output_uri: str | None = None,
@@ -58,14 +58,14 @@ class JobResultRepository:
         existing = await self.get_by_job_id(job_id)
         if existing:
             # Update existing result
-            existing.extracted_text = extracted_text
-            existing.output_data = output_data or {}
-            existing.result_metadata = result_metadata or {}
-            existing.quality_score = quality_score
-            existing.processing_time_ms = processing_time_ms
-            existing.output_uri = output_uri
-            existing.expires_at = expires_at
-            existing.created_at = datetime.utcnow()
+            existing.extracted_text = extracted_text  # type: ignore[assignment]
+            existing.output_data = output_data or {}  # type: ignore[assignment]
+            existing.result_metadata = result_metadata or {}  # type: ignore[assignment]
+            existing.quality_score = quality_score  # type: ignore[assignment]
+            existing.processing_time_ms = processing_time_ms  # type: ignore[assignment]
+            existing.output_uri = output_uri  # type: ignore[assignment]
+            existing.expires_at = expires_at  # type: ignore[assignment]
+            existing.created_at = datetime.utcnow()  # type: ignore[assignment]
             await self.session.commit()
             await self.session.refresh(existing)
             return existing

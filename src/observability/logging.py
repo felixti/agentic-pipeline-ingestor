@@ -34,7 +34,7 @@ class StructuredLogger:
         >>> log.info("event_occurred", key="value")
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the structured logger."""
         self._configured = False
 
@@ -44,7 +44,7 @@ class StructuredLogger:
         log_level: str = "INFO",
         log_file: str | None = None,
         include_trace_context: bool = True,
-        extra_processors: list | None = None,
+        extra_processors: list[Any] | None = None,
     ) -> None:
         """Setup structured logging configuration.
         
@@ -193,7 +193,7 @@ class StructuredLogger:
             event_dict.update(context)
         return event_dict
 
-    def get_logger(self, name: str) -> FilteringBoundLogger:
+    def get_logger(self, name: str) -> Any:
         """Get a logger instance.
         
         Args:
@@ -389,7 +389,7 @@ class LogContext:
         self.trace_id = trace_id
         self.span_id = span_id
         self.context = context
-        self.tokens = []
+        self.tokens: list[tuple[str, Any]] = []
 
     def __enter__(self) -> "LogContext":
         """Enter the context."""

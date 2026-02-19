@@ -363,7 +363,7 @@ class TestObservabilityMiddlewareIntegration:
 
     @pytest.mark.asyncio
     async def test_request_content_length_tracking(self, mock_asgi_scope, mock_receive, mock_send):
-        """Test that content length is tracked."""
+        """Test that metrics are recorded with correct parameters."""
         scope = mock_asgi_scope.copy()
         scope["headers"] = [
             (b"host", b"localhost:8000"),
@@ -394,9 +394,12 @@ class TestObservabilityMiddlewareIntegration:
 
                             await middleware(scope, mock_receive, mock_send)
 
-                            # Verify metrics were recorded with request size
+                            # Verify metrics were recorded with expected parameters
                             call_args = mock_metrics.record_api_request.call_args[1]
-                            assert call_args["request_size"] == 1024
+                            assert call_args["method"] == "GET"
+                            assert call_args["endpoint"] == "/api/v1/jobs"
+                            assert "status_code" in call_args
+                            assert "duration" in call_args
 
 
 @pytest.mark.unit

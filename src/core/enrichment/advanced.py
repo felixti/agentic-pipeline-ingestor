@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from src.llm.provider import LLMProvider
+from src.llm.provider import ChatMessage, LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class SummarizationResult:
     processing_time_ms: int = 0
     key_points: list[str] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.original_length > 0:
             self.compression_ratio = self.summary_length / self.original_length
 
@@ -284,7 +284,7 @@ class AdvancedEnricher:
             return text, sentences[:3]
 
         # Score sentences based on word frequency
-        word_freq = {}
+        word_freq: dict[str, float] = {}
         words = re.findall(r"\b\w+\b", text.lower())
 
         for word in words:
@@ -294,7 +294,7 @@ class AdvancedEnricher:
         # Score each sentence
         sentence_scores = []
         for sentence in sentences:
-            score = 0
+            score: float = 0.0
             sentence_words = re.findall(r"\b\w+\b", sentence.lower())
             for word in sentence_words:
                 score += word_freq.get(word, 0)
@@ -354,14 +354,14 @@ Key Points:
         try:
             response = await self._llm.chat_completion(
                 messages=[
-                    {"role": "system", "content": "You are a summarization assistant."},
-                    {"role": "user", "content": prompt},
+                    ChatMessage.system("You are a summarization assistant."),
+                    ChatMessage.user(prompt),
                 ],
                 temperature=0.3,
                 max_tokens=500,
             )
 
-            content = response.choices[0].message.content
+            content = response.content
 
             # Parse summary and key points
             summary = content
@@ -431,16 +431,18 @@ Respond in JSON format:
 }}"""
 
         try:
+            if self._llm is None:
+                return self._lexicon_sentiment(text, start_time)
             response = await self._llm.chat_completion(
                 messages=[
-                    {"role": "system", "content": "You are a sentiment analysis assistant."},
-                    {"role": "user", "content": prompt},
+                    ChatMessage.system("You are a sentiment analysis assistant."),
+                    ChatMessage.user(prompt),
                 ],
                 temperature=0.2,
                 max_tokens=300,
             )
 
-            content = response.choices[0].message.content
+            content = response.content
 
             # Parse JSON response
             import json
@@ -592,16 +594,18 @@ Text:
 Respond with just the topic name and confidence (0-1)."""
 
         try:
+            if self._llm is None:
+                return None
             response = await self._llm.chat_completion(
                 messages=[
-                    {"role": "system", "content": "You are a topic classification assistant."},
-                    {"role": "user", "content": prompt},
+                    ChatMessage.system("You are a topic classification assistant."),
+                    ChatMessage.user(prompt),
                 ],
                 temperature=0.2,
                 max_tokens=50,
             )
 
-            content = response.choices[0].message.content.lower().strip()
+            content = response.content.lower().strip()
 
             # Parse response
             for category in self._topic_categories.keys():
@@ -650,7 +654,7 @@ Respond with just the topic name and confidence (0-1)."""
         }
 
         # Count word frequencies
-        word_freq = {}
+        word_freq: dict[str, float] = {}
         for word in words:
             if word not in stop_words and len(word) > 3:
                 word_freq[word] = word_freq.get(word, 0) + 1
@@ -686,7 +690,7 @@ Respond with just the topic name and confidence (0-1)."""
             "de": len(words & german_words),
         }
 
-        best_lang = max(scores, key=scores.get)
+        best_lang = max(scores, key=lambda k: scores[k])
         return best_lang if scores[best_lang] > 0 else "unknown"
 
     def _estimate_reading_level(self, text: str) -> str:

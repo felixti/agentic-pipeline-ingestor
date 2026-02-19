@@ -215,7 +215,7 @@ class ScaleWorkersAction(RemediationAction):
 
     async def execute(self, anomaly: Anomaly) -> RemediationResult:
         """Scale up workers."""
-        self.logger.info("scaling_workers", anomaly_id=str(anomaly.id))
+        self.logger.info("scaling_workers", extra={"anomaly_id": str(anomaly.id)})
 
         # In a real implementation, this would trigger a scaling action
         # For now, we simulate the action
@@ -243,7 +243,7 @@ class RestartParserAction(RemediationAction):
     async def execute(self, anomaly: Anomaly) -> RemediationResult:
         """Restart the degraded parser."""
         parser_id = anomaly.context.get("parser_id", "unknown")
-        self.logger.info("restarting_parser", parser_id=parser_id)
+        self.logger.info("restarting_parser", extra={"parser_id": parser_id})
 
         return RemediationResult(
             anomaly_id=anomaly.id,
@@ -267,7 +267,7 @@ class ClearQueueAction(RemediationAction):
 
     async def execute(self, anomaly: Anomaly) -> RemediationResult:
         """Clear stuck jobs from queue."""
-        self.logger.warning("clearing_queue", anomaly_id=str(anomaly.id))
+        self.logger.warning("clearing_queue", extra={"anomaly_id": str(anomaly.id)})
 
         return RemediationResult(
             anomaly_id=anomaly.id,
@@ -292,7 +292,7 @@ class SwitchDestinationAction(RemediationAction):
     async def execute(self, anomaly: Anomaly) -> RemediationResult:
         """Switch to backup destination."""
         dest_id = anomaly.context.get("destination_id", "unknown")
-        self.logger.info("switching_destination", from_dest=dest_id)
+        self.logger.info("switching_destination", extra={"from_dest": dest_id})
 
         return RemediationResult(
             anomaly_id=anomaly.id,
@@ -317,7 +317,7 @@ class SelfHealingSystem:
             auto_remediate: Whether to auto-remediate detected issues
         """
         self.logger = logger
-        self.auto_remediate = auto_remediate
+        self._auto_remediate = auto_remediate
         self._anomalies: dict[UUID, Anomaly] = {}
         self._remediation_actions: list[RemediationAction] = []
         self._health_history: list[HealthMetrics] = []
@@ -453,14 +453,16 @@ class SelfHealingSystem:
                     self.logger.error(f"Error in anomaly callback: {e}")
 
             # Auto-remediate if enabled
-            if self.auto_remediate:
+            if self._auto_remediate:
                 await self.auto_remediate_anomaly(anomaly)
 
         if anomalies:
             self.logger.warning(
                 "anomalies_detected",
-                count=len(anomalies),
-                types=[a.type.value for a in anomalies],
+                extra={
+                    "count": len(anomalies),
+                    "types": [a.type.value for a in anomalies],
+                }
             )
 
         return anomalies
@@ -527,8 +529,10 @@ class SelfHealingSystem:
             if await action.can_remediate(anomaly):
                 self.logger.info(
                     "attempting_auto_remediation",
-                    anomaly_id=str(anomaly.id),
-                    action=action.name,
+                    extra={
+                        "anomaly_id": str(anomaly.id),
+                        "action": action.name,
+                    }
                 )
 
                 try:
@@ -537,9 +541,11 @@ class SelfHealingSystem:
 
                     self.logger.info(
                         "auto_remediation_completed",
-                        anomaly_id=str(anomaly.id),
-                        success=result.success,
-                        action=action.name,
+                        extra={
+                            "anomaly_id": str(anomaly.id),
+                            "success": result.success,
+                            "action": action.name,
+                        }
                     )
 
                     return result
@@ -547,9 +553,11 @@ class SelfHealingSystem:
                 except Exception as e:
                     self.logger.error(
                         "auto_remediation_failed",
-                        anomaly_id=str(anomaly.id),
-                        action=action.name,
-                        error=str(e),
+                        extra={
+                            "anomaly_id": str(anomaly.id),
+                            "action": action.name,
+                            "error": str(e),
+                        }
                     )
 
         # No applicable action found
@@ -633,7 +641,7 @@ class SelfHealingSystem:
             message=notes or "Manually resolved",
         )
 
-        self.logger.info("anomaly_resolved", anomaly_id=str(anomaly_id))
+        self.logger.info("anomaly_resolved", extra={"anomaly_id": str(anomaly_id)})
         return anomaly
 
     def get_health_trends(self, minutes: int = 60) -> dict[str, Any]:

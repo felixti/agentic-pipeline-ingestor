@@ -1,7 +1,7 @@
 """Repository for audit log data access."""
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import asc, desc, func, select
@@ -30,7 +30,7 @@ class AuditLogRepository:
         api_key_id: str | None = None,
         request_method: str | None = None,
         request_path: str | None = None,
-        request_details: dict | None = None,
+        request_details: dict[str, Any] | None = None,
         success: bool = True,
         error_message: str | None = None,
         ip_address: str | None = None,
@@ -91,7 +91,7 @@ class AuditLogRepository:
         start_date: str | None = None,
         end_date: str | None = None,
         success: bool | None = None,
-    ) -> tuple[list[AuditLogModel], int]:
+    ) -> tuple[list[AuditLogModel], int | None]:
         """Query audit logs with filters.
         
         Args:

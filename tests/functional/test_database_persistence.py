@@ -11,9 +11,8 @@ from datetime import datetime
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-
 
 # Database connection
 DB_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/pipeline"
@@ -134,7 +133,7 @@ class TestDatabasePersistence:
             assert str(row[0]) == str(test_id), "❌ ID mismatch!"
             assert row[3] == "Test content for database persistence proof", "❌ Content mismatch!"
             
-            print(f"   ✅ Chunk retrieved from database")
+            print("   ✅ Chunk retrieved from database")
             print(f"   - ID: {row[0]}")
             print(f"   - Job ID: {row[1]}")
             print(f"   - Content: {row[3][:50]}...")
@@ -179,7 +178,7 @@ class TestDatabasePersistence:
                     "metadata_json": f'{{"index": {i}}}'
                 })
         
-        print(f"\n✅ PROOF 5: Inserted 5 chunks with different embeddings")
+        print("\n✅ PROOF 5: Inserted 5 chunks with different embeddings")
         
         # Verify count
         async with engine.connect() as conn:
@@ -189,7 +188,7 @@ class TestDatabasePersistence:
             count = result.scalar()
             
             assert count == 5, f"❌ Expected 5 chunks, found {count}!"
-            print(f"   ✅ All 5 chunks persisted in database")
+            print("   ✅ All 5 chunks persisted in database")
         
         await engine.dispose()
 
@@ -386,7 +385,7 @@ class TestDatabasePersistence:
             
             print("\n✅ PROOF 9: HNSW index exists for vector similarity")
             print(f"   - Index: {row[0]}")
-            print(f"   - Type: HNSW (approximate nearest neighbor)")
+            print("   - Type: HNSW (approximate nearest neighbor)")
         
         await engine.dispose()
 
@@ -416,13 +415,13 @@ class TestDatabasePersistence:
                     "job_id": test_job_id,
                     "embedding": str(wrong_embedding).replace(" ", "")
                 })
-                assert False, "❌ Should have raised error for wrong dimension!"
+                raise AssertionError("❌ Should have raised error for wrong dimension!")
             except Exception as e:
                 assert "1536" in str(e) or "dimension" in str(e).lower(), f"❌ Wrong error: {e}"
                 print("\n✅ PROOF 10: Vector dimension constraint enforced")
-                print(f"   - Expected: 1536 dimensions")
-                print(f"   - Attempted: 768 dimensions")
-                print(f"   - Result: Error raised as expected")
+                print("   - Expected: 1536 dimensions")
+                print("   - Attempted: 768 dimensions")
+                print("   - Result: Error raised as expected")
         
         await engine.dispose()
 

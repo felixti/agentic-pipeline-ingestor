@@ -1,6 +1,6 @@
 """Parser selection service for routing documents to optimal parsers."""
 
-from typing import List, Optional
+from typing import Optional
 
 from src.core.content_detection.models import (
     ContentAnalysisResult,
@@ -15,7 +15,7 @@ class ParserSelection:
     def __init__(
         self,
         primary_parser: str,
-        fallback_parser: Optional[str],
+        fallback_parser: str | None,
         rationale: str,
         overridden: bool = False
     ):
@@ -48,7 +48,7 @@ class ParserConfig:
     def __init__(
         self,
         primary_parser: str,
-        fallback_parser: Optional[str] = None,
+        fallback_parser: str | None = None,
         force_ocr: bool = False
     ):
         """Initialize parser config.
@@ -77,7 +77,7 @@ class ParserSelector:
     def select_parser(
         cls,
         detection_result: ContentAnalysisResult,
-        explicit_config: Optional[ParserConfig] = None
+        explicit_config: ParserConfig | None = None
     ) -> ParserSelection:
         """Select parser based on detection result.
         
@@ -297,7 +297,7 @@ class ParserSelector:
 
 def select_parser_for_job(
     detection_result: ContentAnalysisResult,
-    explicit_config: Optional[dict] = None
+    explicit_config: dict | None = None
 ) -> ParserSelection:
     """Convenience function to select parser for a job.
     

@@ -3,7 +3,7 @@
 import hashlib
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import fitz  # PyMuPDF
 import pdfplumber
@@ -24,7 +24,7 @@ class TextExtractor:
     """Extracts text statistics from PDF using pdfplumber."""
     
     @staticmethod
-    def extract_text_statistics(file_path: Path) -> Tuple[TextStatistics, List[int]]:
+    def extract_text_statistics(file_path: Path) -> tuple[TextStatistics, list[int]]:
         """Extract text statistics from PDF.
         
         Args:
@@ -77,7 +77,7 @@ class ImageAnalyzer:
     """Analyzes image content in PDF using PyMuPDF."""
     
     @staticmethod
-    def analyze_images(file_path: Path) -> Tuple[ImageStatistics, List[int], List[float], List[float]]:
+    def analyze_images(file_path: Path) -> tuple[ImageStatistics, list[int], list[float], list[float]]:
         """Analyze images in PDF.
         
         Args:
@@ -173,9 +173,9 @@ class ContentClassifier:
         cls,
         text_stats: TextStatistics,
         image_stats: ImageStatistics,
-        chars_per_page: List[int],
-        images_per_page: List[int],
-    ) -> Tuple[ContentType, float, str, List[str]]:
+        chars_per_page: list[int],
+        images_per_page: list[int],
+    ) -> tuple[ContentType, float, str, list[str]]:
         """Classify content type and determine recommended parser.
         
         Args:

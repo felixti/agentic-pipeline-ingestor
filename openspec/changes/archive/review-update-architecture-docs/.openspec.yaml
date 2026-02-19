@@ -1,0 +1,16 @@
+name: review-update-architecture-docs
+created: "2026-02-18T22:30:00"
+schema: default
+artifacts:
+  proposal:
+    status: complete
+    path: proposal.md
+  specs:
+    status: complete
+    path: specs/
+  design:
+    status: complete
+    path: design.md
+  tasks:
+    status: complete
+    path: tasks.md

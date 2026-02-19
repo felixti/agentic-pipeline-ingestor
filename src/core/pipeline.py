@@ -1,17 +1,18 @@
 """Pipeline execution with content detection and vector store integration."""
 
 import hashlib
+from datetime import UTC
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from uuid import UUID, uuid4
 
 import structlog
 
-from src.vector_store_config import get_vector_store_config
 from src.core.content_detection.models import ContentAnalysisResult
 from src.core.content_detection.service import ContentDetectionService
 from src.core.job_context import JobContext
 from src.core.parser_selection import ParserConfig, ParserSelector
+from src.vector_store_config import get_vector_store_config
 
 logger = structlog.get_logger(__name__)
 
@@ -63,7 +64,7 @@ class DetectStage(PipelineStage):
     
     name = "detect"
     
-    def __init__(self, detection_service: Optional[ContentDetectionService] = None):
+    def __init__(self, detection_service: ContentDetectionService | None = None):
         """Initialize detection stage.
         
         Args:
@@ -320,7 +321,7 @@ class ChunkStage(PipelineStage):
             import re
             
             # Split into paragraphs
-            paragraphs = re.split(r'\n\s*\n', text)
+            paragraphs = re.split(r"\n\s*\n", text)
             
             current_chunk = []
             current_size = 0
@@ -479,10 +480,11 @@ class EmbedStage(PipelineStage):
         
         try:
             # Import here to avoid circular dependencies
-            from src.services.embedding_service import EmbeddingService
-            from src.db.repositories.document_chunk_repository import DocumentChunkRepository
-            from src.db.models import DocumentChunkModel
             from sqlalchemy.ext.asyncio import AsyncSession
+
+            from src.db.models import DocumentChunkModel
+            from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+            from src.services.embedding_service import EmbeddingService
             
             # Initialize embedding service if not provided
             embedding_service = self._embedding_service
@@ -568,7 +570,7 @@ class Pipeline:
     
     def __init__(
         self,
-        detection_service: Optional[ContentDetectionService] = None,
+        detection_service: ContentDetectionService | None = None,
         embedding_service: Any = None,
     ):
         """Initialize pipeline.
@@ -590,8 +592,8 @@ class Pipeline:
         self,
         file_path: str,
         file_type: str,
-        job_id: Optional[UUID] = None,
-        config: Optional[Dict[str, Any]] = None
+        job_id: UUID | None = None,
+        config: dict[str, Any] | None = None
     ) -> JobContext:
         """Execute pipeline on a file.
         
@@ -614,7 +616,7 @@ class Pipeline:
             file_path=file_path,
             file_type=file_type,
             config=config or {},
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
         
         log = logger.bind(job_id=str(job_id))
@@ -645,7 +647,7 @@ class PipelineExecutor:
         self,
         config: Any = None,
         plugin_registry: Any = None,
-        detection_service: Optional[Any] = None,
+        detection_service: Any | None = None,
         embedding_service: Any = None,
     ):
         """Initialize pipeline executor.
@@ -676,9 +678,9 @@ class PipelineExecutor:
         """
         from datetime import datetime, timezone
         
-        job_id = getattr(job, 'id', uuid4())
-        file_path = getattr(job, 'source_uri', None)
-        file_type = getattr(job, 'mime_type', 'application/octet-stream')
+        job_id = getattr(job, "id", uuid4())
+        file_path = getattr(job, "source_uri", None)
+        file_type = getattr(job, "mime_type", "application/octet-stream")
         
         if file_path is None:
             raise ValueError("Job must have source_uri")
@@ -687,18 +689,18 @@ class PipelineExecutor:
         job_config = {}
         if self.config:
             # Convert config to dict if possible
-            if hasattr(self.config, 'model_dump'):
+            if hasattr(self.config, "model_dump"):
                 job_config = self.config.model_dump()
-            elif hasattr(self.config, 'dict'):
+            elif hasattr(self.config, "dict"):
                 job_config = self.config.dict()
             else:
                 job_config = vars(self.config)
         
         # Add job-specific config
-        if hasattr(job, 'pipeline_config') and job.pipeline_config:
-            if hasattr(job.pipeline_config, 'model_dump'):
+        if hasattr(job, "pipeline_config") and job.pipeline_config:
+            if hasattr(job.pipeline_config, "model_dump"):
                 job_config.update(job.pipeline_config.model_dump())
-            elif hasattr(job.pipeline_config, 'dict'):
+            elif hasattr(job.pipeline_config, "dict"):
                 job_config.update(job.pipeline_config.dict())
         
         context = await self.pipeline.execute(
@@ -709,10 +711,10 @@ class PipelineExecutor:
         )
         
         # Update job status if methods exist
-        if hasattr(job, 'status'):
+        if hasattr(job, "status"):
             job.status = "COMPLETED"
-        if hasattr(job, 'completed_at'):
-            job.completed_at = datetime.now(timezone.utc)
+        if hasattr(job, "completed_at"):
+            job.completed_at = datetime.now(UTC)
         
         return context
 
@@ -720,8 +722,8 @@ class PipelineExecutor:
 async def run_pipeline(
     file_path: str,
     file_type: str = "application/pdf",
-    job_id: Optional[UUID] = None,
-    config: Optional[Dict[str, Any]] = None
+    job_id: UUID | None = None,
+    config: dict[str, Any] | None = None
 ) -> JobContext:
     """Convenience function to run pipeline.
     

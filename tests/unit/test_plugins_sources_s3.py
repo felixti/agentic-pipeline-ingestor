@@ -8,7 +8,6 @@ import pytest
 from src.plugins.base import Connection, HealthStatus, SourceFile
 from src.plugins.sources.s3_source import S3Config, S3SourcePlugin
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================

@@ -38,7 +38,7 @@ class DetectionCache:
         """
         return f"{self.CACHE_PREFIX}{file_hash}"
     
-    async def get(self, file_hash: str) -> Optional[ContentDetectionRecord]:
+    async def get(self, file_hash: str) -> ContentDetectionRecord | None:
         """Get cached detection result.
         
         Args:
@@ -66,7 +66,7 @@ class DetectionCache:
         self,
         file_hash: str,
         record: ContentDetectionRecord,
-        ttl: Optional[int] = None
+        ttl: int | None = None
     ) -> bool:
         """Cache detection result.
         

@@ -7,9 +7,9 @@ import sys
 from uuid import uuid4
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.core.content_detection.models import (
@@ -106,10 +106,10 @@ async def test_detection_result_repository():
         # Verify it was saved by retrieving it
         retrieved = await repo.get_by_hash(result.file_hash)
         if retrieved:
-            print(f"  ✓ Successfully retrieved from database")
+            print("  ✓ Successfully retrieved from database")
             return saved_record.id
         else:
-            print(f"  ✗ Failed to retrieve from database")
+            print("  ✗ Failed to retrieve from database")
             return None
     
     await engine.dispose()

@@ -20,8 +20,8 @@ except ImportError:
     LITELLM_AVAILABLE = False
     litellm = None  # type: ignore
 
-from src.vector_store_config import VectorStoreConfig, get_vector_store_config
 from src.observability.logging import get_logger
+from src.vector_store_config import VectorStoreConfig, get_vector_store_config
 
 logger = get_logger(__name__)
 

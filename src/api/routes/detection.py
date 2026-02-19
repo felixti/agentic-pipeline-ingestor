@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import tempfile
 from pathlib import Path
-from typing import List
 from uuid import uuid4
 
 import httpx
@@ -116,7 +115,7 @@ async def _download_file_from_url(url: str, headers: dict = None) -> bytes:
     except httpx.RequestError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to download file: {str(e)}"
+            detail=f"Failed to download file: {e!s}"
         )
 
 
@@ -191,7 +190,7 @@ async def detect_content(
         )
     
     # Validate file type
-    if not file.filename or not file.filename.lower().endswith('.pdf'):
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
@@ -239,7 +238,7 @@ async def detect_content(
             detail={
                 "error": {
                     "code": "ANALYSIS_ERROR",
-                    "message": f"Failed to analyze PDF: {str(e)}"
+                    "message": f"Failed to analyze PDF: {e!s}"
                 }
             }
         )
@@ -318,7 +317,7 @@ async def detect_content_from_url(
             detail={
                 "error": {
                     "code": "ANALYSIS_ERROR",
-                    "message": f"Failed to analyze PDF: {str(e)}"
+                    "message": f"Failed to analyze PDF: {e!s}"
                 }
             }
         )
@@ -333,7 +332,7 @@ async def detect_content_from_url(
 )
 async def detect_content_batch(
     request: Request,
-    files: List[UploadFile] = File(..., description="PDF files to analyze (max 10)"),
+    files: list[UploadFile] = File(..., description="PDF files to analyze (max 10)"),
     detailed: bool = Form(default=False),
 ):
     """Detect content type for multiple PDF files.
@@ -390,7 +389,7 @@ async def detect_content_batch(
         
         try:
             # Validate file type
-            if not filename.lower().endswith('.pdf'):
+            if not filename.lower().endswith(".pdf"):
                 return BatchDetectionItem(
                     filename=filename,
                     content_type="unknown",

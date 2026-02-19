@@ -9,7 +9,6 @@ import pytest
 from src.plugins.base import HealthStatus, ParsingResult, SupportResult
 from src.plugins.parsers.csv_parser import CSVParser
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================

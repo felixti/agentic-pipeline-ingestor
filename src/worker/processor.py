@@ -5,7 +5,6 @@ including pipeline execution and error handling.
 """
 
 import asyncio
-import logging
 from typing import Any
 from uuid import UUID
 
@@ -16,10 +15,12 @@ from src.core.engine import OrchestrationEngine
 from src.db.models import JobModel, JobStatus, get_async_engine
 from src.db.repositories.job import JobRepository
 from src.db.repositories.job_result import JobResultRepository
-from src.llm.provider import LLMProvider, load_llm_config
+from src.llm.config import load_llm_config
+from src.llm.provider import LLMProvider
+from src.observability.logging import get_logger
 from src.plugins.registry import PluginRegistry
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class JobProcessor:
@@ -52,7 +53,7 @@ class JobProcessor:
         self.llm: LLMProvider | None = None
         self._running = False
         self._current_job: UUID | None = None
-        self._heartbeat_task: asyncio.Task | None = None
+        self._heartbeat_task: asyncio.Task[Any] | None = None
 
     async def initialize(self) -> None:
         """Initialize the processor with dependencies."""
@@ -371,10 +372,10 @@ class JobProcessor:
                                 job_id=str(job_id),
                                 attempt=attempt + 1,
                             )
-                            job.retry_count += 1
-                            job.status = JobStatus.PENDING
-                            job.error_message = None
-                            job.error_code = None
+                            job.retry_count = job.retry_count + 1  # type: ignore[assignment]
+                            job.status = JobStatus.PENDING  # type: ignore[assignment]
+                            job.error_message = None  # type: ignore[assignment]
+                            job.error_code = None  # type: ignore[assignment]
                             await session.commit()
                             await asyncio.sleep(2 ** attempt)  # Exponential backoff
                             continue

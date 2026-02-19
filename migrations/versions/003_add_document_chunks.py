@@ -6,17 +6,18 @@ Create Date: 2026-02-18 01:07:00.000000
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
+from typing import Union
 
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from alembic import op
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 # revision identifiers, used by Alembic.
-revision: str = '003'
-down_revision: Union[str, None] = '002'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "003"
+down_revision: str | None = "002"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -32,50 +33,50 @@ def upgrade() -> None:
     """
     # Create document_chunks table
     op.create_table(
-        'document_chunks',
-        sa.Column('id', UUID(as_uuid=True), nullable=False),
-        sa.Column('job_id', UUID(as_uuid=True), nullable=False),
-        sa.Column('chunk_index', sa.Integer(), nullable=False),
-        sa.Column('content', sa.Text(), nullable=False),
-        sa.Column('content_hash', sa.String(64), nullable=True),
-        sa.Column('embedding', sa.Text(), nullable=True),  # Stored as vector type via SQL
-        sa.Column('chunk_metadata', JSONB(), nullable=False, server_default='{}'),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+        "document_chunks",
+        sa.Column("id", UUID(as_uuid=True), nullable=False),
+        sa.Column("job_id", UUID(as_uuid=True), nullable=False),
+        sa.Column("chunk_index", sa.Integer(), nullable=False),
+        sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("content_hash", sa.String(64), nullable=True),
+        sa.Column("embedding", sa.Text(), nullable=True),  # Stored as vector type via SQL
+        sa.Column("chunk_metadata", JSONB(), nullable=False, server_default="{}"),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         
         # Primary key
-        sa.PrimaryKeyConstraint('id'),
+        sa.PrimaryKeyConstraint("id"),
         
         # Foreign key constraint
         sa.ForeignKeyConstraint(
-            ['job_id'], ['jobs.id'],
-            name='fk_document_chunks_job_id',
-            ondelete='CASCADE'
+            ["job_id"], ["jobs.id"],
+            name="fk_document_chunks_job_id",
+            ondelete="CASCADE"
         ),
         
         # Unique constraint: one chunk_index per job
-        sa.UniqueConstraint('job_id', 'chunk_index', name='uq_document_chunks_job_chunk'),
+        sa.UniqueConstraint("job_id", "chunk_index", name="uq_document_chunks_job_chunk"),
     )
     
     # Create standard B-tree indexes
     # Index on job_id for filtering chunks by job
     op.create_index(
-        'idx_document_chunks_job_id',
-        'document_chunks',
-        ['job_id']
+        "idx_document_chunks_job_id",
+        "document_chunks",
+        ["job_id"]
     )
     
     # Index on content_hash for deduplication lookups
     op.create_index(
-        'idx_document_chunks_content_hash',
-        'document_chunks',
-        ['content_hash']
+        "idx_document_chunks_content_hash",
+        "document_chunks",
+        ["content_hash"]
     )
     
     # Composite index for efficient job + chunk_index queries
     op.create_index(
-        'idx_document_chunks_job_chunk',
-        'document_chunks',
-        ['job_id', 'chunk_index']
+        "idx_document_chunks_job_chunk",
+        "document_chunks",
+        ["job_id", "chunk_index"]
     )
     
     # HNSW index for vector similarity search (cosine distance)
@@ -124,9 +125,9 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS idx_document_chunks_embedding_hnsw;")
     
     # Drop standard indexes
-    op.drop_index('idx_document_chunks_job_chunk', table_name='document_chunks')
-    op.drop_index('idx_document_chunks_content_hash', table_name='document_chunks')
-    op.drop_index('idx_document_chunks_job_id', table_name='document_chunks')
+    op.drop_index("idx_document_chunks_job_chunk", table_name="document_chunks")
+    op.drop_index("idx_document_chunks_content_hash", table_name="document_chunks")
+    op.drop_index("idx_document_chunks_job_id", table_name="document_chunks")
     
     # Drop table (automatically drops unique constraint)
-    op.drop_table('document_chunks')
+    op.drop_table("document_chunks")

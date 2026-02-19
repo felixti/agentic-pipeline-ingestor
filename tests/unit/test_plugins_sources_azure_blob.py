@@ -8,7 +8,6 @@ import pytest
 from src.plugins.base import Connection, HealthStatus, SourceFile
 from src.plugins.sources.azure_blob_source import AzureBlobConfig, AzureBlobSourcePlugin
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================

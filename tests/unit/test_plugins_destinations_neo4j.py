@@ -7,9 +7,14 @@ from uuid import UUID
 
 import pytest
 
-from src.plugins.base import Connection, HealthStatus, TransformedData, ValidationResult, WriteResult
+from src.plugins.base import (
+    Connection,
+    HealthStatus,
+    TransformedData,
+    ValidationResult,
+    WriteResult,
+)
 from src.plugins.destinations.neo4j import Neo4jDestination, Neo4jMockDestination
-
 
 # ============================================================================
 # Fixtures

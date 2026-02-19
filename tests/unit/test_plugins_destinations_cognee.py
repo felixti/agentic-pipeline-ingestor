@@ -8,9 +8,14 @@ from uuid import UUID
 import httpx
 import pytest
 
-from src.plugins.base import Connection, HealthStatus, TransformedData, ValidationResult, WriteResult
+from src.plugins.base import (
+    Connection,
+    HealthStatus,
+    TransformedData,
+    ValidationResult,
+    WriteResult,
+)
 from src.plugins.destinations.cognee import CogneeDestination, CogneeMockDestination
-
 
 # ============================================================================
 # Fixtures

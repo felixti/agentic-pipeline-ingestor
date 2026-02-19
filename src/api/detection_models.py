@@ -1,6 +1,7 @@
 """API request/response models for content detection endpoints."""
 
-from typing import Any, Dict, List, Optional
+from datetime import UTC
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
@@ -34,7 +35,7 @@ class DetectionUrlRequest(BaseModel):
     """Request model for URL-based detection."""
     
     url: HttpUrl = Field(..., description="URL of PDF file to analyze")
-    headers: Optional[Dict[str, str]] = Field(
+    headers: dict[str, str] | None = Field(
         default=None,
         description="Optional HTTP headers for download"
     )
@@ -64,7 +65,7 @@ class BatchDetectionRequest(BaseModel):
         description="Include detailed per-page analysis in response"
     )
     
-    @field_validator('detailed')
+    @field_validator("detailed")
     @classmethod
     def validate_detailed(cls, v):
         """Validate detailed flag."""
@@ -77,10 +78,10 @@ class DetectionResponseData(BaseModel):
     content_type: ContentType = Field(..., description="Detected content type")
     confidence: float = Field(..., description="Confidence score (0.0-1.0)")
     recommended_parser: str = Field(..., description="Recommended parser")
-    alternative_parsers: List[str] = Field(default_factory=list)
+    alternative_parsers: list[str] = Field(default_factory=list)
     text_statistics: TextStatistics = Field(...)
     image_statistics: ImageStatistics = Field(...)
-    page_results: Optional[List[PageAnalysis]] = Field(
+    page_results: list[PageAnalysis] | None = Field(
         default=None,
         description="Per-page results (only if detailed=True)"
     )
@@ -93,7 +94,7 @@ class DetectionResponse(BaseModel):
     """Standard API response wrapper for detection."""
     
     data: DetectionResponseData = Field(...)
-    meta: Dict[str, Any] = Field(...)
+    meta: dict[str, Any] = Field(...)
 
 
 class BatchDetectionItem(BaseModel):
@@ -104,29 +105,29 @@ class BatchDetectionItem(BaseModel):
     confidence: float = Field(...)
     recommended_parser: str = Field(...)
     processing_time_ms: int = Field(...)
-    error: Optional[str] = Field(None, description="Error message if analysis failed")
+    error: str | None = Field(None, description="Error message if analysis failed")
 
 
 class BatchDetectionResponseData(BaseModel):
     """Batch detection response data."""
     
-    results: List[BatchDetectionItem] = Field(...)
-    summary: Dict[str, Any] = Field(...)
+    results: list[BatchDetectionItem] = Field(...)
+    summary: dict[str, Any] = Field(...)
 
 
 class BatchDetectionResponse(BaseModel):
     """API response wrapper for batch detection."""
     
     data: BatchDetectionResponseData = Field(...)
-    meta: Dict[str, Any] = Field(...)
+    meta: dict[str, Any] = Field(...)
 
 
 class ParserSelectionResponseData(BaseModel):
     """Parser selection response data."""
     
     job_id: str = Field(...)
-    detection_result: Optional[Dict[str, Any]] = Field(None)
-    selection: Dict[str, Any] = Field(...)
+    detection_result: dict[str, Any] | None = Field(None)
+    selection: dict[str, Any] = Field(...)
     estimated_processing_time: str = Field(...)
     estimated_cost: float = Field(...)
 
@@ -135,10 +136,10 @@ class ParserSelectionResponse(BaseModel):
     """API response for parser selection endpoint."""
     
     data: ParserSelectionResponseData = Field(...)
-    meta: Dict[str, Any] = Field(...)
+    meta: dict[str, Any] = Field(...)
 
 
-def create_meta(request_id: str) -> Dict[str, Any]:
+def create_meta(request_id: str) -> dict[str, Any]:
     """Create standard response metadata.
     
     Args:
@@ -151,7 +152,7 @@ def create_meta(request_id: str) -> Dict[str, Any]:
     
     return {
         "request_id": request_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "api_version": "v1"
     }
 

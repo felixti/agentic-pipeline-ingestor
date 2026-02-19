@@ -422,26 +422,26 @@ class TextSearchService:
             query = query.replace(f'"{phrase}"', processed)
 
         # Handle NOT operator
-        query = re.sub(r'\bNOT\s+(\w+)', r'!\1', query, flags=re.IGNORECASE)
+        query = re.sub(r"\bNOT\s+(\w+)", r"!\1", query, flags=re.IGNORECASE)
 
         # Handle AND operator (implicit)
-        query = re.sub(r'\bAND\b', '&', query, flags=re.IGNORECASE)
+        query = re.sub(r"\bAND\b", "&", query, flags=re.IGNORECASE)
 
         # Handle OR operator
-        query = re.sub(r'\bOR\b', '|', query, flags=re.IGNORECASE)
+        query = re.sub(r"\bOR\b", "|", query, flags=re.IGNORECASE)
 
         # Replace remaining spaces with AND operators for default behavior
         # But preserve already processed operators
         words = query.split()
         if words:
             # Join with & for full-text search AND behavior
-            query = ' & '.join(words)
+            query = " & ".join(words)
 
         # Clean up multiple operators
-        query = re.sub(r'&\s*\|', '|', query)
-        query = re.sub(r'\|\s*&', '|', query)
-        query = re.sub(r'&+', '&', query)
-        query = re.sub(r'\|+', '|', query)
+        query = re.sub(r"&\s*\|", "|", query)
+        query = re.sub(r"\|\s*&", "|", query)
+        query = re.sub(r"&+", "&", query)
+        query = re.sub(r"\|+", "|", query)
 
         return query
 

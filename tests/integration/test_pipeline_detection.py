@@ -1,10 +1,11 @@
 """Integration tests for pipeline with content detection."""
 
-import pytest
+from datetime import UTC
 from pathlib import Path
 from uuid import uuid4
 
 import fitz
+import pytest
 
 from src.core.content_detection.models import ContentType
 from src.core.job_context import JobContext
@@ -171,7 +172,7 @@ class TestJobContext:
             job_id=uuid4(),
             file_path=str(text_pdf),
             file_type="application/pdf",
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
         
         from src.core.content_detection.analyzer import PDFContentAnalyzer
@@ -196,7 +197,7 @@ class TestJobContext:
             job_id=uuid4(),
             file_path="/tmp/test.pdf",
             file_type="application/pdf",
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
         
         context.set_parser_selection("docling", "azure_ocr")
@@ -294,6 +295,7 @@ class TestPipelineFlow:
     async def test_detection_skipped_if_already_cached(self, text_pdf: Path):
         """Test that detection is skipped if result already in context."""
         from datetime import datetime, timezone
+
         from src.core.content_detection.analyzer import PDFContentAnalyzer
         
         # Pre-populate context with detection result
@@ -305,7 +307,7 @@ class TestPipelineFlow:
             file_path=str(text_pdf),
             file_type="application/pdf",
             content_detection_result=detection_result,  # Pre-populate
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
         
         # Run only detection stage
@@ -326,7 +328,7 @@ class TestPipelineFlow:
             file_path=str(text_pdf),
             file_type="application/pdf",
             content_detection_result=None,  # No detection
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
         
         # Run parser selection stage
@@ -341,8 +343,8 @@ class TestPipelineFlow:
 
 def test_select_parser_for_job_convenience_function(text_pdf: Path):
     """Test convenience function for parser selection."""
-    from src.core.parser_selection import select_parser_for_job
     from src.core.content_detection.analyzer import PDFContentAnalyzer
+    from src.core.parser_selection import select_parser_for_job
     
     analyzer = PDFContentAnalyzer()
     detection_result = analyzer.analyze(text_pdf)

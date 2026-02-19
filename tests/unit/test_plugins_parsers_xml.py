@@ -9,7 +9,6 @@ import pytest
 from src.plugins.base import HealthStatus, ParsingResult, SupportResult
 from src.plugins.parsers.xml_parser import XMLParser
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -172,7 +171,7 @@ class TestXMLParserSupports:
         await parser.initialize({})
 
         xml_file = tmp_path / "test.txt"
-        xml_file.write_text('<root><item>test</item></root>')
+        xml_file.write_text("<root><item>test</item></root>")
 
         result = await parser.supports(str(xml_file))
 
@@ -609,7 +608,7 @@ class TestXMLParserSchemaValidation:
         # Initialize with xsd_path
         await parser.initialize({"xsd_path": str(xsd_file)})
 
-        with patch.object(parser, '_validate_with_xsd') as mock_validate:
+        with patch.object(parser, "_validate_with_xsd") as mock_validate:
             mock_validate.return_value = {"valid": True, "schema": str(xsd_file)}
             result = await parser.parse(str(xml_file))
 

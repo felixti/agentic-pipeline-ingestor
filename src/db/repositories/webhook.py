@@ -61,7 +61,7 @@ class WebhookRepository:
         self,
         subscription_id: str | UUID,
         user_id: str | None = None,
-    ) -> Optional[WebhookSubscriptionModel]:
+    ) -> WebhookSubscriptionModel | None:
         """Get subscription by ID.
         
         Args:
@@ -161,7 +161,7 @@ class WebhookRepository:
         url: str | None = None,
         events: list[str] | None = None,
         secret: str | None = None,
-    ) -> Optional[WebhookSubscriptionModel]:
+    ) -> WebhookSubscriptionModel | None:
         """Update a subscription.
         
         Args:
@@ -254,7 +254,7 @@ class WebhookRepository:
     async def get_delivery(
         self,
         delivery_id: str | UUID,
-    ) -> Optional[WebhookDeliveryModel]:
+    ) -> WebhookDeliveryModel | None:
         """Get delivery by ID.
         
         Args:
@@ -325,7 +325,7 @@ class WebhookRepository:
         status: str,
         http_status: int | None = None,
         error: str | None = None,
-    ) -> Optional[WebhookDeliveryModel]:
+    ) -> WebhookDeliveryModel | None:
         """Update delivery status.
         
         Args:

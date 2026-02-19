@@ -1,8 +1,8 @@
 # Agentic Data Pipeline Ingestor - Agent Guide
 
-> **Last Updated**: 2026-02-17  
+> **Last Updated**: 2026-02-18  
 > **Language**: English  
-> **Project Status**: Phase 4 Complete (Enterprise Features)
+> **Project Status**: Phase 5 Complete (Vector Search + Semantic Capabilities)
 
 ---
 
@@ -22,12 +22,18 @@ The system ingests documents from various sources (S3, Azure Blob, SharePoint), 
 - **LLM-Agnostic**: Azure OpenAI + OpenRouter fallback via litellm
 - **Enterprise Security**: RBAC, audit logging, data lineage
 - **20GB/day Throughput**: Near-realtime + batch processing split
+- **Vector Search**: Semantic search using pgvector (1536-dim embeddings)
+- **Hybrid Search**: Combined vector similarity + full-text search
+- **Document Chunking**: Automatic text segmentation with embeddings
 
 ### 1.3 Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    API LAYER (OpenAPI 3.1)                       │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  Jobs │ Upload │ Search │ Chunks │ Health │ Admin          │   │
+│  └──────────────────────────────────────────────────────────┘   │
 ├─────────────────────────────────────────────────────────────────┤
 │                    CORE ORCHESTRATION ENGINE                     │
 │  ┌──────────────────────────────────────────────────────────┐   │
@@ -35,8 +41,14 @@ The system ingests documents from various sources (S3, Azure Blob, SharePoint), 
 │  └──────────────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │              7-STAGE PROCESSING PIPELINE                  │   │
-│  │  Ingest → Detect → Parse → Enrich → Quality → Transform → │   │
-│  │  Output                                                     │   │
+│  │  Ingest → Detect → Parse → Chunk → Embed → Enrich → Out  │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │              VECTOR SEARCH SERVICES (NEW)                 │   │
+│  │   ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │   │
+│  │   │  Vector  │ │   Text   │ │  Hybrid  │ │ Embedding│   │   │
+│  │   │  Search  │ │  Search  │ │  Search  │ │  Service │   │   │
+│  │   └──────────┘ └──────────┘ └──────────┘ └──────────┘   │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │           LLM ADAPTER (litellm)                           │   │
@@ -55,6 +67,16 @@ The system ingests documents from various sources (S3, Azure Blob, SharePoint), 
 │  │  S3, Blob   │  │  Docling    │  │      Cognee             │  │
 │  │  SharePoint │  │  Azure OCR  │  │      GraphRAG           │  │
 │  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
+└─────────────────────────────┬───────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    DATA LAYER                                    │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
+│  │  PostgreSQL  │  │   pgvector   │  │      pg_trgm         │   │
+│  │   (Core)     │  │ (Embeddings) │  │   (Text Search)      │   │
+│  │              │  │  HNSW Index  │  │   GIN/Fuzzy          │   │
+│  └──────────────┘  └──────────────┘  └──────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -70,6 +92,8 @@ The system ingests documents from various sources (S3, Azure Blob, SharePoint), 
 | Web Framework | FastAPI | 0.104+ |
 | Data Validation | Pydantic | 2.5+ |
 | Database | PostgreSQL | 15+ |
+| Vector Database | pgvector | 0.7+ |
+| Text Search | pg_trgm | 1.6+ |
 | ORM | SQLAlchemy | 2.0+ |
 | Cache | Redis | 7+ |
 | LLM Router | litellm | 1.0+ |
@@ -111,7 +135,7 @@ The system ingests documents from various sources (S3, Azure Blob, SharePoint), 
 agentic-pipeline-ingestion/
 ├── api/
 │   └── openapi.yaml              # OpenAPI 3.1 specification (850+ lines)
-├── src/                          # Main source code (83 Python files)
+├── src/                          # Main source code (118 Python files)
 │   ├── api/                      # API layer (routes, models, dependencies)
 │   │   ├── routes/               # FastAPI route handlers
 │   │   ├── models.py             # Pydantic models
@@ -144,8 +168,19 @@ agentic-pipeline-ingestion/
 │   │   ├── enrichment/           # Advanced enrichment
 │   │   └── graphrag/             # GraphRAG integration
 │   ├── db/                       # Database models
-│   │   ├── models.py             # SQLAlchemy models
+│   │   ├── models.py             # SQLAlchemy models (incl. DocumentChunkModel)
+│   │   ├── repositories/         # Repository classes
+│   │   │   ├── job.py
+│   │   │   ├── document_chunk_repository.py  # NEW: Chunk CRUD with embeddings
+│   │   │   └── audit.py
 │   │   └── migrations/           # Alembic migrations
+│   ├── services/                 # NEW: Search services layer
+│   │   ├── vector_search_service.py     # Cosine similarity search
+│   │   ├── text_search_service.py       # Full-text search with BM25
+│   │   ├── hybrid_search_service.py     # Combined vector + text
+│   │   └── embedding_service.py         # Embedding generation via litellm
+│   ├── vector_store_config/      # NEW: Vector store configuration
+│   │   └── vector_store.py       # HNSW, embedding, search params
 │   ├── llm/                      # LLM abstraction
 │   │   ├── provider.py           # litellm integration
 │   │   └── config.py             # LLM configuration loader
@@ -186,7 +221,7 @@ agentic-pipeline-ingestion/
 │   │   └── processor.py          # Job processor
 │   ├── config.py                 # Configuration management
 │   └── main.py                   # FastAPI application entry
-├── tests/                        # Test suite (11 Python files)
+├── tests/                        # Test suite (70 Python files)
 │   ├── unit/                     # Unit tests
 │   ├── integration/              # Integration tests
 │   └── contract/                 # API contract tests
@@ -195,6 +230,7 @@ agentic-pipeline-ingestion/
 │   └── docker-compose.yml
 ├── config/                       # Configuration files
 │   ├── llm.yaml                  # LLM provider configuration
+│   ├── vector_store.yaml         # NEW: Vector store configuration
 │   ├── prometheus.yml
 │   └── otel-collector-config.yaml
 ├── azure/                        # Azure deployment
@@ -597,6 +633,56 @@ llm:
           api_key: "${OPENROUTER_API_KEY}"
 ```
 
+### 5.3 Vector Store Configuration
+
+The vector store is configured via `config/vector_store.yaml`:
+
+```yaml
+vector_store:
+  enabled: true
+  
+  # Embedding model configuration
+  embedding:
+    model: "text-embedding-3-small"
+    dimensions: 1536
+    batch_size: 100
+    
+  # Search parameters
+  search:
+    default_top_k: 10
+    max_top_k: 100
+    default_min_similarity: 0.7
+    
+  # HNSW index parameters (pgvector)
+  index:
+    hnsw_m: 16              # Number of bi-directional links
+    hnsw_ef_construction: 64  # Size of dynamic candidate list
+    hnsw_ef_search: 32      # Size of search candidate list
+    
+  # Hybrid search weights
+  hybrid:
+    default_vector_weight: 0.7
+    default_text_weight: 0.3
+    rrf_k: 60               # Reciprocal Rank Fusion constant
+    
+  # Pipeline integration
+  pipeline:
+    auto_generate_embeddings: true
+    chunking_strategy: "semantic"
+    chunk_size: 1000
+    chunk_overlap: 200
+```
+
+#### Environment Variables for Vector Store
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VECTOR_STORE_ENABLED` | Enable/disable vector store | `true` |
+| `EMBEDDING_MODEL` | Embedding model name | `text-embedding-3-small` |
+| `EMBEDDING_API_KEY` | API key for embedding provider | - |
+| `EMBEDDING_API_BASE` | Base URL for embedding provider | - |
+| `EMBEDDING_DIMENSIONS` | Embedding dimensions | `1536` |
+
 ---
 
 ## 6. Code Style Guidelines
@@ -742,7 +828,7 @@ async def test_create_job(client):
 
 ## 8. API Endpoints
 
-The API follows OpenAPI 3.1 specification with 28 endpoints:
+The API follows OpenAPI 3.1 specification with 50 endpoints:
 
 ### 8.1 Job Management
 
@@ -756,7 +842,23 @@ The API follows OpenAPI 3.1 specification with 28 endpoints:
 | GET | `/api/v1/jobs/{id}/result` | Get job result |
 | GET | `/api/v1/jobs/{id}/events` | Get job events (SSE) |
 
-### 8.2 File Upload
+### 8.2 Document Chunks (pgvector)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/jobs/{id}/chunks` | List chunks for a job |
+| GET | `/api/v1/jobs/{id}/chunks/{chunk_id}` | Get specific chunk with optional embedding |
+
+### 8.3 Search (Vector + Text)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/search/semantic` | Semantic similarity search (vector) |
+| POST | `/api/v1/search/text` | Full-text search (BM25 + fuzzy) |
+| POST | `/api/v1/search/hybrid` | Hybrid vector + text search |
+| GET | `/api/v1/search/similar/{chunk_id}` | Find semantically similar chunks |
+
+### 8.4 File Upload
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -764,13 +866,14 @@ The API follows OpenAPI 3.1 specification with 28 endpoints:
 | POST | `/api/v1/upload/url` | Upload from URL |
 | POST | `/api/v1/upload/stream` | Streaming upload |
 
-### 8.3 System & Health
+### 8.5 System & Health
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/health` | Health status |
 | GET | `/health/ready` | Readiness probe |
 | GET | `/health/live` | Liveness probe |
+| GET | `/health/vector` | Vector store health (pgvector status) |
 | GET | `/metrics` | Prometheus metrics |
 | GET | `/api/v1/openapi.yaml` | OpenAPI specification |
 

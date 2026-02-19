@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.models import DocumentChunkModel
 from src.db.repositories.document_chunk_repository import DocumentChunkRepository
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================

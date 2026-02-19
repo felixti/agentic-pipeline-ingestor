@@ -117,7 +117,7 @@ def get_archive_dir() -> Path:
 
 def validate_name(name: str) -> bool:
     """Validate change name (kebab-case)."""
-    return bool(re.match(r'^[a-z0-9]+(-[a-z0-9]+)*$', name))
+    return bool(re.match(r"^[a-z0-9]+(-[a-z0-9]+)*$", name))
 
 
 def create_change(name: str, schema: str = "spec-driven") -> dict:
@@ -151,7 +151,7 @@ def create_change(name: str, schema: str = "spec-driven") -> dict:
     }
     
     metadata_path = change_dir / ".openspec.yaml"
-    with open(metadata_path, 'w') as f:
+    with open(metadata_path, "w") as f:
         import yaml
         yaml.dump(metadata, f, default_flow_style=False)
     
@@ -207,11 +207,11 @@ def get_status(name: str) -> dict:
     if proposal_path.exists():
         content = proposal_path.read_text()
         # Extract capabilities from ## Capabilities section
-        caps_match = re.search(r'## Capabilities\s*\n(.*?)(?:\n## |\Z)', content, re.DOTALL)
+        caps_match = re.search(r"## Capabilities\s*\n(.*?)(?:\n## |\Z)", content, re.DOTALL)
         if caps_match:
             caps_section = caps_match.group(1)
-            capabilities = re.findall(r'- \[.]\s*([^(\n]+)', caps_section)
-            capabilities = [c.strip().lower().replace(' ', '-') for c in capabilities]
+            capabilities = re.findall(r"- \[.]\s*([^(\n]+)", caps_section)
+            capabilities = [c.strip().lower().replace(" ", "-") for c in capabilities]
     
     for artifact in schema["artifacts"]:
         if artifact.get("multiple") and capabilities:
@@ -349,7 +349,7 @@ def list_changes() -> list[dict]:
     
     changes = []
     for change_dir in changes_dir.iterdir():
-        if change_dir.is_dir() and not change_dir.name == "archive":
+        if change_dir.is_dir() and change_dir.name != "archive":
             try:
                 metadata = get_change_metadata(change_dir)
                 status = get_status(change_dir.name)

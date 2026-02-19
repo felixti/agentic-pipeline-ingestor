@@ -91,7 +91,7 @@ class APIKeyRepository:
         self,
         key_hash: str,
         include_inactive: bool = False,
-    ) -> Optional[ApiKeyModel]:
+    ) -> ApiKeyModel | None:
         """Get API key by hash.
         
         Args:
@@ -112,7 +112,7 @@ class APIKeyRepository:
     async def validate_key(
         self,
         api_key: str,
-    ) -> Optional[ApiKeyModel]:
+    ) -> ApiKeyModel | None:
         """Validate an API key.
         
         Args:
@@ -136,7 +136,7 @@ class APIKeyRepository:
     async def update_last_used(
         self,
         key_id: UUID,
-    ) -> Optional[ApiKeyModel]:
+    ) -> ApiKeyModel | None:
         """Update last used timestamp.
         
         Args:

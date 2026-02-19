@@ -14,7 +14,6 @@ from src.api.models import Job, JobStatus
 from src.core.engine import PipelineContext
 from src.worker.processor import JobProcessor
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================

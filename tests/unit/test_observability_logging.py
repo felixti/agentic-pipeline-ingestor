@@ -8,19 +8,19 @@ import pytest
 import structlog
 
 from src.observability.logging import (
-    StructuredLogger,
-    get_logger,
-    setup_logging,
-    set_correlation_id,
-    get_correlation_id,
-    set_trace_context,
-    clear_trace_context,
-    set_request_context,
-    update_request_context,
-    clear_request_context,
-    correlation_id_scope,
-    request_context_scope,
     LogContext,
+    StructuredLogger,
+    clear_request_context,
+    clear_trace_context,
+    correlation_id_scope,
+    get_correlation_id,
+    get_logger,
+    request_context_scope,
+    set_correlation_id,
+    set_request_context,
+    set_trace_context,
+    setup_logging,
+    update_request_context,
 )
 
 
@@ -167,7 +167,7 @@ class TestStructuredLogger:
         logger = StructuredLogger()
 
         # Set context vars
-        from src.observability.logging import _trace_id, _span_id
+        from src.observability.logging import _span_id, _trace_id
         _trace_id.set("fallback-trace-id")
         _span_id.set("fallback-span-id")
 
@@ -188,11 +188,11 @@ class TestStructuredLogger:
 
         # Simulate ImportError by temporarily removing trace module
         import src.observability.logging as logging_module
-        original_trace = getattr(logging_module, 'trace', None)
+        original_trace = getattr(logging_module, "trace", None)
 
         try:
             if original_trace:
-                delattr(logging_module, 'trace')
+                delattr(logging_module, "trace")
             event_dict = {}
             result = logger._add_trace_context(None, "info", event_dict)
 
@@ -200,7 +200,7 @@ class TestStructuredLogger:
             assert "trace_id" not in result or result.get("trace_id") is None
         finally:
             if original_trace:
-                setattr(logging_module, 'trace', original_trace)
+                logging_module.trace = original_trace
 
     def test_add_correlation_id(self):
         """Test adding correlation ID."""
@@ -345,7 +345,7 @@ class TestTraceContextFunctions:
 
     def test_set_trace_context(self):
         """Test setting trace context."""
-        from src.observability.logging import _trace_id, _span_id
+        from src.observability.logging import _span_id, _trace_id
 
         set_trace_context("trace-123", "span-456")
 
@@ -354,7 +354,7 @@ class TestTraceContextFunctions:
 
     def test_clear_trace_context(self):
         """Test clearing trace context."""
-        from src.observability.logging import _trace_id, _span_id
+        from src.observability.logging import _span_id, _trace_id
 
         set_trace_context("trace-123", "span-456")
         clear_trace_context()
@@ -487,7 +487,7 @@ class TestLogContext:
 
     def test_enter_exit_trace_context(self):
         """Test entering and exiting context with trace context."""
-        from src.observability.logging import _trace_id, _span_id
+        from src.observability.logging import _span_id, _trace_id
 
         ctx = LogContext(trace_id="trace-123", span_id="span-456")
 
@@ -514,7 +514,7 @@ class TestLogContext:
 
     def test_enter_exit_combined(self):
         """Test entering and exiting context with all values."""
-        from src.observability.logging import _correlation_id, _trace_id, _span_id, _request_context
+        from src.observability.logging import _correlation_id, _request_context, _span_id, _trace_id
 
         _correlation_id.set(None)
         _trace_id.set(None)

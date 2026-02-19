@@ -185,8 +185,8 @@ class TestVectorSearchPerformance:
         
         Target: p99 < 100ms
         """
-        from src.services.vector_search_service import VectorSearchService
         from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.services.vector_search_service import VectorSearchService
         
         # Setup
         mock_session = AsyncMock()
@@ -237,8 +237,8 @@ class TestVectorSearchPerformance:
         
         Target: p99 < 100ms
         """
-        from src.services.vector_search_service import VectorSearchService
         from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.services.vector_search_service import VectorSearchService
         
         mock_session = AsyncMock()
         repo = DocumentChunkRepository(mock_session)
@@ -284,8 +284,8 @@ class TestVectorSearchPerformance:
     @pytest.mark.asyncio
     async def test_vector_search_different_top_k(self, sample_embedding, mock_chunks_1k):
         """Benchmark vector search with different top_k values."""
-        from src.services.vector_search_service import VectorSearchService
         from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.services.vector_search_service import VectorSearchService
         
         mock_session = AsyncMock()
         repo = DocumentChunkRepository(mock_session)
@@ -332,8 +332,8 @@ class TestTextSearchPerformance:
         
         Target: p99 < 50ms
         """
-        from src.services.text_search_service import TextSearchService
         from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.services.text_search_service import TextSearchService
         
         mock_session = AsyncMock()
         repo = DocumentChunkRepository(mock_session)
@@ -382,8 +382,8 @@ class TestTextSearchPerformance:
         
         Target: p99 < 50ms
         """
-        from src.services.text_search_service import TextSearchService
         from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.services.text_search_service import TextSearchService
         
         mock_session = AsyncMock()
         repo = DocumentChunkRepository(mock_session)
@@ -428,8 +428,8 @@ class TestTextSearchPerformance:
     @pytest.mark.asyncio
     async def test_text_search_with_highlighting_performance(self, mock_chunks_1k):
         """Benchmark text search with highlighting enabled."""
-        from src.services.text_search_service import TextSearchService
         from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.services.text_search_service import TextSearchService
         
         mock_session = AsyncMock()
         repo = DocumentChunkRepository(mock_session)
@@ -453,7 +453,7 @@ class TestTextSearchPerformance:
             latencies.append(elapsed_ms)
         
         stats = calculate_stats(latencies)
-        print(f"\nText Search with Highlighting (1K chunks):")
+        print("\nText Search with Highlighting (1K chunks):")
         print(f"  P99: {stats['p99_ms']:.2f} ms")
         
         # Highlighting should not add more than 50% overhead
@@ -474,10 +474,10 @@ class TestHybridSearchPerformance:
         
         Target: p99 < 150ms
         """
-        from src.services.hybrid_search_service import HybridSearchService, FusionMethod
-        from src.services.vector_search_service import VectorSearchService, SearchResult
-        from src.services.text_search_service import TextSearchService, TextSearchResult
         from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.services.hybrid_search_service import FusionMethod, HybridSearchService
+        from src.services.text_search_service import TextSearchResult, TextSearchService
+        from src.services.vector_search_service import SearchResult, VectorSearchService
         
         mock_session = AsyncMock()
         repo = DocumentChunkRepository(mock_session)
@@ -533,10 +533,10 @@ class TestHybridSearchPerformance:
     @pytest.mark.asyncio
     async def test_hybrid_search_rrf_fusion_performance(self, sample_embedding, mock_chunks_1k):
         """Benchmark hybrid search with RRF fusion."""
-        from src.services.hybrid_search_service import HybridSearchService, FusionMethod
-        from src.services.vector_search_service import VectorSearchService, SearchResult
-        from src.services.text_search_service import TextSearchService, TextSearchResult
         from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.services.hybrid_search_service import FusionMethod, HybridSearchService
+        from src.services.text_search_service import TextSearchResult, TextSearchService
+        from src.services.vector_search_service import SearchResult, VectorSearchService
         
         mock_session = AsyncMock()
         repo = DocumentChunkRepository(mock_session)
@@ -567,7 +567,7 @@ class TestHybridSearchPerformance:
             latencies.append(elapsed_ms)
         
         stats = calculate_stats(latencies)
-        print(f"\nHybrid Search RRF (1K chunks):")
+        print("\nHybrid Search RRF (1K chunks):")
         print(f"  P99: {stats['p99_ms']:.2f} ms")
 
 
@@ -585,8 +585,8 @@ class TestSimilarChunksPerformance:
         
         Target: p99 < 100ms
         """
-        from src.services.vector_search_service import VectorSearchService
         from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.services.vector_search_service import VectorSearchService
         
         mock_session = AsyncMock()
         repo = DocumentChunkRepository(mock_session)
@@ -645,8 +645,8 @@ class TestScalability:
     @pytest.mark.asyncio
     async def test_vector_search_scalability(self, sample_embedding):
         """Test how vector search scales with data size."""
-        from src.services.vector_search_service import VectorSearchService
         from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.services.vector_search_service import VectorSearchService
         
         results = {}
         
@@ -705,8 +705,8 @@ class TestLoad:
     @pytest.mark.asyncio
     async def test_concurrent_vector_searches(self, sample_embedding, mock_chunks_1k):
         """Test performance under concurrent load."""
-        from src.services.vector_search_service import VectorSearchService
         from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.services.vector_search_service import VectorSearchService
         
         mock_session = AsyncMock()
         repo = DocumentChunkRepository(mock_session)
@@ -769,13 +769,13 @@ def generate_performance_report():
     
     This function can be called to generate a report file.
     """
-    report = """# Vector Store Performance Report
+    report = f"""# Vector Store Performance Report
 
 ## Benchmark Results
 
 ### Test Environment
-- Date: {date}
-- Python Version: {python_version}
+- Date: {datetime.utcnow().isoformat()}
+- Python Version: {os.sys.version.split()[0]}
 - Database: PostgreSQL with pgvector
 
 ### Performance Targets
@@ -799,10 +799,7 @@ def generate_performance_report():
 - Benchmarks run with mocked database for unit test environment
 - For production benchmarks, run against actual PostgreSQL with pgvector
 - HNSW index significantly improves vector search performance at scale
-""".format(
-        date=datetime.utcnow().isoformat(),
-        python_version=os.sys.version.split()[0],
-    )
+"""
     
     return report
 

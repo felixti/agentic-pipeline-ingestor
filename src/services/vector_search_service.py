@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Float as SQLFloat, select, text
+from sqlalchemy import Float as SQLFloat
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import SQLAlchemyError
 

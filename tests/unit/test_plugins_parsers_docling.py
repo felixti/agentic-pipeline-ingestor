@@ -8,7 +8,6 @@ import pytest
 from src.plugins.base import HealthStatus, ParsingResult, SupportResult
 from src.plugins.parsers.docling_parser import DoclingParser
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -80,7 +79,7 @@ class TestDoclingParser:
             "docling.datamodel.document": mock_docling.datamodel.document,
             "docling.document_converter": mock_docling.document_converter,
         }):
-            with patch.object(parser, '_document_converter', None):
+            with patch.object(parser, "_document_converter", None):
                 # Simulate docling being available
                 parser._docling_available = False
                 await parser.initialize({})

@@ -44,7 +44,7 @@ class DocumentChunkRepository:
         await self.session.refresh(chunk)
         return chunk
     
-    async def get_by_id(self, chunk_id: UUID) -> Optional[DocumentChunkModel]:
+    async def get_by_id(self, chunk_id: UUID) -> DocumentChunkModel | None:
         """Get chunk by ID.
         
         Args:

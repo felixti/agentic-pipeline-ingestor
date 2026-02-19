@@ -12,7 +12,6 @@ from src.plugins.sources.sharepoint_source import (
     SharePointSourcePlugin,
 )
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -496,7 +495,7 @@ class TestSharePointErrorHandling:
         """Test connection error during list_files."""
         with patch.object(sharepoint_plugin, "_get_drive_id", return_value="drive-456"):
             with patch.object(sharepoint_plugin, "_make_graph_request", side_effect=Exception("Connection error")):
-                with pytest.raises(Exception):
+                with pytest.raises(Exception):  # noqa: B017  # Testing generic connection error handling
                     await sharepoint_plugin.list_files(mock_connection, "/")
 
 

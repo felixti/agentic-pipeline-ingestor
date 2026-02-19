@@ -9,7 +9,6 @@ import pytest
 from src.plugins.base import HealthStatus, ParsingResult, SupportResult
 from src.plugins.parsers.json_parser import JSONParser
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -166,7 +165,7 @@ class TestJSONParserSupports:
         await parser.initialize({})
         
         txt_file = tmp_path / "test.txt"
-        txt_file.write_text('[1, 2, 3, 4, 5]')
+        txt_file.write_text("[1, 2, 3, 4, 5]")
         
         result = await parser.supports(str(txt_file))
         
@@ -285,7 +284,7 @@ class TestJSONParserParseJSON:
         await parser.initialize({})
         
         json_file = tmp_path / "test.json"
-        json_file.write_text('{}')
+        json_file.write_text("{}")
         
         result = await parser.parse(str(json_file))
         
@@ -300,7 +299,7 @@ class TestJSONParserParseJSON:
         await parser.initialize({})
         
         json_file = tmp_path / "test.json"
-        json_file.write_text('[]')
+        json_file.write_text("[]")
         
         result = await parser.parse(str(json_file))
         
@@ -465,9 +464,9 @@ class TestJSONParserJSONL:
         jsonl_file = tmp_path / "test.jsonl"
         lines = [
             '{"name": "Alice"}',
-            '',
+            "",
             '{"name": "Bob"}',
-            '',
+            "",
             '{"name": "Charlie"}'
         ]
         jsonl_file.write_text("\n".join(lines))
@@ -486,7 +485,7 @@ class TestJSONParserJSONL:
         jsonl_file = tmp_path / "test.jsonl"
         lines = [
             '{"name": "Alice"}',
-            'invalid json {',
+            "invalid json {",
             '{"name": "Bob"}'
         ]
         jsonl_file.write_text("\n".join(lines))
@@ -506,7 +505,7 @@ class TestJSONParserJSONL:
         jsonl_file = tmp_path / "test.jsonl"
         lines = [
             '{"name": "Alice"}',
-            'invalid json {'
+            "invalid json {"
         ]
         jsonl_file.write_text("\n".join(lines))
         
@@ -867,7 +866,7 @@ class TestJSONParserRecovery:
     def test_recover_json_parse_no_valid_lines(self):
         """Test recovery with no valid JSON lines."""
         parser = JSONParser()
-        content = 'not json\nalso not json'
+        content = "not json\nalso not json"
         
         result = parser._recover_json_parse(content)
         

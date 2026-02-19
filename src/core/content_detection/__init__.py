@@ -1,19 +1,19 @@
 """Content detection module for PDF analysis."""
 
+from src.core.content_detection.analyzer import PDFContentAnalyzer
 from src.core.content_detection.models import (
-    ContentType,
     ContentAnalysisResult,
+    ContentType,
+    ImageStatistics,
     PageAnalysis,
     TextStatistics,
-    ImageStatistics,
 )
-from src.core.content_detection.analyzer import PDFContentAnalyzer
 
 __all__ = [
-    "ContentType",
     "ContentAnalysisResult",
-    "PageAnalysis",
-    "TextStatistics",
+    "ContentType",
     "ImageStatistics",
     "PDFContentAnalyzer",
+    "PageAnalysis",
+    "TextStatistics",
 ]

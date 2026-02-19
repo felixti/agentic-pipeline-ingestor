@@ -1,10 +1,10 @@
 """End-to-end tests for complete detection flow."""
 
-import pytest
 from pathlib import Path
 from uuid import uuid4
 
 import fitz
+import pytest
 
 from src.core.content_detection.models import ContentType
 from src.core.pipeline import run_pipeline
@@ -230,7 +230,10 @@ class TestCompleteUserFlow:
     @pytest.mark.asyncio
     async def test_caching_flow(self, sample_corpus: dict):
         """E2E: Second analysis should use cache."""
-        from src.core.content_detection.service import ContentDetectionService, get_detection_service
+        from src.core.content_detection.service import (
+            ContentDetectionService,
+            get_detection_service,
+        )
         
         pdf_path = sample_corpus["textbook"]
         
@@ -254,7 +257,7 @@ class TestCompleteUserFlow:
         invalid_pdf.write_bytes(b"This is not a PDF file")
         
         # Should raise error
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017  # Any exception is expected for invalid PDF
             await run_pipeline(
                 file_path=str(invalid_pdf),
                 file_type="application/pdf"
@@ -305,7 +308,7 @@ class TestProductionScenarios:
         scanned_count = sum(1 for r in results if r == ContentType.SCANNED)
         mixed_count = sum(1 for r in results if r == ContentType.MIXED)
         
-        print(f"\nProcessing distribution:")
+        print("\nProcessing distribution:")
         print(f"  Text-based: {text_count}")
         print(f"  Scanned: {scanned_count}")
         print(f"  Mixed: {mixed_count}")

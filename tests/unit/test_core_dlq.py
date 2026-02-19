@@ -27,12 +27,12 @@ from src.api.models import (
     SourceType,
 )
 from src.core.dlq import (
+    DeadLetterQueue,
     DLQEntry,
     DLQEntryStatus,
     DLQFailureCategory,
     DLQFilters,
     DLQRetryResult,
-    DeadLetterQueue,
     get_dlq,
     set_dlq,
 )

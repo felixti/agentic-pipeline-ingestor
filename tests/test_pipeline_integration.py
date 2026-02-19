@@ -4,7 +4,7 @@ These tests verify the complete pipeline flow from ingestion to output.
 """
 
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -93,7 +93,7 @@ class TestPipelineStages:
             source_uri=sample_text_file,
             file_name="test.txt",
             status=JobStatus.CREATED,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
         config = PipelineConfig(name="test")
@@ -118,7 +118,7 @@ class TestPipelineStages:
             file_name="test.txt",
             mime_type="text/plain",
             status=JobStatus.CREATED,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
         config = PipelineConfig(name="test")
@@ -152,7 +152,7 @@ class TestPipelineStages:
             source_uri=sample_text_file,
             file_name="test.txt",
             status=JobStatus.CREATED,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
         config = PipelineConfig(name="test")
@@ -195,7 +195,7 @@ class TestPipelineIntegration:
             mime_type="text/plain",
             mode=ProcessingMode.SYNC,
             status=JobStatus.CREATED,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
         config = PipelineConfig(
@@ -240,7 +240,7 @@ class TestPipelineIntegration:
                 file_name="empty.txt",
                 mode=ProcessingMode.SYNC,
                 status=JobStatus.CREATED,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
 
             config = PipelineConfig(name="test")

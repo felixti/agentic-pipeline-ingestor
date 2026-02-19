@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.models import DocumentChunkModel, JobModel, JobStatus
 from src.main import app
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================

@@ -138,8 +138,8 @@ class AuditEvent(BaseModel):
     def to_dict(self) -> dict[str, Any]:
         """Convert event to dictionary."""
         # Handle both enum and string values (use_enum_values config may convert to string)
-        event_type_value = self.event_type.value if hasattr(self.event_type, 'value') else self.event_type
-        status_value = self.status.value if hasattr(self.status, 'value') else self.status
+        event_type_value = self.event_type.value if hasattr(self.event_type, "value") else self.event_type
+        status_value = self.status.value if hasattr(self.status, "value") else self.status
         
         return {
             "id": str(self.id),

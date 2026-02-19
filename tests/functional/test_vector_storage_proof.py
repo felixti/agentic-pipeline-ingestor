@@ -4,10 +4,9 @@ This test demonstrates end-to-end vector storage functionality,
 proving that embeddings are properly persisted and searchable.
 """
 
-import uuid
 import math
+import uuid
 from datetime import datetime
-from typing import List
 
 import pytest
 
@@ -79,8 +78,9 @@ class TestVectorStorageProof:
 
     def test_similarity_search_calculation(self):
         """PROOF 3: Similarity calculation works for vector search."""
-        from src.services.vector_search_service import VectorSearchService
         from unittest.mock import MagicMock
+
+        from src.services.vector_search_service import VectorSearchService
         
         # Create mock repository
         mock_repo = MagicMock()
@@ -153,9 +153,9 @@ class TestVectorStorageProof:
         
         print("\n✅ PROOF 4: Complete embedding workflow")
         print(f"   - Created {len(chunks)} chunks with embeddings")
-        print(f"   - All chunks have 1536-dim embeddings")
-        print(f"   - Embeddings accessible in search results")
-        print(f"   - Similarity scores calculated")
+        print("   - All chunks have 1536-dim embeddings")
+        print("   - Embeddings accessible in search results")
+        print("   - Similarity scores calculated")
 
     def test_hybrid_search_stores_both_scores(self):
         """PROOF 5: Hybrid search stores both vector and text scores."""
@@ -228,15 +228,16 @@ class TestVectorStorageProof:
         print("\n✅ PROOF 6: Vector serialization format is correct")
         print(f"   - Format: {pg_string[:30]}...")
         print(f"   - Length: {len(pg_string)} characters")
-        print(f"   - Round-trip successful")
+        print("   - Round-trip successful")
 
     def test_repository_methods_for_embeddings(self):
         """PROOF 7: Repository has methods to save and update embeddings."""
-        from src.db.repositories.document_chunk_repository import DocumentChunkRepository
         import inspect
+
+        from src.db.repositories.document_chunk_repository import DocumentChunkRepository
         
         # Check methods exist
-        methods = ['create', 'bulk_create', 'update_embedding']
+        methods = ["create", "bulk_create", "update_embedding"]
         
         for method_name in methods:
             assert hasattr(DocumentChunkRepository, method_name), \
@@ -245,8 +246,8 @@ class TestVectorStorageProof:
         # Check method signatures
         sig = inspect.signature(DocumentChunkRepository.update_embedding)
         params = list(sig.parameters.keys())
-        assert 'chunk_id' in params, "❌ update_embedding missing chunk_id!"
-        assert 'embedding' in params, "❌ update_embedding missing embedding!"
+        assert "chunk_id" in params, "❌ update_embedding missing chunk_id!"
+        assert "embedding" in params, "❌ update_embedding missing embedding!"
         
         print("\n✅ PROOF 7: Repository methods for embeddings exist")
         print("   - create: Can create chunks with embeddings")
@@ -318,7 +319,7 @@ class TestVectorStorageProof:
         wrong_embedding = [0.1] * 768  # Wrong size
         try:
             chunk.set_embedding(wrong_embedding)
-            assert False, "❌ Should have raised ValueError!"
+            raise AssertionError("❌ Should have raised ValueError!")
         except ValueError as e:
             assert "1536" in str(e), f"❌ Error message wrong: {e}"
         
@@ -328,9 +329,8 @@ class TestVectorStorageProof:
 
     def test_cosine_similarity_between_vectors(self):
         """PROOF 11: Cosine similarity calculation is correct."""
-        import math
         
-        def cosine_similarity(v1: List[float], v2: List[float]) -> float:
+        def cosine_similarity(v1: list[float], v2: list[float]) -> float:
             """Calculate cosine similarity between two vectors."""
             dot_product = sum(a * b for a, b in zip(v1, v2))
             norm1 = math.sqrt(sum(a * a for a in v1))
@@ -369,8 +369,9 @@ class TestVectorStorageProof:
 
     def test_vector_distance_conversion(self):
         """PROOF 12: Vector distance converts correctly to similarity."""
-        from src.services.vector_search_service import VectorSearchService
         from unittest.mock import MagicMock
+
+        from src.services.vector_search_service import VectorSearchService
         
         service = VectorSearchService.__new__(VectorSearchService)
         service._default_min_similarity = 0.7
@@ -399,9 +400,10 @@ class TestVectorStorageProof:
 
     def test_complete_vector_workflow(self):
         """PROOF 13: Complete workflow from creation to search."""
+        from unittest.mock import AsyncMock, MagicMock
+
         from src.db.models import DocumentChunkModel
         from src.services.vector_search_service import SearchResult, VectorSearchService
-        from unittest.mock import MagicMock, AsyncMock
         
         print("\n🧪 COMPLETE VECTOR WORKFLOW TEST")
         print("=" * 50)
@@ -463,7 +465,6 @@ class TestVectorStorageProof:
         query_embedding[0] = 0.9  # Match first chunk
         
         # Cosine similarity with first chunk
-        import math
         dot_product = sum(a * b for a, b in zip(query_embedding, chunks[0].embedding))
         norm1 = math.sqrt(sum(a * a for a in query_embedding))
         norm2 = math.sqrt(sum(b * b for b in chunks[0].embedding))

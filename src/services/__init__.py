@@ -18,12 +18,6 @@ from src.services.text_search_service import (
 from src.services.vector_search_service import SearchResult, VectorSearchService
 
 __all__ = [
-    "SearchResult",
-    "VectorSearchService",
-    "TextSearchConfig",
-    "TextSearchError",
-    "TextSearchResult",
-    "TextSearchService",
     "FusionMethod",
     "HybridSearchConfig",
     "HybridSearchError",
@@ -31,4 +25,10 @@ __all__ = [
     "HybridSearchService",
     "InvalidFusionMethodError",
     "InvalidWeightError",
+    "SearchResult",
+    "TextSearchConfig",
+    "TextSearchError",
+    "TextSearchResult",
+    "TextSearchService",
+    "VectorSearchService",
 ]

@@ -91,8 +91,9 @@ class TestDetectionPerformance:
     
     def test_memory_usage(self, medium_text_pdf: Path):
         """Test memory usage during analysis."""
-        import psutil
         import os
+
+        import psutil
         
         process = psutil.Process(os.getpid())
         mem_before = process.memory_info().rss / 1024 / 1024  # MB
@@ -181,13 +182,7 @@ class TestDetectionPerformance:
             result = analyzer.analyze(pdf_path)
             
             # For text-based, must be exactly text_based
-            if expected_type == "text_based" and result.content_type.value == "text_based":
-                correct += 1
-            # For scanned, accept scanned or mixed (conservative)
-            elif expected_type == "scanned" and result.content_type.value in ["scanned", "mixed"]:
-                correct += 1
-            # For mixed, accept mixed or text_based
-            elif expected_type == "mixed" and result.content_type.value in ["mixed", "text_based"]:
+            if (expected_type == "text_based" and result.content_type.value == "text_based") or (expected_type == "scanned" and result.content_type.value in ["scanned", "mixed"]) or (expected_type == "mixed" and result.content_type.value in ["mixed", "text_based"]):
                 correct += 1
         
         accuracy = correct / total
@@ -202,9 +197,10 @@ class TestAPILatency:
     @pytest.mark.asyncio
     async def test_api_detect_latency(self, tmp_path: Path):
         """Test API /detect endpoint latency."""
-        from fastapi.testclient import TestClient
-        from src.api.routes.detection import router
         from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.api.routes.detection import router
         
         app = FastAPI()
         app.include_router(router, prefix="/api/v1/detect")
@@ -220,7 +216,7 @@ class TestAPILatency:
         
         # Measure API latency
         start = time.time()
-        with open(pdf_path, 'rb') as f:
+        with open(pdf_path, "rb") as f:
             response = client.post(
                 "/api/v1/detect",
                 files={"file": ("test.pdf", f, "application/pdf")}
@@ -235,9 +231,10 @@ class TestAPILatency:
     @pytest.mark.asyncio
     async def test_api_batch_latency(self, tmp_path: Path):
         """Test API /detect/batch endpoint latency."""
-        from fastapi.testclient import TestClient
-        from src.api.routes.detection import router
         from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.api.routes.detection import router
         
         app = FastAPI()
         app.include_router(router, prefix="/api/v1/detect")
@@ -252,7 +249,7 @@ class TestAPILatency:
             page.insert_text((72, 72), f"Batch {i} " * 100, fontsize=12)
             doc.save(str(pdf_path))
             doc.close()
-            files.append(("files", (f"batch_{i}.pdf", open(pdf_path, 'rb'), "application/pdf")))
+            files.append(("files", (f"batch_{i}.pdf", open(pdf_path, "rb"), "application/pdf")))
         
         # Measure batch API latency
         start = time.time()

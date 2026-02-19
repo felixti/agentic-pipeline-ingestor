@@ -18,8 +18,8 @@ class ContentDetectionService:
     
     def __init__(
         self,
-        analyzer: Optional[PDFContentAnalyzer] = None,
-        cache: Optional[DetectionCache] = None,
+        analyzer: PDFContentAnalyzer | None = None,
+        cache: DetectionCache | None = None,
     ):
         """Initialize service.
         
@@ -32,7 +32,7 @@ class ContentDetectionService:
     
     async def detect(
         self,
-        file_path: Union[str, Path],
+        file_path: str | Path,
         skip_cache: bool = False
     ) -> ContentAnalysisResult:
         """Detect content type of a PDF file with caching.
@@ -210,7 +210,7 @@ class ContentDetectionService:
     async def _get_from_cache(
         self,
         file_hash: str
-    ) -> Optional[ContentAnalysisResult]:
+    ) -> ContentAnalysisResult | None:
         """Get result from cache.
         
         Args:
@@ -333,11 +333,11 @@ class ContentDetectionService:
 
 
 # Singleton instance for reuse
-_detection_service: Optional[ContentDetectionService] = None
+_detection_service: ContentDetectionService | None = None
 
 
 def get_detection_service(
-    cache: Optional[DetectionCache] = None
+    cache: DetectionCache | None = None
 ) -> ContentDetectionService:
     """Get or create detection service singleton.
     

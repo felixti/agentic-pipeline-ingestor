@@ -27,7 +27,7 @@ class DetectionResultRepository:
         """
         self.session = session
     
-    async def get_by_hash(self, file_hash: str) -> Optional[ContentDetectionRecord]:
+    async def get_by_hash(self, file_hash: str) -> ContentDetectionRecord | None:
         """Get detection result by file hash.
         
         Args:
@@ -126,7 +126,7 @@ class DetectionResultRepository:
         self.session.add(link)
         await self.session.commit()
     
-    async def get_by_job_id(self, job_id: UUID) -> Optional[ContentDetectionRecord]:
+    async def get_by_job_id(self, job_id: UUID) -> ContentDetectionRecord | None:
         """Get detection result linked to a job.
         
         Args:

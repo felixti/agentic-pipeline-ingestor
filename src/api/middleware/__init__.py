@@ -21,18 +21,18 @@ from src.api.middleware.rate_limiter import (
 )
 
 __all__ = [
+    "DEFAULT_RATE_LIMITS",
+    "RateLimitConfig",
+    "RateLimitHeadersMiddleware",
     # Rate limiting
     "RateLimitTier",
-    "RateLimitConfig",
-    "DEFAULT_RATE_LIMITS",
     "RedisRateLimiter",
     "rate_limit",
-    "rate_limit_list_chunks",
-    "rate_limit_get_chunk",
-    "rate_limit_semantic_search",
-    "rate_limit_text_search",
-    "rate_limit_hybrid_search",
-    "rate_limit_similar_chunks",
-    "RateLimitHeadersMiddleware",
     "rate_limit_exception_handler",
+    "rate_limit_get_chunk",
+    "rate_limit_hybrid_search",
+    "rate_limit_list_chunks",
+    "rate_limit_semantic_search",
+    "rate_limit_similar_chunks",
+    "rate_limit_text_search",
 ]

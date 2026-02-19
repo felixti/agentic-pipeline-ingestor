@@ -21,7 +21,6 @@ from src.plugins.loaders import (
 )
 from src.plugins.registry import PluginRegistry, get_registry, reset_registry
 
-
 # ============================================================================
 # Mock Plugin Classes
 # ============================================================================
@@ -130,7 +129,7 @@ def loader(registry):
 @pytest.fixture
 def temp_plugin_file(tmp_path):
     """Create a temporary plugin file."""
-    plugin_content = '''
+    plugin_content = """
 from src.plugins.base import ParserPlugin, PluginMetadata, PluginType, ParsingResult, SupportResult
 
 class TestPlugin(ParserPlugin):
@@ -148,7 +147,7 @@ class TestPlugin(ParserPlugin):
 
     async def supports(self, file_path: str, mime_type: str = None):
         return SupportResult(supported=True)
-'''
+"""
     plugin_file = tmp_path / "test_plugin.py"
     plugin_file.write_text(plugin_content)
     return plugin_file
@@ -186,7 +185,7 @@ class TestPluginLoader:
         
         # Create a valid plugin file
         plugin_file = builtins_dir / "test_plugin.py"
-        plugin_content = '''
+        plugin_content = """
 from src.plugins.base import ParserPlugin, PluginMetadata, PluginType, ParsingResult, SupportResult
 
 class BuiltinTestPlugin(ParserPlugin):
@@ -204,7 +203,7 @@ class BuiltinTestPlugin(ParserPlugin):
 
     async def supports(self, file_path: str, mime_type: str = None):
         return SupportResult(supported=True)
-'''
+"""
         plugin_file.write_text(plugin_content)
         
         with patch.object(Path, "parent", builtins_dir.parent):
@@ -283,7 +282,7 @@ class BuiltinTestPlugin(ParserPlugin):
         
         # Create valid plugin file
         plugin_file = plugin_dir / "plugin1.py"
-        plugin_content = '''
+        plugin_content = """
 from src.plugins.base import ParserPlugin, PluginMetadata, PluginType, ParsingResult, SupportResult
 
 class DirPlugin(ParserPlugin):
@@ -301,7 +300,7 @@ class DirPlugin(ParserPlugin):
 
     async def supports(self, file_path: str, mime_type: str = None):
         return SupportResult(supported=True)
-'''
+"""
         plugin_file.write_text(plugin_content)
         
         count = loader.load_from_directory(str(plugin_dir))
@@ -363,11 +362,11 @@ class TestPluginLoaderPrivateMethods:
 
     def test_load_module_from_file(self, loader, tmp_path):
         """Test loading module from file path."""
-        module_content = '''
+        module_content = """
 x = 42
 def hello():
     return "world"
-'''
+"""
         module_file = tmp_path / "test_module.py"
         module_file.write_text(module_content)
         
@@ -491,7 +490,7 @@ class TestAutoDiscoveryPluginLoader:
         plugin_dir = tmp_path / "plugins"
         plugin_dir.mkdir()
         
-        plugin_content = '''
+        plugin_content = """
 from src.plugins.base import ParserPlugin, PluginMetadata, PluginType, ParsingResult, SupportResult
 
 class AutoPlugin(ParserPlugin):
@@ -509,7 +508,7 @@ class AutoPlugin(ParserPlugin):
 
     async def supports(self, file_path: str, mime_type: str = None):
         return SupportResult(supported=True)
-'''
+"""
         (plugin_dir / "auto_plugin.py").write_text(plugin_content)
         
         loader = AutoDiscoveryPluginLoader(
@@ -550,7 +549,7 @@ class TestLoadPluginsFunction:
         
         plugin_file = tmp_path / "single_plugin.py"
         
-        plugin_content = '''
+        plugin_content = """
 from src.plugins.base import ParserPlugin, PluginMetadata, PluginType, ParsingResult, SupportResult
 
 class FuncPlugin(ParserPlugin):
@@ -568,7 +567,7 @@ class FuncPlugin(ParserPlugin):
 
     async def supports(self, file_path: str, mime_type: str = None):
         return SupportResult(supported=True)
-'''
+"""
         plugin_file.write_text(plugin_content)
         (plugin_dir / "dir_plugin.py").write_text(plugin_content.replace("func_plugin", "dir_plugin"))
         

@@ -20,7 +20,6 @@ from fastapi.testclient import TestClient
 from src.db.models import DocumentChunkModel
 from src.main import app
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================

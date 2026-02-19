@@ -1,6 +1,6 @@
 """Job context for pipeline execution."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -16,29 +16,29 @@ class JobContext(BaseModel):
     file_type: str = Field(..., description="Detected file MIME type")
     
     # Content detection (NEW)
-    content_detection_result: Optional[ContentAnalysisResult] = Field(
+    content_detection_result: ContentAnalysisResult | None = Field(
         default=None,
         description="Content detection result for parser selection"
     )
     
     # Parser selection
-    selected_parser: Optional[str] = Field(
+    selected_parser: str | None = Field(
         default=None,
         description="Selected primary parser"
     )
-    fallback_parser: Optional[str] = Field(
+    fallback_parser: str | None = Field(
         default=None,
         description="Selected fallback parser"
     )
     
     # Stage results
-    stage_results: Dict[str, Any] = Field(
+    stage_results: dict[str, Any] = Field(
         default_factory=dict,
         description="Results from each pipeline stage"
     )
     
     # Configuration
-    config: Dict[str, Any] = Field(
+    config: dict[str, Any] = Field(
         default_factory=dict,
         description="Pipeline configuration"
     )
@@ -59,7 +59,7 @@ class JobContext(BaseModel):
         """
         self.content_detection_result = result
     
-    def get_detection_result(self) -> Optional[ContentAnalysisResult]:
+    def get_detection_result(self) -> ContentAnalysisResult | None:
         """Get content detection result.
         
         Returns:
@@ -70,7 +70,7 @@ class JobContext(BaseModel):
     def set_parser_selection(
         self,
         primary: str,
-        fallback: Optional[str] = None
+        fallback: str | None = None
     ) -> None:
         """Set parser selection.
         
@@ -90,7 +90,7 @@ class JobContext(BaseModel):
         """
         self.stage_results[stage] = result
     
-    def get_stage_result(self, stage: str) -> Optional[Any]:
+    def get_stage_result(self, stage: str) -> Any | None:
         """Get result for a pipeline stage.
         
         Args:

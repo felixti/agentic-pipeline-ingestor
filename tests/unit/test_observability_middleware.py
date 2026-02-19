@@ -8,10 +8,10 @@ from fastapi import FastAPI, Request
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from src.observability.middleware import (
-    ObservabilityMiddleware,
     MetricsMiddleware,
-    setup_observability,
+    ObservabilityMiddleware,
     _get_route,
+    setup_observability,
 )
 
 

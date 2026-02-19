@@ -46,8 +46,8 @@ class Vector(UserDefinedType):
                 return None
             # Parse vector string representation into list of floats
             if isinstance(value, str):
-                value = value.strip('[]')
-                return [float(x) for x in value.split(',')]
+                value = value.strip("[]")
+                return [float(x) for x in value.split(",")]
             return value
         return process
 
@@ -155,7 +155,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 class ContentDetectionResultModel(Base):
     """Database model for content detection results."""
     
-    __tablename__ = 'content_detection_results'
+    __tablename__ = "content_detection_results"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     file_hash = Column(String(64), unique=True, nullable=False, index=True)
@@ -180,10 +180,10 @@ class ContentDetectionResultModel(Base):
 class JobDetectionResultModel(Base):
     """Link table between jobs and detection results."""
     
-    __tablename__ = 'job_detection_results'
+    __tablename__ = "job_detection_results"
     
-    job_id = Column(UUID(as_uuid=True), ForeignKey('jobs.id', ondelete='CASCADE'), primary_key=True)
-    detection_result_id = Column(UUID(as_uuid=True), ForeignKey('content_detection_results.id', ondelete='CASCADE'), primary_key=True)
+    job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True)
+    detection_result_id = Column(UUID(as_uuid=True), ForeignKey("content_detection_results.id", ondelete="CASCADE"), primary_key=True)
     
     # Relationships
     job = relationship("JobModel", back_populates="detection_results")
@@ -205,7 +205,7 @@ class JobStatus(str, Enum):
 class JobModel(Base):
     """Job model for pipeline processing jobs."""
     
-    __tablename__ = 'jobs'
+    __tablename__ = "jobs"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     status = Column(String(20), nullable=False, default=JobStatus.CREATED, index=True)
@@ -233,7 +233,7 @@ class JobModel(Base):
     heartbeat_at = Column(DateTime(timezone=True), nullable=True)
     
     # Pipeline reference
-    pipeline_id = Column(UUID(as_uuid=True), ForeignKey('pipelines.id', ondelete='SET NULL'), nullable=True)
+    pipeline_id = Column(UUID(as_uuid=True), ForeignKey("pipelines.id", ondelete="SET NULL"), nullable=True)
     pipeline_config = Column(JSONB, nullable=True)
     
     # Relationships
@@ -277,7 +277,7 @@ class JobModel(Base):
 class PipelineModel(Base):
     """Pipeline configuration model."""
     
-    __tablename__ = 'pipelines'
+    __tablename__ = "pipelines"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     name = Column(String(255), nullable=False, index=True)
@@ -296,10 +296,10 @@ class PipelineModel(Base):
 class JobResultModel(Base):
     """Job processing result model."""
     
-    __tablename__ = 'job_results'
+    __tablename__ = "job_results"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    job_id = Column(UUID(as_uuid=True), ForeignKey('jobs.id', ondelete='CASCADE'), nullable=False, index=True, unique=True)
+    job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True, unique=True)
     extracted_text = Column(Text, nullable=True)
     output_data = Column(JSONB, nullable=True)
     result_metadata = Column("metadata", JSONB, nullable=False, default={})
@@ -331,14 +331,14 @@ class DocumentChunkModel(Base):
         created_at: Timestamp of record creation
     """
     
-    __tablename__ = 'document_chunks'
+    __tablename__ = "document_chunks"
     
     # Table constraints and indexes
     __table_args__ = (
         # Unique constraint: one chunk_index per job
-        Index('uq_document_chunks_job_chunk', 'job_id', 'chunk_index', unique=True),
+        Index("uq_document_chunks_job_chunk", "job_id", "chunk_index", unique=True),
         # Composite index for efficient job + chunk_index queries
-        Index('idx_document_chunks_job_chunk', 'job_id', 'chunk_index'),
+        Index("idx_document_chunks_job_chunk", "job_id", "chunk_index"),
     )
     
     # Primary key
@@ -347,7 +347,7 @@ class DocumentChunkModel(Base):
     # Foreign key to jobs table with CASCADE delete
     job_id = Column(
         UUID(as_uuid=True),
-        ForeignKey('jobs.id', ondelete='CASCADE'),
+        ForeignKey("jobs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -407,7 +407,7 @@ class DocumentChunkModel(Base):
 class AuditLogModel(Base):
     """Audit log entry model."""
     
-    __tablename__ = 'audit_logs'
+    __tablename__ = "audit_logs"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False, index=True)
@@ -429,7 +429,7 @@ class AuditLogModel(Base):
 class ApiKeyModel(Base):
     """API key model for service-to-service authentication."""
     
-    __tablename__ = 'api_keys'
+    __tablename__ = "api_keys"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     key_hash = Column(String(64), nullable=False, index=True, unique=True)
@@ -445,7 +445,7 @@ class ApiKeyModel(Base):
 class WebhookSubscriptionModel(Base):
     """Webhook subscription model."""
     
-    __tablename__ = 'webhook_subscriptions'
+    __tablename__ = "webhook_subscriptions"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     user_id = Column(String(255), nullable=False, index=True)
@@ -460,10 +460,10 @@ class WebhookSubscriptionModel(Base):
 class WebhookDeliveryModel(Base):
     """Webhook delivery attempt model."""
     
-    __tablename__ = 'webhook_deliveries'
+    __tablename__ = "webhook_deliveries"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    subscription_id = Column(UUID(as_uuid=True), ForeignKey('webhook_subscriptions.id', ondelete='CASCADE'), nullable=False, index=True)
+    subscription_id = Column(UUID(as_uuid=True), ForeignKey("webhook_subscriptions.id", ondelete="CASCADE"), nullable=False, index=True)
     event_type = Column(String(50), nullable=False, index=True)
     payload = Column(JSONB, nullable=False, default={})
     status = Column(String(20), nullable=False, default="pending")  # pending, delivered, failed

@@ -6,9 +6,10 @@ import os
 import sys
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from sqlalchemy.ext.asyncio import create_async_engine
+
 from src.db.models import Base
 
 # Database URL from environment or default
@@ -34,7 +35,7 @@ async def init_database():
         async with engine.connect() as conn:
             result = await conn.execute(text("SELECT version()"))
             version = result.scalar()
-            print(f"\n✓ Database connection verified!")
+            print("\n✓ Database connection verified!")
             print(f"  PostgreSQL version: {version}")
             
             # List tables

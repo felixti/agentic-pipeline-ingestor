@@ -12,8 +12,8 @@ from src.api.models import DestinationConfig, DestinationFilter, DestinationType
 from src.core.routing import (
     CircuitBreaker,
     CircuitBreakerState,
-    DestinationRouteResult,
     DestinationRouter,
+    DestinationRouteResult,
     MultiDestinationResult,
     RoutingFilterBuilder,
     RoutingStatus,
@@ -290,7 +290,7 @@ class TestDestinationRouter:
         mock_registry.get_destination.return_value = mock_plugin
 
         # Patch the logger to avoid structlog issues with kwargs
-        with patch.object(router.logger, 'error'):
+        with patch.object(router.logger, "error"):
             result = await router._route_to_single(sample_data, sample_destination)
 
         assert result.success is False
@@ -805,7 +805,7 @@ class TestCircuitBreaker:
         breaker = CircuitBreaker(failure_threshold=2)
 
         # Patch logger to avoid structlog issues
-        with patch('src.core.routing.logger'):
+        with patch("src.core.routing.logger"):
             breaker.record_failure()
             assert breaker.state == CircuitBreakerState.CLOSED
 

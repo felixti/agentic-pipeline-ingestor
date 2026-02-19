@@ -14,7 +14,6 @@ import pytest
 from src.api.models import JobStatus
 from src.worker.main import WorkerService, main, run_single_job
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -500,7 +499,7 @@ class TestRunSingleJob:
             mock_worker.processor.process_job.side_effect = Exception("Error")
             mock_worker_class.return_value = mock_worker
 
-            with pytest.raises(Exception):
+            with pytest.raises(Exception):  # noqa: B017  # Testing generic error handling in worker
                 await run_single_job(job_id)
 
             mock_worker.stop.assert_called_once()

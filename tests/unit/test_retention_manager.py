@@ -11,15 +11,14 @@ from uuid import uuid4
 import pytest
 
 from src.retention.manager import (
-    DataRetentionManager,
     DEFAULT_RETENTION_RULES,
+    DataRetentionManager,
     RetentionAction,
     RetentionPolicy,
     RetentionRule,
     get_retention_manager,
     set_retention_manager,
 )
-
 
 # ============================================================================
 # Fixtures
@@ -177,7 +176,7 @@ class TestRetentionRule:
         # Exactly at retention period should not be expired (using > comparison)
         from unittest.mock import patch
         fixed_now = datetime(2024, 6, 15, 12, 0, 0)
-        with patch('src.retention.manager.datetime') as mock_datetime:
+        with patch("src.retention.manager.datetime") as mock_datetime:
             mock_datetime.utcnow.return_value = fixed_now
             mock_datetime.__gt__ = datetime.__gt__
             mock_datetime.__add__ = datetime.__add__

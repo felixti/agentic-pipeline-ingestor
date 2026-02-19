@@ -64,6 +64,7 @@ async def check_database() -> HealthCheckResult:
     start = time.time()
     try:
         from sqlalchemy import text
+
         from src.db.models import get_session
 
         async for session in get_session():
@@ -313,6 +314,7 @@ async def check_vector_store() -> HealthCheckResult:
     start = time.time()
     try:
         from sqlalchemy import text
+
         from src.db.models import get_session
 
         async for session in get_session():
@@ -575,7 +577,7 @@ async def vector_store_health() -> VectorStoreHealthResponse:
         extensions=extensions,
         pgvector_version=extensions.get("vector"),
         pg_trgm_version=extensions.get("pg_trgm"),
-        missing_extensions=missing if missing else None,
+        missing_extensions=missing or None,
         timestamp=datetime.utcnow().isoformat(),
     )
 

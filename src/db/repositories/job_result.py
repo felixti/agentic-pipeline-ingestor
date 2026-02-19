@@ -92,7 +92,7 @@ class JobResultRepository:
     async def get_by_job_id(
         self,
         job_id: str | UUID,
-    ) -> Optional[JobResultModel]:
+    ) -> JobResultModel | None:
         """Get result by job ID.
         
         Args:

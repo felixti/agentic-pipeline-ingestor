@@ -1,8 +1,9 @@
 """Integration tests for content detection storage and caching."""
 
-import pytest
 from datetime import datetime, timedelta
 from uuid import uuid4
+
+import pytest
 
 from src.core.content_detection.cache import DetectionCache, NullDetectionCache
 from src.core.content_detection.models import (

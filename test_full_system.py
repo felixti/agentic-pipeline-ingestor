@@ -153,7 +153,7 @@ async def test_auth():
         data = resp.json()
         response_data = get_data(data)
         access_token = response_data["access_token"]
-        print(f"✓ Login successful, got access token")
+        print("✓ Login successful, got access token")
         
         # Create API key
         key_data = {
@@ -244,10 +244,14 @@ async def verify_database_persistence():
     print("\n=== Verifying Database Persistence ===")
     
     from sqlalchemy.ext.asyncio import AsyncSession
+
     from src.db.models import get_async_engine
     from src.db.repositories import (
-        JobRepository, PipelineRepository, APIKeyRepository,
-        WebhookRepository, AuditLogRepository
+        APIKeyRepository,
+        AuditLogRepository,
+        JobRepository,
+        PipelineRepository,
+        WebhookRepository,
     )
     
     engine = get_async_engine()

@@ -7,7 +7,15 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from src.api.models import Job, JobStatus, ParserConfig, PipelineConfig, ProcessingMode, RetryRecord, SourceType
+from src.api.models import (
+    Job,
+    JobStatus,
+    ParserConfig,
+    PipelineConfig,
+    ProcessingMode,
+    RetryRecord,
+    SourceType,
+)
 from src.core.retry import (
     FallbackParserRetry,
     PreprocessRetry,
@@ -689,7 +697,7 @@ class TestRetryStrategyRegistry:
         # This should return None since no strategy can be applied
         # (same_parser at limit, no fallback configured, preprocess doesn't apply to text, split doesn't apply to small files)
         # Patch the logger to avoid structlog issues with kwargs
-        with patch('src.core.retry.logger'):
+        with patch("src.core.retry.logger"):
             strategy = await registry.select_strategy(context)
 
         # Should return None as preprocess won't apply to text files

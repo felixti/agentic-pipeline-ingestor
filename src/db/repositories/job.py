@@ -86,7 +86,7 @@ class JobRepository:
         
         return job
     
-    async def get_by_id(self, job_id: str | UUID) -> Optional[JobModel]:
+    async def get_by_id(self, job_id: str | UUID) -> JobModel | None:
         """Get job by ID.
         
         Args:
@@ -166,7 +166,7 @@ class JobRepository:
         self,
         worker_id: str,
         timeout_seconds: int = 300,
-    ) -> Optional[JobModel]:
+    ) -> JobModel | None:
         """Poll for a pending job with row-level locking.
         
         Uses SELECT FOR UPDATE SKIP LOCKED to prevent duplicate processing
@@ -218,7 +218,7 @@ class JobRepository:
         status: str,
         error_message: str | None = None,
         error_code: str | None = None,
-    ) -> Optional[JobModel]:
+    ) -> JobModel | None:
         """Update job status.
         
         Args:
@@ -259,7 +259,7 @@ class JobRepository:
     async def update_heartbeat(
         self,
         job_id: str | UUID,
-    ) -> Optional[JobModel]:
+    ) -> JobModel | None:
         """Update job heartbeat timestamp.
         
         Args:
@@ -282,7 +282,7 @@ class JobRepository:
     async def release_lock(
         self,
         job_id: str | UUID,
-    ) -> Optional[JobModel]:
+    ) -> JobModel | None:
         """Release job lock.
         
         Args:

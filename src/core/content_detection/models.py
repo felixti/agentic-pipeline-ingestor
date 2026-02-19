@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -23,7 +23,7 @@ class TextStatistics(BaseModel):
     total_characters: int = Field(..., description="Total character count")
     has_text_layer: bool = Field(..., description="Whether PDF has extractable text layer")
     font_count: int = Field(..., description="Number of unique fonts")
-    encoding: Optional[str] = Field(None, description="Text encoding detected")
+    encoding: str | None = Field(None, description="Text encoding detected")
     average_chars_per_page: float = Field(..., description="Average characters per page")
 
 
@@ -32,7 +32,7 @@ class ImageStatistics(BaseModel):
     
     total_images: int = Field(..., description="Total number of images")
     image_area_ratio: float = Field(..., description="Ratio of image area to page area", ge=0.0, le=1.0)
-    average_dpi: Optional[int] = Field(None, description="Average DPI of images")
+    average_dpi: int | None = Field(None, description="Average DPI of images")
     color_pages: int = Field(..., description="Number of pages with color images")
     total_page_area: float = Field(..., description="Total area of all pages in points²")
     total_image_area: float = Field(..., description="Total area of all images in points²")
@@ -59,10 +59,10 @@ class ContentAnalysisResult(BaseModel):
     content_type: ContentType = Field(..., description="Overall content type classification")
     confidence: float = Field(..., description="Overall confidence score (0.0-1.0)", ge=0.0, le=1.0)
     recommended_parser: str = Field(..., description="Recommended parser for this content")
-    alternative_parsers: List[str] = Field(default_factory=list, description="Alternative parsers")
+    alternative_parsers: list[str] = Field(default_factory=list, description="Alternative parsers")
     text_statistics: TextStatistics = Field(..., description="Text content statistics")
     image_statistics: ImageStatistics = Field(..., description="Image content statistics")
-    page_results: List[PageAnalysis] = Field(..., description="Per-page analysis results")
+    page_results: list[PageAnalysis] = Field(..., description="Per-page analysis results")
     processing_time_ms: int = Field(..., description="Processing time in milliseconds")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Analysis timestamp")
     
@@ -93,12 +93,12 @@ class ContentDetectionRecord(BaseModel):
     content_type: ContentType = Field(...)
     confidence: float = Field(..., ge=0.0, le=1.0)
     recommended_parser: str = Field(...)
-    alternative_parsers: List[str] = Field(default_factory=list)
+    alternative_parsers: list[str] = Field(default_factory=list)
     text_statistics: TextStatistics = Field(...)
     image_statistics: ImageStatistics = Field(...)
-    page_results: List[PageAnalysis] = Field(...)
+    page_results: list[PageAnalysis] = Field(...)
     processing_time_ms: int = Field(...)
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    expires_at: Optional[datetime] = Field(None)
+    expires_at: datetime | None = Field(None)
     access_count: int = Field(default=1)
     last_accessed_at: datetime = Field(default_factory=datetime.utcnow)

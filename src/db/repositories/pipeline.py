@@ -60,7 +60,7 @@ class PipelineRepository:
         self,
         pipeline_id: str | UUID,
         include_inactive: bool = False,
-    ) -> Optional[PipelineModel]:
+    ) -> PipelineModel | None:
         """Get pipeline by ID.
         
         Args:
@@ -88,7 +88,7 @@ class PipelineRepository:
         self,
         name: str,
         include_inactive: bool = False,
-    ) -> Optional[PipelineModel]:
+    ) -> PipelineModel | None:
         """Get pipeline by name.
         
         Args:
@@ -161,7 +161,7 @@ class PipelineRepository:
         name: str | None = None,
         config: dict | None = None,
         description: str | None = None,
-    ) -> Optional[PipelineModel]:
+    ) -> PipelineModel | None:
         """Update pipeline configuration.
         
         Args:

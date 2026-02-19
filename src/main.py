@@ -344,6 +344,7 @@ def _add_routes(app: FastAPI) -> None:
         # Check database
         try:
             from sqlalchemy import text
+
             from src.db.models import get_session
             async for session in get_session():
                 await session.execute(text("SELECT 1"))
@@ -860,8 +861,9 @@ def _add_routes(app: FastAPI) -> None:
         """Upload file(s) for processing."""
         import shutil
         from pathlib import Path
-        
+
         from fastapi import UploadFile
+
         from src.api.models import ApiResponse, UploadMultipleResponse, UploadResponse
         from src.db.repositories.job import JobRepository
 
@@ -881,7 +883,7 @@ def _add_routes(app: FastAPI) -> None:
         # Extract files from form data
         files: list[UploadFile] = []
         for key, value in form_data.multi_items():
-            if hasattr(value, 'filename') and value.filename:
+            if hasattr(value, "filename") and value.filename:
                 files.append(value)
 
         if not files:
@@ -936,7 +938,7 @@ def _add_routes(app: FastAPI) -> None:
                     file_path.unlink()
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail={"error": {"code": "UPLOAD_FAILED", "message": f"Failed to process {upload_file.filename}: {str(e)}"}}
+                    detail={"error": {"code": "UPLOAD_FAILED", "message": f"Failed to process {upload_file.filename}: {e!s}"}}
                 )
 
         # Build response
@@ -966,9 +968,10 @@ def _add_routes(app: FastAPI) -> None:
         db: AsyncSession = Depends(get_db),
     ) -> dict:
         """Ingest from URL."""
-        import httpx
         from pathlib import Path
-        
+
+        import httpx
+
         from src.api.models import ApiResponse, UploadResponse
         from src.db.repositories.job import JobRepository
 
@@ -1044,12 +1047,12 @@ def _add_routes(app: FastAPI) -> None:
         except httpx.HTTPError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"error": {"code": "DOWNLOAD_FAILED", "message": f"Failed to download from URL: {str(e)}"}}
+                detail={"error": {"code": "DOWNLOAD_FAILED", "message": f"Failed to download from URL: {e!s}"}}
             )
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={"error": {"code": "INGESTION_FAILED", "message": f"Failed to process URL: {str(e)}"}}
+                detail={"error": {"code": "INGESTION_FAILED", "message": f"Failed to process URL: {e!s}"}}
             )
 
     # Pipeline Configuration Routes
@@ -1061,7 +1064,7 @@ def _add_routes(app: FastAPI) -> None:
         limit: int = 20,
     ) -> dict:
         """List pipeline configurations."""
-        from src.api.models import ApiResponse, ApiLinks
+        from src.api.models import ApiLinks, ApiResponse
         from src.db.repositories.pipeline import PipelineRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
@@ -1450,7 +1453,7 @@ def _add_routes(app: FastAPI) -> None:
         limit: int = 20,
     ) -> dict:
         """List API keys."""
-        from src.api.models import ApiResponse, ApiLinks
+        from src.api.models import ApiLinks, ApiResponse
         from src.db.repositories.api_key import APIKeyRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
@@ -1566,7 +1569,7 @@ def _add_routes(app: FastAPI) -> None:
         limit: int = 20,
     ) -> dict:
         """List webhook subscriptions."""
-        from src.api.models import ApiResponse, ApiLinks
+        from src.api.models import ApiLinks, ApiResponse
         from src.db.repositories.webhook import WebhookRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
@@ -1636,8 +1639,8 @@ def _add_routes(app: FastAPI) -> None:
     ) -> dict:
         """List webhook deliveries for a subscription."""
         from uuid import UUID
-        
-        from src.api.models import ApiResponse, ApiLinks
+
+        from src.api.models import ApiLinks, ApiResponse
         from src.db.repositories.webhook import WebhookRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
@@ -1708,7 +1711,7 @@ def _add_routes(app: FastAPI) -> None:
         end_date: str | None = None,
     ) -> dict:
         """Query audit logs."""
-        from src.api.models import ApiResponse, ApiLinks
+        from src.api.models import ApiLinks, ApiResponse
         from src.db.repositories.audit import AuditLogRepository
 
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))

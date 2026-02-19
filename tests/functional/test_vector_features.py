@@ -60,6 +60,7 @@ class TestVectorStoreFeatures:
     def test_vector_search_service_creation(self):
         """Test that VectorSearchService can be instantiated."""
         from unittest.mock import AsyncMock, MagicMock
+
         from src.services.vector_search_service import VectorSearchService
         
         mock_repo = MagicMock()
@@ -74,6 +75,7 @@ class TestVectorStoreFeatures:
     def test_text_search_service_creation(self):
         """Test that TextSearchService can be instantiated."""
         from unittest.mock import MagicMock
+
         from src.services.text_search_service import TextSearchService
         
         mock_repo = MagicMock()
@@ -88,9 +90,10 @@ class TestVectorStoreFeatures:
     def test_hybrid_search_service_creation(self):
         """Test that HybridSearchService can be instantiated."""
         from unittest.mock import MagicMock
+
         from src.services.hybrid_search_service import HybridSearchService
-        from src.services.vector_search_service import VectorSearchService
         from src.services.text_search_service import TextSearchService
+        from src.services.vector_search_service import VectorSearchService
         
         mock_repo = MagicMock()
         vector_service = VectorSearchService(mock_repo)
@@ -115,10 +118,10 @@ class TestVectorStoreFeatures:
 
     def test_search_result_dataclasses(self):
         """Test that search result dataclasses work correctly."""
-        from src.services.vector_search_service import SearchResult
-        from src.services.text_search_service import TextSearchResult
-        from src.services.hybrid_search_service import HybridSearchResult
         from src.db.models import DocumentChunkModel
+        from src.services.hybrid_search_service import HybridSearchResult
+        from src.services.text_search_service import TextSearchResult
+        from src.services.vector_search_service import SearchResult
         
         chunk = DocumentChunkModel(
             id=uuid.uuid4(),
@@ -176,8 +179,9 @@ class TestVectorStoreFeatures:
 
     def test_similarity_calculation(self):
         """Test similarity score calculation from distance."""
-        from src.services.vector_search_service import VectorSearchService
         from unittest.mock import MagicMock
+
+        from src.services.vector_search_service import VectorSearchService
         
         service = VectorSearchService.__new__(VectorSearchService)
         service._default_min_similarity = 0.7
@@ -250,21 +254,22 @@ class TestVectorStoreFeatures:
 
     def test_repository_methods_exist(self):
         """Test that all DocumentChunkRepository methods exist."""
-        from src.db.repositories.document_chunk_repository import DocumentChunkRepository
         import inspect
+
+        from src.db.repositories.document_chunk_repository import DocumentChunkRepository
         
         methods = [
-            'create',
-            'get_by_id',
-            'get_by_job_id',
-            'get_by_content_hash',
-            'bulk_create',
-            'update_embedding',
-            'delete_by_job_id',
-            'delete',
-            'exists_by_job_id_and_index',
-            'count_by_job_id',
-            'get_chunks_without_embeddings'
+            "create",
+            "get_by_id",
+            "get_by_job_id",
+            "get_by_content_hash",
+            "bulk_create",
+            "update_embedding",
+            "delete_by_job_id",
+            "delete",
+            "exists_by_job_id_and_index",
+            "count_by_job_id",
+            "get_chunks_without_embeddings"
         ]
         
         for method_name in methods:
@@ -318,6 +323,7 @@ class TestVectorStoreFeatures:
     def test_docker_compose_updated(self):
         """Test that docker-compose uses pgvector image."""
         from pathlib import Path
+
         import yaml
         
         docker_compose = Path("docker/docker-compose.yml")
@@ -332,6 +338,7 @@ class TestVectorStoreFeatures:
     def test_configuration_file_exists(self):
         """Test that vector store config file exists."""
         from pathlib import Path
+
         import yaml
         
         config_file = Path("config/vector_store.yaml")
@@ -427,8 +434,9 @@ class TestEndToEndWorkflow:
     @pytest.mark.asyncio
     async def test_chunk_creation_workflow(self):
         """Test the complete chunk creation workflow."""
-        from src.db.models import DocumentChunkModel
         import uuid
+
+        from src.db.models import DocumentChunkModel
         
         # Create a chunk
         chunk = DocumentChunkModel(
@@ -460,9 +468,10 @@ class TestEndToEndWorkflow:
 
     def test_search_workflow_simulation(self):
         """Simulate a complete search workflow."""
+        import uuid
+
         from src.db.models import DocumentChunkModel
         from src.services.vector_search_service import SearchResult
-        import uuid
         
         # Create test chunks
         chunks = []

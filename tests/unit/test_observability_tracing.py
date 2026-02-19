@@ -12,8 +12,8 @@ from src.observability.tracing import (
     get_telemetry_manager,
     get_tracer,
     setup_tracing_from_settings,
-    start_span,
     start_pipeline_stage_span,
+    start_span,
 )
 
 

@@ -48,7 +48,6 @@ from src.services.vector_search_service import (
     VectorSearchService,
 )
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -242,7 +241,7 @@ class TestVectorSearchService:
     async def test_search_by_vector_nan_values_raises_error(self, vector_search_service):
         """Test that NaN values in embedding raises InvalidEmbeddingError."""
         query_embedding = [0.1] * 1536
-        query_embedding[0] = float('nan')
+        query_embedding[0] = float("nan")
         
         with pytest.raises(InvalidEmbeddingError) as exc_info:
             await vector_search_service.search_by_vector(
@@ -395,7 +394,7 @@ class TestVectorSearchService:
     def test_validate_embedding_infinite(self, vector_search_service):
         """Test validation of embedding with infinite values."""
         embedding = [0.1] * 1536
-        embedding[0] = float('inf')
+        embedding[0] = float("inf")
         
         with pytest.raises(InvalidEmbeddingError) as exc_info:
             vector_search_service._validate_embedding(embedding)

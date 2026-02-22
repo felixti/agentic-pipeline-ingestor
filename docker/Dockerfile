@@ -10,7 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
-# Install system dependencies e UV
+# Install system dependencies e UV (como root)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
@@ -21,8 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Add UV to PATH
-ENV PATH="/root/.local/bin:$PATH"
+# Add UV to PATH (system-wide)
+ENV PATH="/root/.local/bin:/usr/local/bin:$PATH"
 
 # Set working directory
 WORKDIR $APP_HOME
@@ -30,8 +30,8 @@ WORKDIR $APP_HOME
 # Copy requirements
 COPY pyproject.toml ./
 
-# Install dependencies com UV (muito mais rápido!)
-RUN uv pip install --system \
+# Install dependencies com UV (como root para ter acesso ao UV)
+RUN /root/.local/bin/uv pip install --system \
     fastapi uvicorn pydantic pydantic-settings email-validator \
     sqlalchemy alembic asyncpg psycopg2-binary \
     redis hiredis \

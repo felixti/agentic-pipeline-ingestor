@@ -1,0 +1,113 @@
+# Docker Compose para Dokploy
+# Versão adaptada para usar serviços externos do Dokploy (PostgreSQL e Redis)
+
+services:
+  # ============================================================================
+  # API Service
+  # ============================================================================
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: pipeline-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Application
+      - DEBUG=false
+      - ENV=production
+      - HOST=0.0.0.0
+      - PORT=8000
+      - WORKERS=4
+      
+      # Database (usando serviço externo do Dokploy)
+      - DB_URL=${DB_URL}
+      - DB_ECHO=false
+      
+      # Redis (usando serviço externo do Dokploy)
+      - REDIS_URL=${REDIS_URL}
+      
+      # OpenSearch (desabilitado - usar logs do Dokploy)
+      - OPENSEARCH_HOSTS=[]
+      
+      # Security
+      - SECRET_KEY=${SECRET_KEY}
+      
+      # Observability
+      - OTEL_SERVICE_NAME=pipeline-api
+      - OTEL_ENVIRONMENT=production
+      - OTEL_LOG_LEVEL=INFO
+      
+      # LLM Configuration
+      - AZURE_OPENAI_API_BASE=${AZURE_OPENAI_API_BASE:-}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      
+      # Azure AI Vision (for OCR)
+      - AZURE_AI_VISION_ENDPOINT=${AZURE_AI_VISION_ENDPOINT:-}
+      - AZURE_AI_VISION_API_KEY=${AZURE_AI_VISION_API_KEY:-}
+      
+      # Processing
+      - PROCESSING_MAX_FILE_SIZE_MB=100
+      - PROCESSING_MAX_PAGES_PER_DOCUMENT=1000
+      - PROCESSING_TEMP_DIR=/tmp/pipeline
+      - PROCESSING_CLEANUP_TEMP_FILES=true
+      - PROCESSING_DEFAULT_TIMEOUT_SECONDS=300
+      - PROCESSING_MAX_RETRIES=3
+      
+    volumes:
+      - pipeline-uploads:/tmp/pipeline
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================================
+  # Worker Service
+  # ============================================================================
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: python -m src.worker.main
+    environment:
+      - DEBUG=false
+      - ENV=production
+      - DB_URL=${DB_URL}
+      - REDIS_URL=${REDIS_URL}
+      - OPENSEARCH_HOSTS=[]
+      - OTEL_SERVICE_NAME=pipeline-worker
+      - OTEL_ENVIRONMENT=production
+      
+      # LLM Configuration
+      - AZURE_OPENAI_API_BASE=${AZURE_OPENAI_API_BASE:-}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      
+      # Azure AI Vision
+      - AZURE_AI_VISION_ENDPOINT=${AZURE_AI_VISION_ENDPOINT:-}
+      - AZURE_AI_VISION_API_KEY=${AZURE_AI_VISION_API_KEY:-}
+      
+      # Worker Configuration
+      - WORKER_POLL_INTERVAL=5.0
+      - WORKER_MAX_CONCURRENT=3
+      
+    volumes:
+      - pipeline-uploads:/tmp/pipeline
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  pipeline-uploads:
+    driver: local

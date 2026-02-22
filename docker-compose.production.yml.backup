@@ -1,0 +1,206 @@
+# Docker Compose para Produção (Dokploy)
+# Usa variáveis de ambiente para todas as configurações sensíveis
+
+services:
+  # ============================================================================
+  # API Service
+  # ============================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pipeline-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Application
+      - DEBUG=${DEBUG:-false}
+      - ENV=${ENV:-production}
+      - HOST=0.0.0.0
+      - PORT=8000
+      - WORKERS=${WORKERS:-4}
+      
+      # Database (via variável de ambiente)
+      - DB_URL=${DB_URL}
+      - DB_ECHO=${DB_ECHO:-false}
+      
+      # Redis (via variável de ambiente)
+      - REDIS_URL=${REDIS_URL}
+      
+      # OpenSearch (opcional)
+      - OPENSEARCH_HOSTS=${OPENSEARCH_HOSTS:-[]}
+      
+      # Security
+      - SECRET_KEY=${SECRET_KEY}
+      
+      # Observability
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-pipeline-api}
+      - OTEL_ENVIRONMENT=${OTEL_ENVIRONMENT:-production}
+      - OTEL_LOG_LEVEL=${OTEL_LOG_LEVEL:-INFO}
+      
+      # LLM Configuration
+      - AZURE_OPENAI_API_BASE=${AZURE_OPENAI_API_BASE:-}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      
+      # Azure AI Vision
+      - AZURE_AI_VISION_ENDPOINT=${AZURE_AI_VISION_ENDPOINT:-}
+      - AZURE_AI_VISION_API_KEY=${AZURE_AI_VISION_API_KEY:-}
+      
+      # Cognee
+      - COGNEE_API_URL=${COGNEE_API_URL:-}
+      - COGNEE_API_KEY=${COGNEE_API_KEY:-}
+      
+      # Processing
+      - PROCESSING_MAX_FILE_SIZE_MB=${PROCESSING_MAX_FILE_SIZE_MB:-100}
+      - PROCESSING_MAX_PAGES_PER_DOCUMENT=${PROCESSING_MAX_PAGES_PER_DOCUMENT:-1000}
+      - PROCESSING_TEMP_DIR=/tmp/pipeline
+      - PROCESSING_CLEANUP_TEMP_FILES=true
+      - PROCESSING_DEFAULT_TIMEOUT_SECONDS=${PROCESSING_DEFAULT_TIMEOUT_SECONDS:-300}
+      - PROCESSING_MAX_RETRIES=${PROCESSING_MAX_RETRIES:-3}
+      
+    volumes:
+      - pipeline-uploads:/tmp/pipeline
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================================
+  # Worker Service
+  # ============================================================================
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m src.worker.main
+    environment:
+      - DEBUG=${DEBUG:-false}
+      - ENV=${ENV:-production}
+      - DB_URL=${DB_URL}
+      - REDIS_URL=${REDIS_URL}
+      - OPENSEARCH_HOSTS=${OPENSEARCH_HOSTS:-[]}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-pipeline-worker}
+      - OTEL_ENVIRONMENT=${OTEL_ENVIRONMENT:-production}
+      
+      # LLM Configuration
+      - AZURE_OPENAI_API_BASE=${AZURE_OPENAI_API_BASE:-}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      
+      # Azure AI Vision
+      - AZURE_AI_VISION_ENDPOINT=${AZURE_AI_VISION_ENDPOINT:-}
+      - AZURE_AI_VISION_API_KEY=${AZURE_AI_VISION_API_KEY:-}
+      
+      # Cognee
+      - COGNEE_API_URL=${COGNEE_API_URL:-}
+      - COGNEE_API_KEY=${COGNEE_API_KEY:-}
+      
+      # Worker Configuration
+      - WORKER_POLL_INTERVAL=${WORKER_POLL_INTERVAL:-5.0}
+      - WORKER_MAX_CONCURRENT=${WORKER_MAX_CONCURRENT:-3}
+      
+    volumes:
+      - pipeline-uploads:/tmp/pipeline
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+
+  # ============================================================================
+  # PostgreSQL Database (with pgvector extension)
+  # ============================================================================
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: pipeline-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-pipeline}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================================================
+  # Redis Cache
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: pipeline-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Arize Phoenix - OpenTelemetry Native Observability
+  # ============================================================================
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: pipeline-phoenix
+    ports:
+      - "6006:6006"      # Phoenix UI
+      - "4317:4317"      # OTLP gRPC
+      - "4318:4318"      # OTLP HTTP
+    environment:
+      - PHOENIX_PROJECT_NAME=${PHOENIX_PROJECT_NAME:-agentic-pipeline}
+      - PHOENIX_API_KEY=${PHOENIX_API_KEY:-}
+      - PHOENIX_ENABLE_AUTH=${PHOENIX_ENABLE_AUTH:-false}
+      - PHOENIX_SQL_DATABASE_URL=${PHOENIX_SQL_DATABASE_URL:-}
+    volumes:
+      - phoenix-data:/app/data
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  pipeline-uploads:
+    driver: local
+  phoenix-data:
+    driver: local
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  pipeline-network:
+    driver: bridge

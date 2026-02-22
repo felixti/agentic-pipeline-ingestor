@@ -1,14 +1,16 @@
 # Agentic Data Pipeline Ingestor - Production Docker Image
-# Build simplificado com dependências diretas
+# Usando UV para instalação mais rápida
 
 FROM python:3.11-slim
 
 # Set environment
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    APP_HOME=/app
+    APP_HOME=/app \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
-# Install system dependencies
+# Install system dependencies e UV
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
@@ -16,14 +18,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
     git \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Add UV to PATH
+ENV PATH="/root/.local/bin:$PATH"
 
 # Set working directory
 WORKDIR $APP_HOME
 
-# Install Python dependencies diretamente (mais rápido que pip install -e .)
-RUN pip install --upgrade pip && \
-    pip install \
+# Copy requirements
+COPY pyproject.toml ./
+
+# Install dependencies com UV (muito mais rápido!)
+RUN uv pip install --system \
     fastapi uvicorn pydantic pydantic-settings email-validator \
     sqlalchemy alembic asyncpg psycopg2-binary \
     redis hiredis \
@@ -40,7 +48,6 @@ RUN pip install --upgrade pip && \
 COPY src/ ./src/
 COPY api/ ./api/
 COPY config/ ./config/
-COPY pyproject.toml ./
 
 # Create non-root user
 RUN groupadd -r pipeline && useradd -r -g pipeline pipeline && \
@@ -54,7 +61,7 @@ USER pipeline
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries-3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health/live || exit 1
 
 # Run the application

@@ -17,26 +17,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     libpq-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies
-COPY pyproject.toml /app/
+# Copy project files
+COPY pyproject.toml README.md /app/
 WORKDIR /app
 
 # Install dependencies from pyproject.toml
 RUN pip install --upgrade pip && \
-    pip install \
-    fastapi uvicorn pydantic pydantic-settings sqlalchemy alembic asyncpg redis \
-    litellm openai httpx aiohttp \
-    prometheus-client structlog python-jose passlib pyyaml tenacity \
-    opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp \
-    opentelemetry-instrumentation-fastapi opentelemetry-instrumentation-sqlalchemy \
-    pymupdf pillow python-docx openpyxl python-pptx pdfplumber pytest pytest-asyncio \
-    numpy
+    pip install -e .
 
 # ============================================================================
 # Stage 2: Runtime

@@ -1,73 +1,43 @@
 # Agentic Data Pipeline Ingestor - Production Docker Image
-# Multi-stage build for optimized image size
+# Build simplificado para VPS
 
-# ============================================================================
-# Stage 1: Builder
-# ============================================================================
-FROM python:3.11-slim as builder
+FROM python:3.11-slim
 
-# Set build environment
+# Set environment
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    APP_HOME=/app \
+    PATH="/opt/venv/bin:$PATH"
 
-# Install build dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     libpq-dev \
+    libpq5 \
+    curl \
     git \
     && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment
 RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Copy project files
-COPY pyproject.toml README.md /app/
-WORKDIR /app
-
-# Install dependencies from pyproject.toml
-RUN pip install --upgrade pip && \
-    pip install -e .
-
-# ============================================================================
-# Stage 2: Runtime
-# ============================================================================
-FROM python:3.11-slim as runtime
-
-# Set runtime environment
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONFAULTHANDLER=1 \
-    PIP_NO_CACHE_DIR=1 \
-    APP_HOME=/app \
-    PATH="/opt/venv/bin:$PATH"
-
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create non-root user
-RUN groupadd -r pipeline && useradd -r -g pipeline pipeline
-
-# Copy virtual environment from builder
-COPY --from=builder /opt/venv /opt/venv
 
 # Set working directory
 WORKDIR $APP_HOME
 
-# Copy application code
-COPY --chown=pipeline:pipeline src/ ./src/
-COPY --chown=pipeline:pipeline api/ ./api/
-COPY --chown=pipeline:pipeline config/ ./config/
-COPY --chown=pipeline:pipeline pyproject.toml ./
+# Copy and install dependencies first (for better caching)
+COPY pyproject.toml README.md ./
+RUN pip install --upgrade pip && \
+    pip install -e .
 
-# Create necessary directories
-RUN mkdir -p /tmp/pipeline /var/log/pipeline && \
+# Copy application code
+COPY src/ ./src/
+COPY api/ ./api/
+COPY config/ ./config/
+
+# Create non-root user
+RUN groupadd -r pipeline && useradd -r -g pipeline pipeline && \
+    mkdir -p /tmp/pipeline /var/log/pipeline && \
     chown -R pipeline:pipeline /tmp/pipeline /var/log/pipeline $APP_HOME
 
 # Switch to non-root user

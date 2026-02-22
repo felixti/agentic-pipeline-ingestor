@@ -1,0 +1,11 @@
+id: validate-docker-production
+name: Validate Docker Production Configuration
+status: in-progress
+priority: high
+created_at: 2025-02-22
+author: ralph-loop
+artifacts:
+  proposal: proposal.md
+  design: design.md
+  tasks: tasks.md
+specs_dir: specs

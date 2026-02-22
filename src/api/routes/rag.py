@@ -13,6 +13,7 @@ optimization strategies including query rewriting, HyDE, reranking, and hybrid s
 
 import time
 import uuid
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status

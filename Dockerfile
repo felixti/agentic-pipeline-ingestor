@@ -4,7 +4,7 @@
 # ============================================================================
 # Stage 1: Builder
 # ============================================================================
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 # Set build environment
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -35,12 +35,13 @@ RUN pip install --upgrade pip && \
     prometheus-client structlog python-jose passlib pyyaml tenacity \
     opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp \
     opentelemetry-instrumentation-fastapi opentelemetry-instrumentation-sqlalchemy \
-    pymupdf pillow python-docx openpyxl python-pptx pdfplumber pytest pytest-asyncio
+    pymupdf pillow python-docx openpyxl python-pptx pdfplumber pytest pytest-asyncio \
+    numpy scipy scikit-learn sentence-transformers
 
 # ============================================================================
 # Stage 2: Runtime
 # ============================================================================
-FROM python:3.11-slim as runtime
+FROM python:3.11-slim AS runtime
 
 # Set runtime environment
 ENV PYTHONDONTWRITEBYTECODE=1 \

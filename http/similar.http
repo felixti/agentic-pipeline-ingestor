@@ -1,0 +1,19 @@
+### RAG Find Similar Chunks
+# Find chunks semantically similar to a reference chunk using its stored embedding.
+# Best for: Finding related content, exploring similar documents, content recommendation.
+
+@baseUrl = http://localhost:8000/api/v1
+@apiKey = your-api-key
+@chunkId = 550e8400-e29b-41d4-a716-446655440000
+
+### Basic Similar Chunk Search
+# Find chunks similar to reference chunk
+GET {{baseUrl}}/search/similar/{{chunkId}}?top_k=5
+X-API-Key: {{apiKey}}
+
+### Similar Chunks Excluding Reference
+# Find similar chunks but exclude the reference chunk itself
+GET {{baseUrl}}/search/similar/{{chunkId}}?top_k=10&exclude_self=true
+X-API-Key: {{apiKey}}
+
+###

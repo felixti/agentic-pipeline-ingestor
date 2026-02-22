@@ -557,5 +557,273 @@
     "text_search_p99_ms": 50,
     "hybrid_search_p99_ms": 150,
     "embedding_generation_p99_ms": 500
+  },
+  "rag_endpoints": {
+    "query": {
+      "path": "/api/v1/rag/query",
+      "method": "POST",
+      "description": "Execute RAG query with automatic strategy selection",
+      "request_body": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000,
+          "description": "The user's natural language query"
+        },
+        "strategy": {
+          "type": "string",
+          "enum": ["auto", "fast", "balanced", "thorough"],
+          "default": "auto",
+          "description": "Strategy preset for query processing"
+        },
+        "context": {
+          "type": "object",
+          "nullable": true,
+          "description": "Optional conversation context"
+        },
+        "filters": {
+          "type": "object",
+          "default": {},
+          "description": "Optional metadata filters"
+        },
+        "top_k": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 5,
+          "description": "Number of sources to retrieve"
+        }
+      },
+      "response_model": "RAGQueryResponse",
+      "responses": {
+        "200": {"description": "Successful RAG query"},
+        "400": {"description": "Invalid request parameters"},
+        "500": {"description": "RAG processing failed"}
+      }
+    },
+    "list_strategies": {
+      "path": "/api/v1/rag/strategies",
+      "method": "GET",
+      "description": "List available RAG strategy presets",
+      "response_model": "RAGStrategiesResponse"
+    },
+    "evaluate_strategy": {
+      "path": "/api/v1/rag/strategies/{name}/evaluate",
+      "method": "POST",
+      "description": "Evaluate a specific RAG strategy against a test query",
+      "parameters": {
+        "name": {
+          "type": "string",
+          "enum": ["auto", "fast", "balanced", "thorough"],
+          "description": "Strategy name to evaluate",
+          "in": "path",
+          "required": true
+        }
+      },
+      "request_body": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000,
+          "description": "Test query"
+        },
+        "ground_truth_relevant_ids": {
+          "type": "array",
+          "items": {"type": "string"},
+          "default": [],
+          "description": "Expected relevant chunk IDs"
+        },
+        "ground_truth_answer": {
+          "type": "string",
+          "nullable": true,
+          "description": "Expected answer text"
+        },
+        "iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 1,
+          "description": "Number of iterations"
+        }
+      },
+      "response_model": "RAGStrategyEvaluateResponse",
+      "responses": {
+        "200": {"description": "Evaluation completed"},
+        "400": {"description": "Invalid parameters"},
+        "404": {"description": "Strategy not found"},
+        "500": {"description": "Evaluation failed"}
+      }
+    },
+    "get_metrics": {
+      "path": "/api/v1/rag/metrics",
+      "method": "GET",
+      "description": "Get RAG system metrics and health status",
+      "response_model": "RAGMetricsResponse"
+    },
+    "run_benchmark": {
+      "path": "/api/v1/rag/evaluate",
+      "method": "POST",
+      "description": "Run benchmark evaluation against standard datasets",
+      "request_body": {
+        "benchmark_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Benchmark dataset name"
+        },
+        "max_queries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 100,
+          "description": "Maximum queries to evaluate"
+        },
+        "k_values": {
+          "type": "array",
+          "items": {"type": "integer"},
+          "default": [5, 10],
+          "description": "K values for retrieval metrics"
+        },
+        "strategy_preset": {
+          "type": "string",
+          "enum": ["auto", "fast", "balanced", "thorough"],
+          "default": "balanced",
+          "description": "Strategy preset to evaluate"
+        }
+      },
+      "response_model": "RAGBenchmarkResponse",
+      "responses": {
+        "200": {"description": "Benchmark completed"},
+        "400": {"description": "Invalid parameters"},
+        "500": {"description": "Benchmark failed"}
+      }
+    }
+  },
+  "rag_models": {
+    "RAGQueryRequest": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "strategy": {"type": "string", "enum": ["auto", "fast", "balanced", "thorough"], "default": "auto"},
+        "context": {"type": "object", "nullable": true},
+        "filters": {"type": "object", "default": {}},
+        "top_k": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5}
+      },
+      "required": ["query"]
+    },
+    "RAGQueryResponse": {
+      "type": "object",
+      "properties": {
+        "answer": {"type": "string"},
+        "sources": {"type": "array", "items": {"$ref": "#/rag_models/RAGSource"}},
+        "metrics": {"$ref": "#/rag_models/RAGMetrics"},
+        "strategy_used": {"type": "string"},
+        "query_type": {"type": "string", "enum": ["factual", "analytical", "comparative", "vague", "multi_hop"]},
+        "query_id": {"type": "string"}
+      }
+    },
+    "RAGSource": {
+      "type": "object",
+      "properties": {
+        "chunk_id": {"type": "string"},
+        "content": {"type": "string"},
+        "score": {"type": "number", "minimum": 0, "maximum": 1},
+        "metadata": {"type": "object"}
+      }
+    },
+    "RAGMetrics": {
+      "type": "object",
+      "properties": {
+        "latency_ms": {"type": "number"},
+        "tokens_used": {"type": "integer"},
+        "retrieval_score": {"type": "number", "minimum": 0, "maximum": 1},
+        "classification_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "rewrite_time_ms": {"type": "number"},
+        "retrieval_time_ms": {"type": "number"},
+        "reranking_time_ms": {"type": "number"},
+        "generation_time_ms": {"type": "number"},
+        "chunks_retrieved": {"type": "integer"},
+        "chunks_used": {"type": "integer"},
+        "self_correction_iterations": {"type": "integer"}
+      }
+    },
+    "RAGStrategiesResponse": {
+      "type": "object",
+      "properties": {
+        "strategies": {"type": "array", "items": {"$ref": "#/rag_models/RAGStrategyInfo"}},
+        "default_strategy": {"type": "string"},
+        "total_count": {"type": "integer"}
+      }
+    },
+    "RAGStrategyInfo": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "config": {"type": "object"},
+        "use_cases": {"type": "array", "items": {"type": "string"}},
+        "estimated_latency_ms": {"type": "integer"}
+      }
+    },
+    "RAGStrategyEvaluateResponse": {
+      "type": "object",
+      "properties": {
+        "strategy_name": {"type": "string"},
+        "query": {"type": "string"},
+        "retrieval_metrics": {"type": "object"},
+        "generation_metrics": {"type": "object", "nullable": true},
+        "latency_ms": {"type": "number"},
+        "query_type": {"type": "string"},
+        "per_iteration_results": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "RAGMetricsResponse": {
+      "type": "object",
+      "properties": {
+        "summary": {"$ref": "#/rag_models/RAGMetricsSummary"},
+        "component_health": {"type": "object"},
+        "recent_alerts": {"type": "array", "items": {"type": "object"}},
+        "performance_trends": {"type": "object"}
+      }
+    },
+    "RAGMetricsSummary": {
+      "type": "object",
+      "properties": {
+        "total_queries": {"type": "integer"},
+        "avg_latency_ms": {"type": "number"},
+        "avg_retrieval_score": {"type": "number"},
+        "avg_classification_confidence": {"type": "number"},
+        "strategy_usage": {"type": "object"},
+        "query_type_distribution": {"type": "object"},
+        "timestamp": {"type": "string", "format": "date-time"}
+      }
+    },
+    "RAGBenchmarkResponse": {
+      "type": "object",
+      "properties": {
+        "benchmark_name": {"type": "string"},
+        "strategy_preset": {"type": "string"},
+        "aggregate_metrics": {"type": "object"},
+        "per_query_results": {"type": "array", "items": {"type": "object"}},
+        "total_queries": {"type": "integer"},
+        "successful_queries": {"type": "integer"},
+        "failed_queries": {"type": "integer"},
+        "total_latency_ms": {"type": "number"},
+        "started_at": {"type": "string", "format": "date-time"},
+        "completed_at": {"type": "string", "format": "date-time", "nullable": true}
+      }
+    }
+  },
+  "rate_limits": {
+    "list_chunks": {"requests": 120, "window_seconds": 60},
+    "get_chunk": {"requests": 120, "window_seconds": 60},
+    "semantic_search": {"requests": 60, "window_seconds": 60},
+    "text_search": {"requests": 100, "window_seconds": 60},
+    "hybrid_search": {"requests": 30, "window_seconds": 60},
+    "similar_chunks": {"requests": 60, "window_seconds": 60},
+    "rag_query": {"requests": 30, "window_seconds": 60},
+    "list_strategies": {"requests": 120, "window_seconds": 60},
+    "evaluate_strategy": {"requests": 10, "window_seconds": 60},
+    "get_rag_metrics": {"requests": 60, "window_seconds": 60},
+    "run_benchmark": {"requests": 5, "window_seconds": 300}
   }
 }

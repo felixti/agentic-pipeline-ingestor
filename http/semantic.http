@@ -1,0 +1,34 @@
+### RAG Semantic Search (Vector Search)
+# Pure semantic similarity search using embedding vectors and cosine similarity.
+# Best for: Conceptual similarity, natural language queries, finding documents with similar meaning but different wording.
+
+@baseUrl = http://localhost:8000/api/v1
+@apiKey = your-api-key
+
+### Basic Semantic Search
+# Simple vector similarity search without additional filters
+POST {{baseUrl}}/search/semantic
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "query_embedding": [0.023, -0.045, 0.128, 0.003, -0.087],
+  "top_k": 10
+}
+
+### Semantic Search with Filters
+# Search with minimum similarity threshold and job_id filter
+POST {{baseUrl}}/search/semantic
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "query_embedding": [0.023, -0.045, 0.128, 0.003, -0.087],
+  "top_k": 10,
+  "min_similarity": 0.75,
+  "filters": {
+    "job_id": "123e4567-e89b-12d3-a456-426614174000"
+  }
+}
+
+###

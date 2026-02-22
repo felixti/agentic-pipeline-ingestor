@@ -35,7 +35,8 @@ RUN pip install --upgrade pip && \
     prometheus-client structlog python-jose passlib pyyaml tenacity \
     opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp \
     opentelemetry-instrumentation-fastapi opentelemetry-instrumentation-sqlalchemy \
-    pymupdf pillow python-docx openpyxl python-pptx pdfplumber pytest pytest-asyncio
+    pymupdf pillow python-docx openpyxl python-pptx pdfplumber pytest pytest-asyncio \
+    numpy
 
 # ============================================================================
 # Stage 2: Runtime

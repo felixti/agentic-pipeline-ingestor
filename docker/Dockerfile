@@ -48,6 +48,8 @@ RUN /root/.local/bin/uv pip install --system \
 COPY src/ ./src/
 COPY api/ ./api/
 COPY config/ ./config/
+COPY migrations/ ./migrations/
+COPY alembic.ini ./
 
 # Create non-root user
 RUN groupadd -r pipeline && useradd -r -g pipeline pipeline && \

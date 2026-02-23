@@ -38,6 +38,7 @@ from src.api.base_models import (
     # Health
     HealthAlive,
     HealthReady,
+    HealthStatusResponse,
 )
 
 # RAG API models
@@ -96,6 +97,7 @@ __all__ = [
     # Health
     "HealthAlive",
     "HealthReady",
+    "HealthStatusResponse",
     # RAG models
     "RAGQueryRequest",
     "RAGQueryResponse",

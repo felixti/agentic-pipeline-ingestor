@@ -30,12 +30,15 @@ WORKDIR /app
 # Install dependencies from pyproject.toml
 RUN pip install --upgrade pip && \
     pip install \
-    fastapi uvicorn pydantic pydantic-settings sqlalchemy alembic asyncpg redis \
+    fastapi uvicorn python-multipart starlette pydantic pydantic-settings email-validator \
+    sqlalchemy alembic asyncpg psycopg2-binary redis hiredis \
     litellm openai httpx aiohttp \
-    prometheus-client structlog python-jose passlib pyyaml tenacity \
+    prometheus-client structlog python-jose passlib python-dotenv cryptography \
     opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp \
     opentelemetry-instrumentation-fastapi opentelemetry-instrumentation-sqlalchemy \
-    pymupdf pillow python-docx openpyxl python-pptx pdfplumber pytest pytest-asyncio \
+    pymupdf pillow pdf2image pytesseract python-magic \
+    python-docx openpyxl python-pptx pdfplumber pytest pytest-asyncio \
+    orjson pyyaml click tenacity typing-extensions psutil greenlet \
     numpy scipy scikit-learn sentence-transformers
 
 # ============================================================================
@@ -54,6 +57,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    libmagic1 \
+    poppler-utils \
+    tesseract-ocr \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

@@ -11,7 +11,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Float as SQLFloat
-from sqlalchemy import select, text
+from sqlalchemy import literal_column, select, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -412,13 +412,16 @@ class VectorSearchService:
 
         # Build the query using pgvector's <=> operator
         # The <=> operator computes cosine distance
-        distance_expr = text(f"embedding <=> '{vector_str}'::vector")
+        # Use literal_column for SQLAlchemy 2.0 compatibility
+        distance_expr = literal_column(
+            f"embedding <=> '{vector_str}'::vector"
+        ).label("distance")
 
         # Build base query
         stmt: Any = (
             select(
                 DocumentChunkModel,
-                distance_expr.label("distance"),
+                distance_expr,
             )
             .where(DocumentChunkModel.embedding.isnot(None))
             .where(distance_expr <= max_distance)  # type: ignore[arg-type,operator]

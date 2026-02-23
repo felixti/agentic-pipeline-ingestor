@@ -1,0 +1,90 @@
+### RAG Hybrid Search (PRODUCTION)
+# ⚠️  WARNING: These requests target the PRODUCTION environment
+# Production URL: https://ag-dt-ppl-api.felixtek.cloud/api/v1
+# Use with caution - modifications affect live data
+#
+# Base URL: https://ag-dt-ppl-api.felixtek.cloud/api/v1
+
+@baseUrl = https://ag-dt-ppl-api.felixtek.cloud/api/v1
+@apiKey = your-api-key
+
+### Basic Hybrid Search (Weighted Sum)
+# Default weighted sum fusion method
+POST {{baseUrl}}/search/hybrid
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "query": "neural network architecture",
+  "top_k": 10,
+  "vector_weight": 0.7,
+  "text_weight": 0.3,
+  "fusion_method": "weighted_sum"
+}
+
+### Hybrid Search with RRF Fusion
+# Reciprocal Rank Fusion method with source_type filter
+POST {{baseUrl}}/search/hybrid
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "query": "machine learning applications in healthcare",
+  "top_k": 10,
+  "vector_weight": 0.7,
+  "text_weight": 0.3,
+  "fusion_method": "rrf",
+  "min_similarity": 0.5,
+  "filters": {
+    "source_type": "pdf"
+  }
+}
+
+### Semantic-Focused Hybrid Search
+# Weight preset: Semantic Focus (vector=0.9, text=0.1)
+POST {{baseUrl}}/search/hybrid
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "query": "deep learning neural networks",
+  "top_k": 10,
+  "vector_weight": 0.9,
+  "text_weight": 0.1,
+  "fusion_method": "weighted_sum",
+  "min_similarity": 0.7
+}
+
+### Lexical-Focused Hybrid Search
+# Weight preset: Lexical Focus (vector=0.3, text=0.7)
+POST {{baseUrl}}/search/hybrid
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "query": "API-KEY-123 kubernetes deployment",
+  "top_k": 10,
+  "vector_weight": 0.3,
+  "text_weight": 0.7,
+  "fusion_method": "weighted_sum",
+  "min_similarity": 0.5
+}
+
+### Hybrid Search with Metadata Filtering
+# Filter by job_id and custom metadata
+POST {{baseUrl}}/search/hybrid
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "query": "neural networks",
+  "top_k": 10,
+  "vector_weight": 0.7,
+  "text_weight": 0.3,
+  "filters": {
+    "job_id": "550e8400-e29b-41d4-a716-446655440001",
+    "metadata": {"category": "research", "year": 2024}
+  }
+}
+
+###

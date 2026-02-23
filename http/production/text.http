@@ -1,0 +1,81 @@
+### RAG Text Search (Lexical/BM25) (PRODUCTION)
+# ⚠️  WARNING: These requests target the PRODUCTION environment
+# Production URL: https://ag-dt-ppl-api.felixtek.cloud/api/v1
+# Use with caution - modifications affect live data
+#
+# Base URL: https://ag-dt-ppl-api.felixtek.cloud/api/v1
+
+@baseUrl = https://ag-dt-ppl-api.felixtek.cloud/api/v1
+@apiKey = your-api-key
+
+### Basic Text Search
+# Simple keyword search
+POST {{baseUrl}}/search/text
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "query": "machine learning architecture",
+  "top_k": 10
+}
+
+### Text Search with Highlighting and Fuzzy Matching
+# Search with text highlighting and fuzzy trigram matching enabled
+POST {{baseUrl}}/search/text
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "query": "machine learning architecture",
+  "top_k": 10,
+  "language": "english",
+  "use_fuzzy": true,
+  "highlight": true,
+  "filters": {
+    "job_id": "123e4567-e89b-12d3-a456-426614174000"
+  }
+}
+
+### Text Search with Job Filter Only
+# Search with empty filters object
+POST {{baseUrl}}/search/text
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "query": "kubernetes deployment strategies",
+  "top_k": 10,
+  "highlight": true,
+  "use_fuzzy": true,
+  "language": "english",
+  "filters": {}
+}
+
+### Multi-Language: Spanish
+# Search in Spanish language
+POST {{baseUrl}}/search/text
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "query": "aprendizaje automático",
+  "top_k": 10,
+  "language": "spanish",
+  "use_fuzzy": true,
+  "highlight": true
+}
+
+### Multi-Language: German
+# Search in German language
+POST {{baseUrl}}/search/text
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "query": "maschinelles lernen",
+  "top_k": 10,
+  "language": "german",
+  "use_fuzzy": true
+}
+
+###

@@ -1,0 +1,22 @@
+### RAG Find Similar Chunks (PRODUCTION)
+# ⚠️  WARNING: These requests target the PRODUCTION environment
+# Production URL: https://ag-dt-ppl-api.felixtek.cloud/api/v1
+# Use with caution - modifications affect live data
+#
+# Base URL: https://ag-dt-ppl-api.felixtek.cloud/api/v1
+
+@baseUrl = https://ag-dt-ppl-api.felixtek.cloud/api/v1
+@apiKey = your-api-key
+@chunkId = 550e8400-e29b-41d4-a716-446655440000
+
+### Basic Similar Chunk Search
+# Find chunks similar to reference chunk
+GET {{baseUrl}}/search/similar/{{chunkId}}?top_k=5
+X-API-Key: {{apiKey}}
+
+### Similar Chunks Excluding Reference
+# Find similar chunks but exclude the reference chunk itself
+GET {{baseUrl}}/search/similar/{{chunkId}}?top_k=10&exclude_self=true
+X-API-Key: {{apiKey}}
+
+###

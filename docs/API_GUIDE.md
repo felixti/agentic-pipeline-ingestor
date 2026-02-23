@@ -6,7 +6,7 @@
 > **Version**: 1.0.0  
 > **Base URL**: `http://localhost:8000/api/v1`  
 > **OpenAPI Spec**: `/openapi.json` or `/api/v1/openapi.yaml`  
-> **OpenSpec Change**: review-update-architecture-docs
+> **OpenSpec Change**: review-update-api-guide
 
 ---
 
@@ -16,14 +16,17 @@
 2. [Authentication](#authentication)
 3. [Job Management Endpoints](#job-management-endpoints)
 4. [File Upload Endpoints](#file-upload-endpoints)
-5. [Document Chunk Endpoints (NEW)](#document-chunk-endpoints-new)
-6. [Search Endpoints (NEW)](#search-endpoints-new)
+5. [Document Chunk Endpoints](#document-chunk-endpoints)
+6. [Search Endpoints](#search-endpoints)
 7. [Pipeline Configuration Endpoints](#pipeline-configuration-endpoints)
 8. [Authentication Endpoints](#authentication-endpoints)
-9. [System & Health Endpoints](#system--health-endpoints)
-10. [Common Workflows](#common-workflows)
-11. [Error Reference](#error-reference)
-12. [Rate Limiting](#rate-limiting)
+9. [RAG Endpoints](#rag-endpoints)
+10. [DLQ (Dead Letter Queue) Endpoints](#dlq-dead-letter-queue-endpoints)
+11. [Bulk Operations Endpoints](#bulk-operations-endpoints)
+12. [System & Health Endpoints](#system--health-endpoints)
+13. [Common Workflows](#common-workflows)
+14. [Error Reference](#error-reference)
+15. [Rate Limiting](#rate-limiting)
 
 ---
 
@@ -660,7 +663,7 @@ curl -X POST "http://localhost:8000/api/v1/upload/url" \
 
 ---
 
-## Document Chunk Endpoints (NEW)
+## Document Chunk Endpoints
 
 These endpoints provide access to document chunks generated during the Chunk stage of the 7-stage pipeline. Chunks are text segments extracted from documents with optional vector embeddings for semantic search.
 
@@ -822,7 +825,7 @@ curl "http://localhost:8000/api/v1/jobs/123e4567-e89b-12d3-a456-426614174000/chu
 
 ---
 
-## Search Endpoints (NEW)
+## Search Endpoints
 
 These endpoints enable semantic and text search across all document chunks using pgvector and PostgreSQL full-text search capabilities.
 
@@ -1297,6 +1300,163 @@ curl -X POST "http://localhost:8000/api/v1/pipelines" \
 }
 ```
 
+### Get Pipeline
+
+Retrieve a specific pipeline configuration by ID.
+
+**Endpoint:** `GET /pipelines/{pipeline_id}`
+
+**Authentication:** Required
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pipeline_id` | string (UUID) | Pipeline identifier |
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/api/v1/pipelines/987fcdeb-51a2-43d4-b567-890123456789" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "id": "987fcdeb-51a2-43d4-b567-890123456789",
+    "name": "ocr-pipeline",
+    "description": "Optimized for scanned documents",
+    "config": {
+      "content_detection": {"auto_detect": true, "detection_method": "hybrid"},
+      "parser": {"primary_parser": "azure_ocr", "fallback_parser": "tesseract"},
+      "transformation": {"chunking": {"enabled": true, "strategy": "semantic"}}
+    },
+    "version": 1,
+    "is_active": true,
+    "created_by": "admin",
+    "created_at": "2026-02-18T10:30:00.000000",
+    "updated_at": "2026-02-18T10:30:00.000000"
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+**Error Response (404 Not Found):**
+
+```json
+{
+  "detail": "Pipeline with ID '987fcdeb-51a2-43d4-b567-890123456789' not found"
+}
+```
+
+---
+
+### Update Pipeline
+
+Update an existing pipeline configuration.
+
+**Endpoint:** `PUT /pipelines/{pipeline_id}`
+
+**Authentication:** Required (admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pipeline_id` | string (UUID) | Pipeline identifier |
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | No | New pipeline name |
+| `description` | string | No | New description |
+| `config` | object | No | Updated configuration |
+
+**cURL Example:**
+
+```bash
+curl -X PUT "http://localhost:8000/api/v1/pipelines/987fcdeb-51a2-43d4-b567-890123456789" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Updated pipeline for OCR documents",
+    "config": {
+      "parser": {"primary_parser": "azure_ocr", "fallback_parser": "docling"}
+    }
+  }'
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "id": "987fcdeb-51a2-43d4-b567-890123456789",
+    "name": "ocr-pipeline",
+    "description": "Updated pipeline for OCR documents",
+    "config": {...},
+    "version": 2,
+    "updated_at": "2026-02-18T11:00:00.000000"
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T11:00:00.000000"
+  }
+}
+```
+
+**Error Response (400 Bad Request):**
+
+```json
+{
+  "error": {
+    "code": "INVALID_CONFIG",
+    "message": "Invalid configuration",
+    "errors": ["Missing required field: parser.primary_parser"]
+  }
+}
+```
+
+---
+
+### Delete Pipeline
+
+Delete (soft delete) a pipeline configuration.
+
+**Endpoint:** `DELETE /pipelines/{pipeline_id}`
+
+**Authentication:** Required (admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pipeline_id` | string (UUID) | Pipeline identifier |
+
+**cURL Example:**
+
+```bash
+curl -X DELETE "http://localhost:8000/api/v1/pipelines/987fcdeb-51a2-43d4-b567-890123456789" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (204 No Content)**
+
+**Error Response (404 Not Found):**
+
+```json
+{
+  "detail": "Pipeline with ID '987fcdeb-51a2-43d4-b567-890123456789' not found"
+}
+```
+
 ---
 
 ## Authentication Endpoints
@@ -1447,6 +1607,1459 @@ curl -X POST "http://localhost:8000/api/v1/auth/api-keys" \
 
 ---
 
+### Login
+
+Authenticate with username and password (simplified - redirects to OAuth2).
+
+**Endpoint:** `POST /auth/login`
+
+**Authentication:** None
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `username` | string | No | Username for authentication |
+| `password` | string | No | Password for authentication |
+| `provider` | string | No | `oauth2` or `azure_ad` (default: `oauth2`) |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin",
+    "password": "password",
+    "provider": "oauth2"
+  }'
+```
+
+**Error Response (501 Not Implemented):**
+
+```json
+{
+  "detail": "Use /auth/authorize for OAuth2/Azure AD login"
+}
+```
+
+**Note:** This endpoint returns 501 and directs users to use the OAuth2 flow via `/auth/oauth2/authorize`.
+
+---
+
+### Logout
+
+Logout the current user and invalidate the session.
+
+**Endpoint:** `POST /auth/logout`
+
+**Authentication:** Required
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/auth/logout" \
+  -H "Authorization: Bearer your-access-token"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "message": "Successfully logged out"
+}
+```
+
+---
+
+### List API Keys
+
+List all API keys in the system (admin only).
+
+**Endpoint:** `GET /auth/api-keys`
+
+**Authentication:** Required (admin)
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `page` | integer | 1 | Page number |
+| `limit` | integer | 20 | Items per page |
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/api/v1/auth/api-keys?page=1&limit=20" \
+  -H "X-API-Key: your-admin-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "key-123",
+        "name": "production-service",
+        "permissions": ["jobs:read", "jobs:write"],
+        "is_active": true,
+        "created_by": "admin",
+        "created_at": "2026-02-18T10:30:00.000000",
+        "expires_at": "2026-05-18T10:30:00.000000",
+        "last_used_at": "2026-02-18T12:00:00.000000"
+      }
+    ],
+    "total": 5,
+    "page": 1,
+    "page_size": 20
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000",
+    "total_count": 5
+  }
+}
+```
+
+---
+
+### Revoke API Key
+
+Permanently deactivate an API key (admin only).
+
+**Endpoint:** `DELETE /auth/api-keys/{key_id}`
+
+**Authentication:** Required (admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `key_id` | string | API key identifier |
+
+**cURL Example:**
+
+```bash
+curl -X DELETE "http://localhost:8000/api/v1/auth/api-keys/key-123" \
+  -H "X-API-Key: your-admin-api-key"
+```
+
+**Success Response (204 No Content)**
+
+**Error Response (404 Not Found):**
+
+```json
+{
+  "detail": "API key 'key-123' not found"
+}
+```
+
+---
+
+### Get API Key Usage
+
+Get usage statistics for a specific API key (admin only).
+
+**Endpoint:** `GET /auth/api-keys/{key_id}/usage`
+
+**Authentication:** Required (admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `key_id` | string | API key identifier |
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/api/v1/auth/api-keys/key-123/usage" \
+  -H "X-API-Key: your-admin-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "key_id": "key-123",
+  "use_count": 150,
+  "last_used_at": "2026-02-18T12:00:00.000000",
+  "requests_per_day": [
+    {"date": "2026-02-18", "count": 45},
+    {"date": "2026-02-17", "count": 52},
+    {"date": "2026-02-16", "count": 53}
+  ]
+}
+```
+
+---
+
+### OAuth2 Callback
+
+Handle OAuth2 callback and exchange authorization code for tokens.
+
+**Endpoint:** `POST /auth/oauth2/callback`
+
+**Authentication:** None (requires valid authorization code)
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `code` | string | Yes | Authorization code from OAuth2 provider |
+| `state` | string | Yes | State parameter from authorization request |
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `redirect_uri` | string | Yes | Same redirect URI used in authorize request |
+| `provider` | string | No | `oauth2` or `azure_ad` (default: `oauth2`) |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/auth/oauth2/callback?redirect_uri=http://localhost:3000/callback&provider=azure_ad" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "code": "auth-code-from-provider",
+    "state": "random-state-string"
+  }'
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_in": 1800,
+  "user": {
+    "id": "user-123",
+    "email": "user@example.com",
+    "username": "john.doe",
+    "role": "operator"
+  }
+}
+```
+
+**Error Response (401 Unauthorized):**
+
+```json
+{
+  "detail": "Authentication failed: Invalid authorization code"
+}
+```
+
+---
+
+## RAG Endpoints
+
+These endpoints provide Retrieval-Augmented Generation capabilities, allowing you to query your document corpus with natural language and receive AI-generated answers based on retrieved context.
+
+### Execute RAG Query
+
+Execute a RAG query with a specified strategy preset.
+
+**Endpoint:** `POST /rag/query`
+
+**Authentication:** Required
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `query` | string | Yes | Natural language query (1-4000 characters) |
+| `strategy` | string | No | `auto`, `fast`, `balanced`, `thorough` (default: `auto`) |
+| `context` | object | No | Conversation context with previous queries/responses |
+| `filters` | object | No | Metadata filters for document retrieval |
+| `top_k` | integer | No | Number of sources to retrieve (1-20, default: 5) |
+
+**Strategy Presets:**
+
+| Preset | Description | Latency | Use Case |
+|--------|-------------|---------|----------|
+| `auto` | Automatically selects optimal strategies based on query classification | ~250ms | Unknown query types, mixed workloads |
+| `fast` | Prioritizes speed with query rewrite and hybrid search only | ~100ms | Simple factual queries, high-traffic scenarios |
+| `balanced` | Balanced approach with reranking | ~250ms | General purpose queries, production workloads |
+| `thorough` | Maximum quality with HyDE and all optimizations | ~500ms | Complex analytical queries, research tasks |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/rag/query" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What is vibe coding and what are its pros and cons?",
+    "strategy": "balanced",
+    "top_k": 5,
+    "filters": {"source_type": "documentation"}
+  }'
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "answer": "Vibe coding is a programming approach that emphasizes developer experience and flow state...",
+  "sources": [
+    {
+      "chunk_id": "550e8400-e29b-41d4-a716-446655440000",
+      "content": "Vibe coding is a programming approach that emphasizes developer experience...",
+      "score": 0.92,
+      "metadata": {"source": "doc1.pdf", "page": 3}
+    },
+    {
+      "chunk_id": "550e8400-e29b-41d4-a716-446655440001",
+      "content": "The pros of vibe coding include improved developer productivity...",
+      "score": 0.88,
+      "metadata": {"source": "doc2.pdf", "page": 7}
+    }
+  ],
+  "metrics": {
+    "latency_ms": 245.5,
+    "tokens_used": 850,
+    "retrieval_score": 0.82,
+    "classification_confidence": 0.95,
+    "rewrite_time_ms": 45.2,
+    "retrieval_time_ms": 120.0,
+    "reranking_time_ms": 35.5,
+    "generation_time_ms": 44.8,
+    "chunks_retrieved": 20,
+    "chunks_used": 5,
+    "self_correction_iterations": 0
+  },
+  "strategy_used": "balanced",
+  "query_type": "factual",
+  "query_id": "rag_abc123def456"
+}
+```
+
+**Error Response (400 Bad Request):**
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Query cannot be empty"
+  },
+  "query_id": null
+}
+```
+
+**Error Response (500 Internal Server Error):**
+
+```json
+{
+  "error": {
+    "code": "RAG_PROCESSING_FAILED",
+    "message": "Failed to process RAG query: vector store unavailable"
+  },
+  "query_id": "rag_abc123def456"
+}
+```
+
+**Rate Limit:** 30 requests per 60 seconds
+
+---
+
+### List RAG Strategies
+
+Get information about all available RAG strategy presets.
+
+**Endpoint:** `GET /rag/strategies`
+
+**Authentication:** Required
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/api/v1/rag/strategies" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "strategies": [
+    {
+      "name": "auto",
+      "description": "Automatically selects optimal strategies based on query classification.",
+      "config": {"query_rewrite": true, "hyde": false, "reranking": true, "hybrid_search": true},
+      "use_cases": ["Unknown query types", "Mixed workloads", "Self-optimizing systems"],
+      "estimated_latency_ms": 250
+    },
+    {
+      "name": "fast",
+      "description": "Prioritizes speed over quality. Uses query rewriting and hybrid search only.",
+      "config": {"query_rewrite": true, "hyde": false, "reranking": false, "hybrid_search": true},
+      "use_cases": ["Simple factual queries", "High-traffic scenarios", "Mobile apps"],
+      "estimated_latency_ms": 100
+    },
+    {
+      "name": "balanced",
+      "description": "Balanced approach with reranking for improved quality at moderate latency.",
+      "config": {"query_rewrite": true, "hyde": false, "reranking": true, "hybrid_search": true},
+      "use_cases": ["General purpose queries", "Production workloads", "Recommended default"],
+      "estimated_latency_ms": 250
+    },
+    {
+      "name": "thorough",
+      "description": "Maximum quality with HyDE, reranking, and all optimizations.",
+      "config": {"query_rewrite": true, "hyde": true, "reranking": true, "hybrid_search": true},
+      "use_cases": ["Complex analytical queries", "Research tasks", "Low-latency requirements"],
+      "estimated_latency_ms": 500
+    }
+  ],
+  "default_strategy": "balanced",
+  "total_count": 4
+}
+```
+
+**Rate Limit:** 60 requests per 60 seconds
+
+---
+
+### Evaluate Strategy
+
+Evaluate a specific RAG strategy against a test query with optional ground truth.
+
+**Endpoint:** `POST /rag/strategies/{name}/evaluate`
+
+**Authentication:** Required
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Strategy name (`auto`, `fast`, `balanced`, `thorough`) |
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `query` | string | Yes | Test query to evaluate |
+| `ground_truth_relevant_ids` | array | No | Expected relevant chunk IDs |
+| `ground_truth_answer` | string | No | Expected answer for generation evaluation |
+| `iterations` | integer | No | Number of iterations (1-10, default: 1) |
+| `context` | object | No | Optional conversation context |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/rag/strategies/balanced/evaluate" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What is machine learning?",
+    "ground_truth_relevant_ids": ["chunk_1", "chunk_2"],
+    "ground_truth_answer": "Machine learning is a subset of AI...",
+    "iterations": 3
+  }'
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "strategy_name": "balanced",
+  "query": "What is machine learning?",
+  "retrieval_metrics": {
+    "avg_latency_ms": 245.5,
+    "avg_retrieval_score": 0.85,
+    "avg_chunks_used": 5,
+    "avg_tokens_used": 850
+  },
+  "generation_metrics": {
+    "bertscore_f1": 0.92,
+    "faithfulness": 0.88,
+    "answer_relevance": 0.91
+  },
+  "latency_ms": 750.2,
+  "query_type": "factual",
+  "per_iteration_results": [
+    {
+      "iteration": 1,
+      "retrieval": {"mrr": 0.85, "ndcg_at_10": 0.82, "recall_at_5": 0.78},
+      "latency_ms": 240.1,
+      "strategy_used": "balanced"
+    },
+    {
+      "iteration": 2,
+      "retrieval": {"mrr": 0.87, "ndcg_at_10": 0.84, "recall_at_5": 0.80},
+      "latency_ms": 248.5,
+      "strategy_used": "balanced"
+    },
+    {
+      "iteration": 3,
+      "retrieval": {"mrr": 0.86, "ndcg_at_10": 0.83, "recall_at_5": 0.79},
+      "latency_ms": 247.6,
+      "strategy_used": "balanced"
+    }
+  ]
+}
+```
+
+**Error Response (404 Not Found):**
+
+```json
+{
+  "error": {
+    "code": "STRATEGY_NOT_FOUND",
+    "message": "Strategy 'invalid' not found. Valid strategies: ['auto', 'fast', 'balanced', 'thorough']"
+  }
+}
+```
+
+**Rate Limit:** 10 requests per 60 seconds
+
+---
+
+### Get RAG Metrics
+
+Retrieve current metrics for the RAG system.
+
+**Endpoint:** `GET /rag/metrics`
+
+**Authentication:** Required
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/api/v1/rag/metrics" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "summary": {
+    "total_queries": 1250,
+    "avg_latency_ms": 245.5,
+    "avg_retrieval_score": 0.84,
+    "avg_classification_confidence": 0.92,
+    "strategy_usage": {"auto": 450, "fast": 300, "balanced": 400, "thorough": 100},
+    "query_type_distribution": {
+      "factual": 600,
+      "analytical": 300,
+      "comparative": 150,
+      "vague": 100,
+      "multi_hop": 100
+    },
+    "timestamp": "2026-02-18T10:30:00.000000"
+  },
+  "component_health": {
+    "healthy": true,
+    "query_rewriter": "healthy",
+    "classifier": "healthy",
+    "retriever": "healthy",
+    "reranker": "healthy"
+  },
+  "recent_alerts": [
+    {
+      "type": "latency_spike",
+      "severity": "warning",
+      "metric_name": "avg_latency_ms",
+      "current_value": 450.2,
+      "threshold_value": 400.0,
+      "message": "Average latency exceeded threshold",
+      "timestamp": "2026-02-18T09:00:00.000000"
+    }
+  ],
+  "performance_trends": {}
+}
+```
+
+**Rate Limit:** 60 requests per 60 seconds
+
+---
+
+### Run Benchmark Evaluation
+
+Run a benchmark evaluation of the RAG system against a standard dataset.
+
+**Endpoint:** `POST /rag/evaluate`
+
+**Authentication:** Required (admin)
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `benchmark_name` | string | Yes | Benchmark dataset name (`ms_marco`, `custom_qa`) |
+| `max_queries` | integer | No | Maximum queries to evaluate (1-1000, default: 100) |
+| `k_values` | array | No | K values for retrieval metrics (default: `[5, 10]`) |
+| `strategy_preset` | string | No | Strategy to evaluate (default: `balanced`) |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/rag/evaluate" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "benchmark_name": "ms_marco",
+    "max_queries": 100,
+    "k_values": [5, 10],
+    "strategy_preset": "balanced"
+  }'
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "benchmark_name": "ms_marco",
+  "strategy_preset": "balanced",
+  "aggregate_metrics": {
+    "mrr": 0.85,
+    "ndcg_at_5": 0.82,
+    "ndcg_at_10": 0.84,
+    "recall_at_5": 0.78,
+    "recall_at_10": 0.85,
+    "precision_at_5": 0.76,
+    "precision_at_10": 0.72,
+    "bertscore_f1": 0.91,
+    "faithfulness": 0.88,
+    "answer_relevance": 0.90
+  },
+  "per_query_results": [
+    {
+      "query": "What is machine learning?",
+      "retrieval_metrics": {"mrr": 0.9, "ndcg_at_10": 0.88},
+      "generation_metrics": {"bertscore_f1": 0.92},
+      "latency_ms": 245.5
+    }
+  ],
+  "total_queries": 100,
+  "successful_queries": 98,
+  "failed_queries": 2,
+  "total_latency_ms": 24500.0,
+  "started_at": "2026-02-18T10:00:00.000000",
+  "completed_at": "2026-02-18T10:05:00.000000"
+}
+```
+
+**Rate Limit:** 5 requests per 60 seconds
+
+---
+
+## DLQ (Dead Letter Queue) Endpoints
+
+These endpoints manage the Dead Letter Queue, which stores failed jobs for analysis, retry, and resolution.
+
+### List DLQ Entries
+
+List DLQ entries with filtering and pagination.
+
+**Endpoint:** `GET /dlq`
+
+**Authentication:** Required (operator or admin)
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `status` | string | - | Filter by status: `pending`, `under_review`, `resolved`, `discarded` |
+| `failure_category` | string | - | Filter by category: `parsing_error`, `validation_error`, etc. |
+| `source_type` | string | - | Filter by source type |
+| `search` | string | - | Free text search |
+| `page` | integer | 1 | Page number |
+| `page_size` | integer | 20 | Items per page (max 100) |
+| `sort_by` | string | `created_at` | Field to sort by |
+| `sort_order` | string | `desc` | Sort order: `asc` or `desc` |
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/api/v1/dlq?status=pending&page=1&page_size=20" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "entries": [
+      {
+        "id": "dlq-123",
+        "job_id": "job-456",
+        "failure_category": "parsing_error",
+        "status": "pending",
+        "error_code": "PARSER_FAILED",
+        "error_message": "Failed to parse PDF: invalid structure",
+        "retry_count": 3,
+        "created_at": "2026-02-18T10:30:00.000000",
+        "file_name": "document.pdf",
+        "file_type": "application/pdf"
+      }
+    ],
+    "total_count": 15,
+    "page": 1,
+    "page_size": 20
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000",
+    "total_count": 15
+  }
+}
+```
+
+**Rate Limit:** 60 requests per 60 seconds
+
+---
+
+### Get DLQ Entry
+
+Get detailed information about a specific DLQ entry.
+
+**Endpoint:** `GET /dlq/{entry_id}`
+
+**Authentication:** Required (operator or admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `entry_id` | string (UUID) | DLQ entry identifier |
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/api/v1/dlq/dlq-123" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "id": "dlq-123",
+    "job_id": "job-456",
+    "failure_category": "parsing_error",
+    "status": "pending",
+    "error": {
+      "code": "PARSER_FAILED",
+      "message": "Failed to parse PDF: invalid structure",
+      "details": {"page": 5, "error": "Invalid xref table"}
+    },
+    "retry_count": 3,
+    "created_at": "2026-02-18T10:30:00.000000",
+    "updated_at": "2026-02-18T10:35:00.000000",
+    "job": {
+      "id": "job-456",
+      "file_name": "document.pdf",
+      "mime_type": "application/pdf",
+      "source_type": "upload",
+      "source_uri": "/tmp/uploads/document.pdf"
+    },
+    "context": {
+      "stack_trace": "...",
+      "processor_version": "1.2.3"
+    }
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+**Error Response (404 Not Found):**
+
+```json
+{
+  "detail": "DLQ entry not found: dlq-123"
+}
+```
+
+---
+
+### Retry DLQ Entry
+
+Retry a job from the DLQ with optional configuration changes.
+
+**Endpoint:** `POST /dlq/{entry_id}/retry`
+
+**Authentication:** Required (operator or admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `entry_id` | string (UUID) | DLQ entry identifier |
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `updated_config` | object | No | Updated pipeline configuration for retry |
+| `reviewed_by` | string | No | User initiating the retry |
+| `resolution_notes` | string | No | Notes about the retry decision |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/dlq/dlq-123/retry" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "updated_config": {"parser": {"primary_parser": "tesseract"}},
+    "reviewed_by": "admin@example.com",
+    "resolution_notes": "Retrying with alternative parser"
+  }'
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "success": true,
+    "entry_id": "dlq-123",
+    "new_job_id": "job-789",
+    "message": "Job retry initiated successfully",
+    "error": null
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+**Error Response (400 Bad Request):**
+
+```json
+{
+  "detail": "Cannot retry entry with status: resolved"
+}
+```
+
+---
+
+### Review DLQ Entry
+
+Review or mark a DLQ entry with an action.
+
+**Endpoint:** `POST /dlq/{entry_id}/review`
+
+**Authentication:** Required (operator or admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `entry_id` | string (UUID) | DLQ entry identifier |
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `reviewed_by` | string | Yes | User reviewing the entry |
+| `action` | string | Yes | Action to take: `review`, `resolve`, `discard` |
+| `notes` | string | No | Review notes |
+| `discard_reason` | string | No | Required if action is `discard` |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/dlq/dlq-123/review" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reviewed_by": "admin@example.com",
+    "action": "resolve",
+    "notes": "Document was corrupted, manually processed"
+  }'
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "entry_id": "dlq-123",
+    "action": "resolve",
+    "message": "Entry marked as resolved",
+    "status": "resolved"
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+---
+
+### Delete DLQ Entry
+
+Permanently remove an entry from the DLQ.
+
+**Endpoint:** `DELETE /dlq/{entry_id}`
+
+**Authentication:** Required (admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `entry_id` | string (UUID) | DLQ entry identifier |
+
+**cURL Example:**
+
+```bash
+curl -X DELETE "http://localhost:8000/api/v1/dlq/dlq-123" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "entry_id": "dlq-123",
+    "message": "Entry removed from DLQ",
+    "deleted": true
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+---
+
+### Get DLQ Statistics
+
+Get statistics summary for the DLQ.
+
+**Endpoint:** `GET /dlq/stats/summary`
+
+**Authentication:** Required (operator or admin)
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/api/v1/dlq/stats/summary" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "total_entries": 150,
+    "by_status": {
+      "pending": 45,
+      "under_review": 30,
+      "resolved": 60,
+      "discarded": 15
+    },
+    "by_failure_category": {
+      "parsing_error": 80,
+      "validation_error": 35,
+      "network_error": 20,
+      "timeout": 15
+    },
+    "age_distribution": {
+      "0-24h": 30,
+      "1-7d": 70,
+      "7-30d": 40,
+      "30d+": 10
+    }
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+---
+
+### Archive Old DLQ Entries
+
+Archive old DLQ entries that exceed the configured maximum age.
+
+**Endpoint:** `POST /dlq/archive-old`
+
+**Authentication:** Required (admin)
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/dlq/archive-old" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "archived_count": 25,
+    "message": "25 entries archived"
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+---
+
+## Bulk Operations Endpoints
+
+These endpoints enable bulk operations for efficient processing of multiple documents.
+
+### Bulk Ingest
+
+Bulk ingest multiple documents in a single request.
+
+**Endpoint:** `POST /bulk/ingest`
+
+**Authentication:** Required
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `items` | array | Yes | List of ingestion items (1-1000 items) |
+| `mode` | string | No | `sync` or `async` (default: `async`) |
+| `default_pipeline_id` | string | No | Default pipeline UUID for all items |
+| `default_destinations` | array | No | Default destinations for all items |
+| `callback_url` | string | No | Webhook URL for completion notification |
+
+**Item Fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `source_type` | string | Yes | `upload`, `url`, `s3`, etc. |
+| `source_uri` | string | Yes | URI to the file |
+| `file_name` | string | No | Original filename |
+| `file_size` | integer | No | File size in bytes |
+| `mime_type` | string | No | MIME type |
+| `priority` | integer | No | Priority 1-10 (default: 5) |
+| `external_id` | string | No | Your reference ID |
+| `pipeline_id` | string | No | Pipeline UUID (overrides default) |
+| `metadata` | object | No | Custom metadata |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/bulk/ingest" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {
+        "source_type": "url",
+        "source_uri": "https://example.com/doc1.pdf",
+        "file_name": "doc1.pdf",
+        "priority": 8,
+        "external_id": "batch-001"
+      },
+      {
+        "source_type": "url",
+        "source_uri": "https://example.com/doc2.pdf",
+        "file_name": "doc2.pdf",
+        "priority": 5,
+        "external_id": "batch-002"
+      }
+    ],
+    "mode": "async",
+    "callback_url": "https://example.com/webhook/bulk-complete"
+  }'
+```
+
+**Success Response (202 Accepted):**
+
+```json
+{
+  "data": {
+    "batch_id": "batch-abc123",
+    "total_requested": 2,
+    "total_created": 2,
+    "total_failed": 0,
+    "results": [
+      {
+        "index": 0,
+        "external_id": "batch-001",
+        "job_id": "job-123",
+        "status": "created",
+        "success": true,
+        "message": "Job created successfully"
+      },
+      {
+        "index": 1,
+        "external_id": "batch-002",
+        "job_id": "job-124",
+        "status": "created",
+        "success": true,
+        "message": "Job created successfully"
+      }
+    ],
+    "estimated_completion_time": "2026-02-18T11:00:00.000000"
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+**Rate Limit:** 10 requests per 60 seconds
+
+---
+
+### Bulk Retry
+
+Bulk retry failed jobs based on filter criteria or specific job IDs.
+
+**Endpoint:** `POST /bulk/retry`
+
+**Authentication:** Required (operator or admin)
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `job_ids` | array | No | Specific job IDs to retry |
+| `filter` | object | No | Filter criteria for selecting jobs |
+| `force_parser` | string | No | Override parser for retry |
+| `updated_config` | object | No | Updated pipeline configuration |
+| `priority_adjustment` | integer | No | Priority adjustment -5 to +5 |
+| `callback_url` | string | No | Webhook URL for completion notification |
+
+**Filter Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `job_ids` | array | List of specific job IDs |
+| `status` | array | Filter by statuses (e.g., `["failed"]`) |
+| `source_types` | array | Filter by source types |
+| `date_from` | string | Start date (ISO 8601) |
+| `date_to` | string | End date (ISO 8601) |
+| `external_ids` | array | Filter by external IDs |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/bulk/retry" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filter": {
+      "status": ["failed"],
+      "date_from": "2026-02-01T00:00:00Z",
+      "date_to": "2026-02-18T23:59:59Z"
+    },
+    "force_parser": "azure_ocr",
+    "priority_adjustment": 1
+  }'
+```
+
+**Success Response (202 Accepted):**
+
+```json
+{
+  "data": {
+    "batch_id": "batch-retry-456",
+    "total_requested": 15,
+    "total_retried": 14,
+    "total_failed": 1,
+    "results": [
+      {
+        "job_id": "job-100",
+        "success": true,
+        "message": "Job queued for retry",
+        "new_status": "queued"
+      }
+    ]
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+---
+
+### Bulk Export
+
+Bulk export job data in various formats.
+
+**Endpoint:** `POST /bulk/export`
+
+**Authentication:** Required
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `filter` | object | Yes | Filter criteria for selecting jobs |
+| `format` | string | No | `json`, `csv`, `jsonl`, `parquet` (default: `json`) |
+| `include_text` | boolean | No | Include extracted text (default: `false`) |
+| `include_metadata` | boolean | No | Include metadata (default: `true`) |
+| `include_lineage` | boolean | No | Include lineage info (default: `false`) |
+| `chunk_size` | integer | No | Records per chunk 100-10000 (default: `1000`) |
+| `callback_url` | string | No | Webhook URL for completion notification |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/bulk/export" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filter": {
+      "status": ["completed"],
+      "date_from": "2026-02-01T00:00:00Z"
+    },
+    "format": "jsonl",
+    "include_text": true,
+    "include_metadata": true
+  }'
+```
+
+**Success Response (202 Accepted):**
+
+```json
+{
+  "data": {
+    "export_id": "export-789",
+    "status": "processing",
+    "format": "jsonl",
+    "estimated_records": 1000,
+    "download_url": null,
+    "expires_at": null,
+    "message": "Export job created and is being processed"
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+---
+
+### Get Bulk Operation Status
+
+Get the status of a bulk operation.
+
+**Endpoint:** `GET /bulk/status/{batch_id}`
+
+**Authentication:** Required
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `batch_id` | string (UUID) | Bulk operation batch ID |
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/api/v1/bulk/status/batch-abc123" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "batch_id": "batch-abc123",
+    "operation_type": "ingest",
+    "status": "completed",
+    "total_items": 100,
+    "processed_items": 100,
+    "successful_items": 98,
+    "failed_items": 2,
+    "created_at": "2026-02-18T10:00:00.000000",
+    "started_at": "2026-02-18T10:01:00.000000",
+    "completed_at": "2026-02-18T10:30:00.000000",
+    "progress_percent": 100
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+**Error Response (404 Not Found):**
+
+```json
+{
+  "detail": "Bulk operation batch-abc123 not found"
+}
+```
+
+---
+
+### List Bulk Operations
+
+List all bulk operations with optional filtering.
+
+**Endpoint:** `GET /bulk/operations`
+
+**Authentication:** Required
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `operation_type` | string | - | Filter by type: `ingest`, `retry`, `export` |
+| `status` | string | - | Filter by status |
+| `page` | integer | 1 | Page number |
+| `page_size` | integer | 50 | Items per page (max 100) |
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/api/v1/bulk/operations?operation_type=ingest&page=1" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "operations": [
+      {
+        "batch_id": "batch-abc123",
+        "operation_type": "ingest",
+        "status": "completed",
+        "total_items": 100,
+        "processed_items": 100,
+        "successful_items": 98,
+        "failed_items": 2,
+        "created_at": "2026-02-18T10:00:00.000000",
+        "progress_percent": 100
+      }
+    ],
+    "total": 25,
+    "page": 1,
+    "page_size": 50,
+    "total_pages": 1
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000",
+    "total_count": 25
+  }
+}
+```
+
+---
+
+### Download Bulk Export
+
+Download a completed bulk export file.
+
+**Endpoint:** `GET /bulk/export/{export_id}/download`
+
+**Authentication:** Required
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `export_id` | string (UUID) | Export ID |
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/api/v1/bulk/export/export-789/download" \
+  -H "X-API-Key: your-api-key" \
+  --output export.jsonl.gz
+```
+
+**Success Response (200 OK):** Binary file download
+
+**Error Response (400 Bad Request):**
+
+```json
+{
+  "detail": "Export export-789 is not yet completed"
+}
+```
+
+**Error Response (501 Not Implemented):**
+
+```json
+{
+  "detail": "Export download not yet implemented"
+}
+```
+
+---
+
+### Cancel Bulk Operation
+
+Cancel a pending or processing bulk operation.
+
+**Endpoint:** `POST /bulk/cancel/{batch_id}`
+
+**Authentication:** Required
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `batch_id` | string (UUID) | Bulk operation batch ID |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/bulk/cancel/batch-abc123" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "batch_id": "batch-abc123",
+    "status": "cancelled",
+    "message": "Bulk operation cancelled successfully"
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+**Error Response (400 Bad Request):**
+
+```json
+{
+  "detail": "Cannot cancel operation with status: completed"
+}
+```
+
+---
+
 ## System & Health Endpoints
 
 ### Health Check
@@ -1592,6 +3205,110 @@ curl "http://localhost:8000/health/vector"
   "pgvector_version": "0.8.0",
   "pg_trgm_version": "1.6",
   "timestamp": "2026-02-18T10:30:00.000000"
+}
+```
+
+---
+
+### Detailed Component Health
+
+Get detailed health information for a specific component.
+
+**Endpoint:** `GET /health/detailed/{component}`
+
+**Authentication:** None
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `component` | string | Component name: `database`, `redis`, `llm_providers`, `destinations`, `storage`, `opentelemetry`, `vector_store` |
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/health/detailed/database"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "component": "database",
+  "healthy": true,
+  "message": "Database connection successful",
+  "latency_ms": 2.45,
+  "details": null,
+  "timestamp": "2026-02-18T10:30:00.000000"
+}
+```
+
+**Error Response (404 Not Found):**
+
+```json
+{
+  "detail": "Unknown component: invalid_component. Available: ['database', 'redis', 'llm_providers', 'destinations', 'storage', 'opentelemetry', 'vector_store']"
+}
+```
+
+---
+
+### Queue Health
+
+Get queue health and status information.
+
+**Endpoint:** `GET /health/queue`
+
+**Authentication:** Required
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/health/queue" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "data": {
+    "status": "healthy",
+    "queue_depths": {
+      "high": 5,
+      "normal": 25,
+      "low": 10
+    },
+    "processing": {
+      "workers": 4,
+      "active_jobs": 8
+    },
+    "total_pending": 40,
+    "total_processing": 8
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
+}
+```
+
+**Error Response (200 OK) - Unhealthy:**
+
+```json
+{
+  "data": {
+    "status": "unhealthy",
+    "error": "Redis connection failed",
+    "queue_depths": {},
+    "processing": {},
+    "total_pending": 0,
+    "total_processing": 0
+  },
+  "meta": {
+    "request_id": "req-abc123",
+    "timestamp": "2026-02-18T10:30:00.000000"
+  }
 }
 ```
 
@@ -1817,6 +3534,16 @@ def get_all_jobs():
 | `NO_EMBEDDING` | Chunk has no embedding | Ensure chunk was processed with embeddings |
 | `RATE_LIMIT_EXCEEDED` | Too many requests | Wait and retry |
 | `UPLOAD_FAILED` | File upload error | Check file format and size |
+| `RAG_PROCESSING_FAILED` | RAG query execution failed | Check RAG component health |
+| `STRATEGY_NOT_FOUND` | Invalid RAG strategy name | Use valid strategy: `auto`, `fast`, `balanced`, `thorough` |
+| `EVALUATION_FAILED` | RAG evaluation failed | Check query and ground truth data |
+| `BENCHMARK_FAILED` | Benchmark execution failed | Check benchmark configuration |
+| `DLQ_ENTRY_NOT_FOUND` | DLQ entry not found | Verify `entry_id` |
+| `CANNOT_RETRY_ENTRY` | Entry cannot be retried | Check entry status |
+| `BULK_OPERATION_NOT_FOUND` | Bulk operation not found | Verify `batch_id` |
+| `CANNOT_CANCEL_OPERATION` | Operation cannot be cancelled | Only `pending` or `processing` operations can be cancelled |
+| `EXPORT_NOT_COMPLETED` | Export not ready | Wait for export to complete |
+| `OAUTH2_NOT_CONFIGURED` | OAuth2 provider not configured | Configure OAuth2 settings |
 
 ### Error Handling Pattern
 
@@ -1863,6 +3590,14 @@ The API implements tiered rate limiting based on endpoint type:
 | Text Search | 100 | 60 seconds |
 | Hybrid Search | 30 | 60 seconds |
 | Similar Chunks | 60 | 60 seconds |
+| RAG Query | 30 | 60 seconds |
+| RAG Strategies | 60 | 60 seconds |
+| RAG Evaluate | 10 | 60 seconds |
+| RAG Metrics | 60 | 60 seconds |
+| RAG Benchmark | 5 | 60 seconds |
+| DLQ List/Get | 60 | 60 seconds |
+| DLQ Operations (retry, review, delete) | 30 | 60 seconds |
+| Bulk Operations | 10 | 60 seconds |
 | Health Checks | 60 | 60 seconds |
 
 ### Rate Limit Headers
@@ -2105,12 +3840,13 @@ const results = await client.hybridSearch("neural networks", {
 | Chunks | 2 | GET (list), GET (detail) |
 | Search | 4 | POST (semantic), POST (text), POST (hybrid), GET (similar) |
 | Pipelines | 5 | GET (list), GET (detail), POST, PUT, DELETE |
-| Sources | 1 | GET (list) |
-| Destinations | 1 | GET (list) |
-| Auth | 7 | GET (me), POST (refresh), GET/POST (oauth2), GET/POST/DELETE (api-keys) |
-| Health | 5 | GET /health, /health/ready, /health/live, /health/vector, /health/detailed/{component} |
+| Auth | 10 | GET (me), POST (login), POST (logout), POST (refresh), GET/POST (oauth2), GET/POST/DELETE (api-keys), GET (usage) |
+| RAG | 5 | POST (query), GET (strategies), POST (evaluate), GET (metrics), POST (benchmark) |
+| DLQ | 7 | GET (list), GET (detail), POST (retry), POST (review), DELETE, GET (stats), POST (archive) |
+| Bulk | 7 | POST (ingest), POST (retry), POST (export), GET (status), GET (operations), GET (download), POST (cancel) |
+| Health | 7 | GET /health, /health/ready, /health/live, /health/vector, /health/detailed/{component}, /health/queue |
 | System | 2 | GET /metrics, GET /api/v1/openapi.yaml |
-| **Total** | **33** | *Core endpoints documented. System has 50+ total endpoints.* |
+| **Total** | **57** | *Core endpoints documented. System has 60+ total endpoints.* |
 
 ---
 

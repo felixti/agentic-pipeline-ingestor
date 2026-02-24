@@ -584,9 +584,15 @@ class EmbedStage(PipelineStage):
                 chunk_models.append(chunk_model)
             
             # Store chunks in database
-            # Note: In a real implementation, we'd need to get the database session
-            # from somewhere (likely passed in or available via context)
-            # For now, we just record what would be stored
+            from src.db.models import get_async_engine
+            from sqlalchemy.ext.asyncio import AsyncSession
+            
+            engine = get_async_engine()
+            async with AsyncSession(engine) as session:
+                for chunk_model in chunk_models:
+                    session.add(chunk_model)
+                await session.commit()
+            
             context.set_stage_result(self.name, {
                 "status": "completed",
                 "chunks_stored": len(chunk_models),

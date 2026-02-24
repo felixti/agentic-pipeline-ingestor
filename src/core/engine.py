@@ -191,6 +191,39 @@ class OrchestrationEngine:
                 return job
             return None
 
+    async def _persist_job_status(self, job_id: UUID, job: Job) -> None:
+        """Persist job status changes to database.
+        
+        Args:
+            job_id: Job ID
+            job: Job model with updated status
+        """
+        from datetime import datetime
+        
+        engine = get_async_engine()
+        async with AsyncSession(engine) as session:
+            repo = JobRepository(session)
+            job_model = await repo.get_by_id(job_id)
+            
+            if job_model:
+                job_model.status = job.status.value
+                job_model.updated_at = datetime.utcnow()
+                
+                if job.status == JobStatus.COMPLETED:
+                    job_model.completed_at = datetime.utcnow()
+                
+                if job.error:
+                    job_model.error_message = job.error.message
+                    job_model.error_code = job.error.code
+                
+                await session.commit()
+                
+                self.logger.info(  # type: ignore[call-arg]
+                    "job_status_persisted",
+                    job_id=str(job_id),
+                    status=job.status.value,
+                )
+
     async def create_job(self, job_data: dict[str, Any]) -> Job:
         """Create a new job.
         
@@ -267,6 +300,10 @@ class OrchestrationEngine:
 
         try:
             context = await executor.execute(job)  # type: ignore[arg-type]
+
+            # Persist job status to database
+            if job.status in [JobStatus.COMPLETED, JobStatus.FAILED]:
+                await self._persist_job_status(job_id, job)
 
             self.logger.info(  # type: ignore[call-arg]
                 "job_processing_completed",

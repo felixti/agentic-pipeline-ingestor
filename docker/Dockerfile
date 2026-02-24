@@ -37,6 +37,7 @@ RUN /root/.local/bin/uv pip install --system \
     redis hiredis \
     litellm openai httpx aiohttp \
     pymupdf pillow pdf2image pytesseract python-magic \
+    python-docx openpyxl docling azure-ai-vision-imageanalysis \
     opentelemetry-api opentelemetry-sdk opentelemetry-instrumentation-fastapi \
     opentelemetry-instrumentation-sqlalchemy opentelemetry-exporter-otlp \
     prometheus-client structlog python-jose passlib python-dotenv cryptography \

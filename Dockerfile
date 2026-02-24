@@ -38,6 +38,7 @@ RUN pip install --upgrade pip && \
     opentelemetry-instrumentation-fastapi opentelemetry-instrumentation-sqlalchemy \
     pymupdf pillow pdf2image pytesseract python-magic \
     python-docx openpyxl python-pptx pdfplumber pytest pytest-asyncio \
+    docling azure-ai-vision-imageanalysis \
     orjson pyyaml click tenacity typing-extensions psutil greenlet \
     numpy scipy scikit-learn sentence-transformers
 

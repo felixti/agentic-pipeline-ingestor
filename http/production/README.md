@@ -15,6 +15,7 @@ These files target the **PRODUCTION** environment:
 |------|-------------|
 | `all-searches.http` | Complete collection of all search endpoints (semantic, text, hybrid, similar) |
 | `hybrid.http` | Hybrid search examples with weighted sum and RRF fusion |
+| `jobs.http` | **Create and manage ingestion jobs** (PDF, OCR, Office docs, sync/async modes) |
 | `semantic.http` | Semantic/vector similarity search examples |
 | `similar.http` | Find semantically similar chunks |
 | `text.http` | Text/BM25 search with fuzzy matching and highlighting |

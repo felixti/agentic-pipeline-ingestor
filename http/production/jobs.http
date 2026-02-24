@@ -1,0 +1,206 @@
+### Jobs API - Create and Manage Jobs (PRODUCTION)
+# ⚠️  WARNING: These requests target the PRODUCTION environment
+# Production URL: https://ag-dt-ppl-api.felixtek.cloud/api/v1
+# Use with caution - modifications affect live data
+#
+# This file contains examples for:
+# - Creating jobs (async and sync modes)
+# - Getting job status and results
+# - Listing jobs with filters
+# - Cancelling jobs
+# - Retrying failed jobs
+
+@baseUrl = https://ag-dt-ppl-api.felixtek.cloud/api/v1
+@apiKey = your-production-api-key
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 1. CREATE JOBS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+### Create Job - PDF Document (Async Mode)
+# Submit a new PDF ingestion job with async processing
+POST {{baseUrl}}/jobs
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "source_type": "upload",
+  "source_uri": "/uploads/sample-text.pdf",
+  "file_name": "sample-text.pdf",
+  "mime_type": "application/pdf",
+  "mode": "async",
+  "priority": 5,
+  "metadata": {
+    "source": "production-test",
+    "test_case": "pdf-text-extraction"
+  }
+}
+
+### Create Job - Scanned PDF with OCR
+# Submit a job requiring OCR processing for scanned documents
+POST {{baseUrl}}/jobs
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "source_type": "upload",
+  "source_uri": "/uploads/sample-scanned.pdf",
+  "file_name": "sample-scanned.pdf",
+  "mime_type": "application/pdf",
+  "mode": "async",
+  "priority": 3,
+  "options": {
+    "force_ocr": true,
+    "ocr_language": "eng"
+  },
+  "metadata": {
+    "source": "production-test",
+    "test_case": "pdf-ocr-extraction"
+  }
+}
+
+### Create Job - Office Document (Word)
+# Submit a Word document for processing
+POST {{baseUrl}}/jobs
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "source_type": "upload",
+  "source_uri": "/uploads/sample.docx",
+  "file_name": "sample.docx",
+  "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "mode": "async",
+  "priority": 5,
+  "metadata": {
+    "source": "production-test",
+    "test_case": "word-document"
+  }
+}
+
+### Create Job - Excel Spreadsheet
+# Submit an Excel spreadsheet for processing
+POST {{baseUrl}}/jobs
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "source_type": "upload",
+  "source_uri": "/uploads/sample.xlsx",
+  "file_name": "sample.xlsx",
+  "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "mode": "async",
+  "priority": 5,
+  "metadata": {
+    "source": "production-test",
+    "test_case": "excel-spreadsheet"
+  }
+}
+
+### Create Job - Sync Mode (Immediate Processing)
+# Submit a job for synchronous processing (waits for completion)
+POST {{baseUrl}}/jobs
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "source_type": "upload",
+  "source_uri": "/uploads/sample-text.pdf",
+  "file_name": "sample-text.pdf",
+  "mime_type": "application/pdf",
+  "mode": "sync",
+  "priority": 5,
+  "metadata": {
+    "source": "production-test",
+    "test_case": "sync-processing"
+  }
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 2. GET JOB STATUS AND RESULTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+### Get Job Status
+# Retrieve detailed information about a specific job
+GET {{baseUrl}}/jobs/{{jobId}}
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+### Get Job Result
+# Retrieve the processed output of a completed job
+GET {{baseUrl}}/jobs/{{jobId}}/result
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3. LIST JOBS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+### List Jobs (Default Pagination)
+# Get all jobs with default pagination settings
+GET {{baseUrl}}/jobs
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+### List Jobs with Status Filter (Pending)
+# Filter jobs by pending status
+GET {{baseUrl}}/jobs?status=pending&limit=10
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+### List Jobs with Status Filter (Completed)
+# Filter jobs by completed status
+GET {{baseUrl}}/jobs?status=completed&limit=10
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+### List Jobs with Date Range Filter
+# Filter jobs by date range
+GET {{baseUrl}}/jobs?date_from=2024-01-01&date_to=2024-12-31&limit=50
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+### List Jobs with Source Type Filter
+# Filter jobs by source type
+GET {{baseUrl}}/jobs?source_type=upload&limit=10
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+### List Jobs with Pagination
+# Paginated list of jobs
+GET {{baseUrl}}/jobs?page=1&limit=5
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4. JOB MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+### Cancel Job
+# Cancel a pending or running job
+DELETE {{baseUrl}}/jobs/{{jobId}}
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+### Retry Failed Job
+# Retry a job that has failed or been sent to DLQ
+POST {{baseUrl}}/jobs/{{jobId}}/retry
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "force_parser": "azure_ocr",
+  "priority": 10
+}
+
+###

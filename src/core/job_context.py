@@ -37,6 +37,12 @@ class JobContext(BaseModel):
         description="Extracted text content from document"
     )
     
+    # Chunks for embedding
+    chunks: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Text chunks created from extracted content"
+    )
+    
     # Stage results
     stage_results: dict[str, Any] = Field(
         default_factory=dict,

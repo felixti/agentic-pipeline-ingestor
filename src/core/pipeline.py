@@ -168,25 +168,91 @@ class ParseStage(PipelineStage):
     
     name = "parse"
     
+    def __init__(self, plugin_registry: Any = None) -> None:
+        """Initialize parse stage.
+        
+        Args:
+            plugin_registry: Plugin registry for accessing parsers
+        """
+        self.plugin_registry = plugin_registry
+    
     async def execute(self, context: JobContext) -> JobContext:
         """Execute parse stage."""
         log = logger.bind(stage=self.name, job_id=str(context.job_id))
         log.info("pipeline.stage_started")
         
-        # This is a placeholder - actual parsing would use the selected parser
         primary = context.selected_parser or "docling"
+        fallback = context.fallback_parser or "azure_ocr"
         
-        log.info("pipeline.using_parser", parser=primary)
+        log.info("pipeline.using_parser", parser=primary, fallback=fallback)
         
-        # In a real implementation, this would extract text from the document
-        # For now, we'll store a placeholder indicating successful parsing
-        context.set_stage_result(self.name, {
-            "parser_used": primary,
-            "status": "completed",
-            "extracted_text": None,  # Would contain actual extracted text
-        })
+        # Get file path from context
+        file_path = context.file_path
+        if not file_path:
+            log.error("pipeline.no_file_path")
+            context.set_stage_result(self.name, {
+                "parser_used": primary,
+                "status": "failed",
+                "error": "No file path in context",
+                "extracted_text": None,
+            })
+            return context
         
-        log.info("pipeline.stage_completed")
+        # Try to parse with primary parser, fallback if needed
+        extracted_text = None
+        parser_used = None
+        parse_error = None
+        
+        # Try primary parser
+        if self.plugin_registry:
+            try:
+                parser = self.plugin_registry.get_parser(primary)
+                if parser:
+                    log.info("pipeline.parsing_with", parser=primary)
+                    result = await parser.parse(file_path)
+                    if result.success and result.text:
+                        extracted_text = result.text
+                        parser_used = primary
+                        log.info("pipeline.parse_success", parser=primary, text_length=len(extracted_text))
+            except Exception as e:
+                parse_error = str(e)
+                log.warning("pipeline.parse_failed", parser=primary, error=parse_error)
+        
+        # Try fallback if primary failed
+        if extracted_text is None and fallback != primary:
+            if self.plugin_registry:
+                try:
+                    parser = self.plugin_registry.get_parser(fallback)
+                    if parser:
+                        log.info("pipeline.parsing_with_fallback", parser=fallback)
+                        result = await parser.parse(file_path)
+                        if result.success and result.text:
+                            extracted_text = result.text
+                            parser_used = fallback
+                            log.info("pipeline.parse_success", parser=fallback, text_length=len(extracted_text))
+                except Exception as e:
+                    log.warning("pipeline.parse_failed", parser=fallback, error=str(e))
+        
+        # Store result in context
+        if extracted_text:
+            context.extracted_text = extracted_text
+            context.set_stage_result(self.name, {
+                "parser_used": parser_used,
+                "status": "completed",
+                "extracted_text": extracted_text,
+                "text_length": len(extracted_text),
+            })
+            log.info("pipeline.stage_completed", text_length=len(extracted_text))
+        else:
+            # No text extracted - still completed but with no text
+            context.set_stage_result(self.name, {
+                "parser_used": parser_used or primary,
+                "status": "completed",
+                "extracted_text": None,
+                "error": parse_error,
+            })
+            log.warning("pipeline.no_text_extracted", parser=primary)
+        
         return context
 
 
@@ -573,12 +639,14 @@ class Pipeline:
         self,
         detection_service: ContentDetectionService | None = None,
         embedding_service: Any = None,
+        plugin_registry: Any = None,
     ):
         """Initialize pipeline.
         
         Args:
             detection_service: Optional detection service
             embedding_service: Optional embedding service
+            plugin_registry: Optional plugin registry for parsers
         """
         self.stages = []
         for stage_class in self.STAGES:
@@ -586,6 +654,8 @@ class Pipeline:
                 self.stages.append(DetectStage(detection_service))
             elif stage_class == EmbedStage:
                 self.stages.append(EmbedStage(embedding_service))
+            elif stage_class == ParseStage:
+                self.stages.append(ParseStage(plugin_registry))
             else:
                 self.stages.append(stage_class())
     
@@ -666,6 +736,7 @@ class PipelineExecutor:
         self.pipeline = Pipeline(
             detection_service=detection_service,
             embedding_service=embedding_service,
+            plugin_registry=plugin_registry,
         )
     
     async def execute(self, job: Any) -> JobContext:

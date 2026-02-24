@@ -38,12 +38,37 @@ def mock_registry():
 
 
 @pytest.fixture
+def mock_db_engine():
+    """Create a mock database engine."""
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_async_session():
+    """Create a properly structured mock async session context manager."""
+    session = AsyncMock()
+    session.begin = MagicMock(return_value=AsyncMock(
+        __aenter__=AsyncMock(return_value=None),
+        __aexit__=AsyncMock(return_value=None),
+    ))
+    return session
+
+
+@pytest.fixture
 def sample_job():
     """Create a sample job for testing."""
     job = MagicMock(spec=Job)
     job.id = uuid4()
     job.status = JobStatus.COMPLETED
     job.created_at = datetime.utcnow()
+    job.started_at = datetime.utcnow()
+    job.completed_at = datetime.utcnow()
+    job.source_type = "upload"
+    job.file_name = "test.pdf"
+    job.file_size = 1024
+    job.mime_type = "application/pdf"
+    job.retry_count = 0
+    job.max_retries = 3
     return job
 
 
@@ -57,9 +82,13 @@ def sample_context():
 
 
 @pytest.fixture
-def processor(mock_engine, mock_registry):
+def processor(mock_engine, mock_registry, mock_db_engine):
     """Create a JobProcessor instance with mocked dependencies."""
-    return JobProcessor(engine=mock_engine, plugin_registry=mock_registry)
+    return JobProcessor(
+        engine=mock_engine, 
+        plugin_registry=mock_registry,
+        db_engine=mock_db_engine,
+    )
 
 
 # ============================================================================
@@ -71,12 +100,17 @@ class TestJobProcessorInitialization:
     """Tests for JobProcessor initialization."""
 
     @pytest.mark.asyncio
-    async def test_init_with_dependencies(self, mock_engine, mock_registry):
+    async def test_init_with_dependencies(self, mock_engine, mock_registry, mock_db_engine):
         """Test initialization with provided dependencies."""
-        processor = JobProcessor(engine=mock_engine, plugin_registry=mock_registry)
+        processor = JobProcessor(
+            engine=mock_engine, 
+            plugin_registry=mock_registry,
+            db_engine=mock_db_engine,
+        )
 
         assert processor.engine is mock_engine
         assert processor.registry is mock_registry
+        assert processor._db_engine is mock_db_engine
         assert processor.llm is None
         assert processor._running is False
         assert processor._current_job is None
@@ -88,6 +122,7 @@ class TestJobProcessorInitialization:
 
         assert processor.engine is None
         assert processor.registry is not None
+        assert processor._db_engine is None
         assert processor.llm is None
 
     @pytest.mark.asyncio
@@ -132,16 +167,30 @@ class TestProcessJob:
         """Test successful job processing."""
         job_id = sample_job.id
         mock_engine.process_job.return_value = sample_context
-        mock_engine.get_job.return_value = sample_job
 
-        result = await processor.process_job(job_id)
+        # Mock the database session context managers
+        mock_session = AsyncMock()
+        mock_session.begin = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=None),
+            __aexit__=AsyncMock(return_value=None),
+        ))
+        
+        mock_async_sessionmaker = MagicMock()
+        mock_async_sessionmaker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_async_sessionmaker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("src.worker.processor.async_sessionmaker", return_value=mock_async_sessionmaker):
+            with patch("src.worker.processor.JobRepository") as mock_repo_class:
+                mock_repo = mock_repo_class.return_value
+                mock_repo.get_by_id = AsyncMock(return_value=sample_job)
+                
+                result = await processor.process_job(job_id)
 
         assert result["job_id"] == str(job_id)
         assert result["status"] == "completed"
         assert result["success"] is True
         assert "stages_completed" in result
         mock_engine.process_job.assert_called_once_with(job_id)
-        mock_engine.get_job.assert_called_once_with(job_id)
 
     @pytest.mark.asyncio
     async def test_process_job_not_initialized(self, processor):
@@ -156,9 +205,6 @@ class TestProcessJob:
         """Test that current_job is set during processing."""
         job_id = uuid4()
         mock_engine.process_job.return_value = sample_context
-        mock_engine.get_job.return_value = None
-
-        assert processor.current_job_id is None
 
         # Create a side effect to check current_job during processing
         async def check_current_job(*args):
@@ -167,7 +213,23 @@ class TestProcessJob:
 
         mock_engine.process_job.side_effect = check_current_job
 
-        await processor.process_job(job_id)
+        # Mock the database session
+        mock_session = AsyncMock()
+        mock_session.begin = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=None),
+            __aexit__=AsyncMock(return_value=None),
+        ))
+        
+        mock_async_sessionmaker = MagicMock()
+        mock_async_sessionmaker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_async_sessionmaker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("src.worker.processor.async_sessionmaker", return_value=mock_async_sessionmaker):
+            with patch("src.worker.processor.JobRepository") as mock_repo_class:
+                mock_repo = mock_repo_class.return_value
+                mock_repo.get_by_id = AsyncMock(return_value=None)  # Job not found
+                
+                await processor.process_job(job_id)
 
         assert processor.current_job_id is None  # Should be cleared after
 
@@ -176,9 +238,24 @@ class TestProcessJob:
         """Test processing job with quality score in result."""
         sample_context.get_stage_result.return_value = {"overall_score": 0.95}
         mock_engine.process_job.return_value = sample_context
-        mock_engine.get_job.return_value = sample_job
 
-        result = await processor.process_job(uuid4())
+        # Mock the database session
+        mock_session = AsyncMock()
+        mock_session.begin = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=None),
+            __aexit__=AsyncMock(return_value=None),
+        ))
+        
+        mock_async_sessionmaker = MagicMock()
+        mock_async_sessionmaker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_async_sessionmaker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("src.worker.processor.async_sessionmaker", return_value=mock_async_sessionmaker):
+            with patch("src.worker.processor.JobRepository") as mock_repo_class:
+                mock_repo = mock_repo_class.return_value
+                mock_repo.get_by_id = AsyncMock(return_value=sample_job)
+                
+                result = await processor.process_job(uuid4())
 
         assert result["quality_score"] == 0.95
 
@@ -189,11 +266,32 @@ class TestProcessJob:
         failed_job = MagicMock(spec=Job)
         failed_job.id = job_id
         failed_job.status = JobStatus.FAILED
+        failed_job.started_at = datetime.utcnow()
+        failed_job.completed_at = datetime.utcnow()
+        failed_job.source_type = "upload"
+        failed_job.file_name = "test.pdf"
+        failed_job.file_size = 1024
+        failed_job.mime_type = "application/pdf"
 
         mock_engine.process_job.return_value = sample_context
-        mock_engine.get_job.return_value = failed_job
 
-        result = await processor.process_job(job_id)
+        # Mock the database session
+        mock_session = AsyncMock()
+        mock_session.begin = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=None),
+            __aexit__=AsyncMock(return_value=None),
+        ))
+        
+        mock_async_sessionmaker = MagicMock()
+        mock_async_sessionmaker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_async_sessionmaker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("src.worker.processor.async_sessionmaker", return_value=mock_async_sessionmaker):
+            with patch("src.worker.processor.JobRepository") as mock_repo_class:
+                mock_repo = mock_repo_class.return_value
+                mock_repo.get_by_id = AsyncMock(return_value=failed_job)
+                
+                result = await processor.process_job(job_id)
 
         assert result["status"] == "failed"
         assert result["success"] is False
@@ -202,9 +300,24 @@ class TestProcessJob:
     async def test_process_job_unknown_status(self, processor, mock_engine, sample_context):
         """Test processing job with unknown status (job not found)."""
         mock_engine.process_job.return_value = sample_context
-        mock_engine.get_job.return_value = None
 
-        result = await processor.process_job(uuid4())
+        # Mock the database session
+        mock_session = AsyncMock()
+        mock_session.begin = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=None),
+            __aexit__=AsyncMock(return_value=None),
+        ))
+        
+        mock_async_sessionmaker = MagicMock()
+        mock_async_sessionmaker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_async_sessionmaker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("src.worker.processor.async_sessionmaker", return_value=mock_async_sessionmaker):
+            with patch("src.worker.processor.JobRepository") as mock_repo_class:
+                mock_repo = mock_repo_class.return_value
+                mock_repo.get_by_id = AsyncMock(return_value=None)  # Job not found
+                
+                result = await processor.process_job(uuid4())
 
         assert result["status"] == "unknown"
         assert result["success"] is False
@@ -225,27 +338,58 @@ class TestErrorHandling:
         error_message = "Pipeline execution failed"
         mock_engine.process_job.side_effect = Exception(error_message)
 
+        # Mock the database session for the error handler
+        mock_session = AsyncMock()
+        mock_session.begin = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=None),
+            __aexit__=AsyncMock(return_value=None),
+        ))
+        
+        mock_async_sessionmaker = MagicMock()
+        mock_async_sessionmaker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_async_sessionmaker.return_value.__aexit__ = AsyncMock(return_value=None)
+
         with patch("src.worker.processor.logger"):
-            result = await processor.process_job(job_id)
+            with patch("src.worker.processor.async_sessionmaker", return_value=mock_async_sessionmaker):
+                with patch("src.worker.processor.JobRepository") as mock_repo_class:
+                    mock_repo = mock_repo_class.return_value
+                    mock_repo.update_status = AsyncMock(return_value=None)
+                    
+                    result = await processor.process_job(job_id)
 
         assert result["status"] == "failed"
         assert result["success"] is False
         assert result["error"] == error_message
-        mock_engine.update_job_status.assert_called_once()
-        call_args = mock_engine.update_job_status.call_args
+        mock_repo.update_status.assert_called_once()
+        call_args = mock_repo.update_status.call_args
         assert call_args[0][0] == job_id
         assert call_args[0][1] == JobStatus.FAILED
-        assert call_args[1]["error"]["code"] == "PROCESSING_ERROR"
+        assert call_args[1]["error_code"] == "PROCESSING_ERROR"
 
     @pytest.mark.asyncio
     async def test_process_job_error_status_update_fails(self, processor, mock_engine):
         """Test handling when both processing and status update fail."""
         job_id = uuid4()
         mock_engine.process_job.side_effect = Exception("Processing error")
-        mock_engine.update_job_status.side_effect = Exception("Update failed")
+
+        # Mock the database session to fail
+        mock_session = AsyncMock()
+        mock_session.begin = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=None),
+            __aexit__=AsyncMock(return_value=None),
+        ))
+        
+        mock_async_sessionmaker = MagicMock()
+        mock_async_sessionmaker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_async_sessionmaker.return_value.__aexit__ = AsyncMock(return_value=None)
 
         with patch("src.worker.processor.logger"):
-            result = await processor.process_job(job_id)
+            with patch("src.worker.processor.async_sessionmaker", return_value=mock_async_sessionmaker):
+                with patch("src.worker.processor.JobRepository") as mock_repo_class:
+                    mock_repo = mock_repo_class.return_value
+                    mock_repo.update_status = AsyncMock(side_effect=Exception("Update failed"))
+                    
+                    result = await processor.process_job(job_id)
 
         # Should still return error result even if status update fails
         assert result["status"] == "failed"
@@ -259,7 +403,9 @@ class TestErrorHandling:
         mock_engine.process_job.side_effect = Exception("Processing error")
 
         with patch("src.worker.processor.logger"):
-            await processor.process_job(job_id)
+            with patch("src.worker.processor.async_sessionmaker"):
+                with patch("src.worker.processor.JobRepository"):
+                    await processor.process_job(job_id)
 
         assert processor.current_job_id is None
 
@@ -296,13 +442,30 @@ class TestProcessJobWithRetry:
             failing_result,
             success_result,
         ])):
-            # Mock job status to indicate retrying
+            # Mock job for retry check
             mock_job = MagicMock()
             mock_job.status = JobStatus.RETRYING
-            mock_engine.get_job.return_value = mock_job
+            mock_job.retry_count = 0
+            mock_job.max_retries = 3
 
-            with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
-                result = await processor.process_job_with_retry(job_id, max_retries=2)
+            # Mock the database session for retry
+            mock_session = AsyncMock()
+            mock_session.begin = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=None),
+                __aexit__=AsyncMock(return_value=None),
+            ))
+            
+            mock_async_sessionmaker = MagicMock()
+            mock_async_sessionmaker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_async_sessionmaker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            with patch("src.worker.processor.async_sessionmaker", return_value=mock_async_sessionmaker):
+                with patch("src.worker.processor.JobRepository") as mock_repo_class:
+                    mock_repo = mock_repo_class.return_value
+                    mock_repo.get_by_id = AsyncMock(return_value=mock_job)
+                    
+                    with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+                        result = await processor.process_job_with_retry(job_id, max_retries=2)
 
         assert result["success"] is True
         mock_sleep.assert_called_once()
@@ -316,10 +479,27 @@ class TestProcessJobWithRetry:
         with patch.object(processor, "process_job", new=AsyncMock(return_value=failing_result)):
             mock_job = MagicMock()
             mock_job.status = JobStatus.FAILED
-            mock_engine.get_job.return_value = mock_job
+            mock_job.retry_count = 3
+            mock_job.max_retries = 3
 
-            with patch("asyncio.sleep", new=AsyncMock()):
-                result = await processor.process_job_with_retry(job_id, max_retries=1)
+            # Mock the database session
+            mock_session = AsyncMock()
+            mock_session.begin = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=None),
+                __aexit__=AsyncMock(return_value=None),
+            ))
+            
+            mock_async_sessionmaker = MagicMock()
+            mock_async_sessionmaker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_async_sessionmaker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            with patch("src.worker.processor.async_sessionmaker", return_value=mock_async_sessionmaker):
+                with patch("src.worker.processor.JobRepository") as mock_repo_class:
+                    mock_repo = mock_repo_class.return_value
+                    mock_repo.get_by_id = AsyncMock(return_value=mock_job)
+                    
+                    with patch("asyncio.sleep", new=AsyncMock()):
+                        result = await processor.process_job_with_retry(job_id, max_retries=1)
 
         assert result["success"] is False
         assert result["status"] == "failed"
@@ -420,7 +600,7 @@ class TestProperties:
         """Test current_job_id property."""
         job_id = uuid4()
         processor._current_job = job_id
-        assert processor.current_job_id == job_id
+        assert processor.current_job_id is job_id
 
     def test_current_job_id_none(self, processor):
         """Test current_job_id returns None when not processing."""

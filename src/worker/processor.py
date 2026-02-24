@@ -8,7 +8,7 @@ import asyncio
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from src.config import settings
 from src.core.engine import OrchestrationEngine
@@ -39,6 +39,7 @@ class JobProcessor:
         engine: OrchestrationEngine | None = None,
         plugin_registry: PluginRegistry | None = None,
         worker_id: str | None = None,
+        db_engine: AsyncEngine | None = None,
     ) -> None:
         """Initialize the job processor.
         
@@ -46,14 +47,22 @@ class JobProcessor:
             engine: Orchestration engine
             plugin_registry: Plugin registry
             worker_id: Unique identifier for the worker
+            db_engine: SQLAlchemy async engine for database operations
         """
         self.engine = engine
         self.registry = plugin_registry or PluginRegistry()
         self.worker_id = worker_id or "unknown"
         self.llm: LLMProvider | None = None
+        self._db_engine = db_engine
         self._running = False
         self._current_job: UUID | None = None
         self._heartbeat_task: asyncio.Task[Any] | None = None
+
+    def _get_db_engine(self) -> AsyncEngine:
+        """Get the database engine (lazy initialization)."""
+        if self._db_engine is None:
+            self._db_engine = get_async_engine()
+        return self._db_engine
 
     async def initialize(self) -> None:
         """Initialize the processor with dependencies."""
@@ -149,44 +158,54 @@ class JobProcessor:
             context = await self.engine.process_job(job_id)
 
             # Get job from database to check final status
-            engine = get_async_engine()
-            async with AsyncSession(engine) as session:
-                repo = JobRepository(session)
-                job = await repo.get_by_id(job_id)
+            # Use async_sessionmaker for proper async session management
+            engine = self._get_db_engine()
+            async_session = async_sessionmaker(
+                engine, 
+                expire_on_commit=False,
+                class_=AsyncSession,
+            )
+            
+            async with async_session() as session:
+                # Use session.begin() to properly manage the transaction
+                # This ensures greenlet context is correctly set up
+                async with session.begin():
+                    repo = JobRepository(session)
+                    job = await repo.get_by_id(job_id)
 
-                if job is None:
-                    return {
+                    if job is None:
+                        return {
+                            "job_id": str(job_id),
+                            "status": "unknown",
+                            "error": "Job not found after processing",
+                            "success": False,
+                        }
+
+                    # Store results if completed
+                    if job.status == JobStatus.COMPLETED:
+                        await self._store_results(job, context, session)
+
+                    result = {
                         "job_id": str(job_id),
-                        "status": "unknown",
-                        "error": "Job not found after processing",
-                        "success": False,
+                        "status": job.status,
+                        "stages_completed": list(context.stage_results.keys()),
+                        "success": job.status == JobStatus.COMPLETED,
                     }
 
-                # Store results if completed
-                if job.status == JobStatus.COMPLETED:
-                    await self._store_results(job, context, session)
+                    # Add quality score if available
+                    quality_result = context.get_stage_result("quality")
+                    if quality_result:
+                        result["quality_score"] = quality_result.get("overall_score")
 
-                result = {
-                    "job_id": str(job_id),
-                    "status": job.status,
-                    "stages_completed": list(context.stage_results.keys()),
-                    "success": job.status == JobStatus.COMPLETED,
-                }
+                    logger.info(
+                        "job_processing_finished",
+                        worker_id=self.worker_id,
+                        job_id=str(job_id),
+                        status=result["status"],
+                        success=result["success"],
+                    )
 
-                # Add quality score if available
-                quality_result = context.get_stage_result("quality")
-                if quality_result:
-                    result["quality_score"] = quality_result.get("overall_score")
-
-                logger.info(
-                    "job_processing_finished",
-                    worker_id=self.worker_id,
-                    job_id=str(job_id),
-                    status=result["status"],
-                    success=result["success"],
-                )
-
-                return result
+                    return result
 
         except Exception as e:
             logger.error(
@@ -198,15 +217,22 @@ class JobProcessor:
 
             # Update job status to failed
             try:
-                engine = get_async_engine()
-                async with AsyncSession(engine) as session:
-                    repo = JobRepository(session)
-                    await repo.update_status(
-                        job_id,
-                        JobStatus.FAILED,
-                        error_message=str(e),
-                        error_code="PROCESSING_ERROR",
-                    )
+                engine = self._get_db_engine()
+                async_session = async_sessionmaker(
+                    engine, 
+                    expire_on_commit=False,
+                    class_=AsyncSession,
+                )
+                
+                async with async_session() as session:
+                    async with session.begin():
+                        repo = JobRepository(session)
+                        await repo.update_status(
+                            job_id,
+                            JobStatus.FAILED,
+                            error_message=str(e),
+                            error_code="PROCESSING_ERROR",
+                        )
             except Exception as update_error:
                 logger.error(
                     "failed_to_update_job_status",
@@ -243,7 +269,7 @@ class JobProcessor:
         Args:
             job: Job model
             context: Pipeline context
-            session: Database session
+            session: Database session (managed by caller)
         """
         try:
             repo = JobResultRepository(session)
@@ -286,7 +312,7 @@ class JobProcessor:
                 "stages_completed": list(context.stage_results.keys()),
             }
             
-            # Save result
+            # Save result - session is managed by caller via session.begin()
             await repo.save(
                 job_id=str(job.id),
                 extracted_text=extracted_text,
@@ -325,11 +351,18 @@ class JobProcessor:
                 if self._current_job != job_id:
                     break
                 
-                engine = get_async_engine()
-                async with AsyncSession(engine) as session:
-                    repo = JobRepository(session)
-                    await repo.update_heartbeat(job_id)
-                    logger.debug("sent_heartbeat", worker_id=self.worker_id, job_id=str(job_id))
+                engine = self._get_db_engine()
+                async_session = async_sessionmaker(
+                    engine, 
+                    expire_on_commit=False,
+                    class_=AsyncSession,
+                )
+                
+                async with async_session() as session:
+                    async with session.begin():
+                        repo = JobRepository(session)
+                        await repo.update_heartbeat(job_id)
+                        logger.debug("sent_heartbeat", worker_id=self.worker_id, job_id=str(job_id))
                     
             except asyncio.CancelledError:
                 break
@@ -361,24 +394,37 @@ class JobProcessor:
 
                 # Check if we should retry
                 if attempt < max_retries:
-                    engine = get_async_engine()
-                    async with AsyncSession(engine) as session:
-                        repo = JobRepository(session)
-                        job = await repo.get_by_id(job_id)
-                        if job and job.retry_count < job.max_retries:
-                            logger.info(
-                                "retrying_job",
-                                worker_id=self.worker_id,
-                                job_id=str(job_id),
-                                attempt=attempt + 1,
-                            )
-                            job.retry_count = job.retry_count + 1  # type: ignore[assignment]
-                            job.status = JobStatus.PENDING  # type: ignore[assignment]
-                            job.error_message = None  # type: ignore[assignment]
-                            job.error_code = None  # type: ignore[assignment]
-                            await session.commit()
-                            await asyncio.sleep(2 ** attempt)  # Exponential backoff
-                            continue
+                    engine = self._get_db_engine()
+                    async_session = async_sessionmaker(
+                        engine, 
+                        expire_on_commit=False,
+                        class_=AsyncSession,
+                    )
+                    
+                    async with async_session() as session:
+                        async with session.begin():
+                            repo = JobRepository(session)
+                            job = await repo.get_by_id(job_id)
+                            if job and job.retry_count < job.max_retries:
+                                logger.info(
+                                    "retrying_job",
+                                    worker_id=self.worker_id,
+                                    job_id=str(job_id),
+                                    attempt=attempt + 1,
+                                )
+                                # Update job for retry
+                                job.retry_count = job.retry_count + 1  # type: ignore[assignment]
+                                job.status = JobStatus.PENDING  # type: ignore[assignment]
+                                job.error_message = None  # type: ignore[assignment]
+                                job.error_code = None  # type: ignore[assignment]
+                                # Session will be committed by the context manager
+                            else:
+                                # No more retries allowed
+                                return result
+                    
+                    # Wait outside the session context
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    continue
 
                 return result
 

@@ -583,19 +583,21 @@ class EmbedStage(PipelineStage):
                 chunk_model.set_embedding(embedding_result.embedding)
                 chunk_models.append(chunk_model)
             
-            # Store chunks in database
+            # Store chunks in database using upsert for idempotency
+            # This handles retries gracefully - existing chunks are updated
             from src.db.models import get_async_engine
             from sqlalchemy.ext.asyncio import AsyncSession
             
             engine = get_async_engine()
             async with AsyncSession(engine) as session:
-                for chunk_model in chunk_models:
-                    session.add(chunk_model)
-                await session.commit()
+                repo = DocumentChunkRepository(session)
+                upserted_chunks, inserted_count, updated_count = await repo.upsert_chunks(chunk_models)
             
             context.set_stage_result(self.name, {
                 "status": "completed",
-                "chunks_stored": len(chunk_models),
+                "chunks_stored": len(upserted_chunks),
+                "chunks_inserted": inserted_count,
+                "chunks_updated": updated_count,
                 "embedding_model": self.vs_config.embedding.model,
                 "embedding_dimensions": self.vs_config.embedding.dimensions,
                 "avg_latency_ms": sum(

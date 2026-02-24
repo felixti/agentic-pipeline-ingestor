@@ -19,10 +19,12 @@ class JobStatus(str, Enum):
     """Job processing status."""
     CREATED = "created"
     QUEUED = "queued"
+    PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    CANCELLING = "cancelling"
     RETRYING = "retrying"
     DEAD_LETTER = "dead_letter"
 

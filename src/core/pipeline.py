@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 import structlog
 
+from src.api.base_models import JobStatus
 from src.core.content_detection.models import ContentAnalysisResult
 from src.core.content_detection.service import ContentDetectionService
 from src.core.job_context import JobContext
@@ -712,7 +713,7 @@ class PipelineExecutor:
         
         # Update job status if methods exist
         if hasattr(job, "status"):
-            job.status = "COMPLETED"
+            job.status = JobStatus.COMPLETED
         if hasattr(job, "completed_at"):
             job.completed_at = datetime.now(UTC)
         

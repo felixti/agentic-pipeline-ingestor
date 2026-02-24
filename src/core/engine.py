@@ -88,10 +88,9 @@ class OrchestrationEngine:
             PipelineExecutor instance
         """
         if self._pipeline_executor is None:
-            self._pipeline_executor = PipelineExecutor(  # type: ignore[call-arg]
+            self._pipeline_executor = PipelineExecutor(
                 config=pipeline_config,
                 plugin_registry=self.registry,
-                llm_provider=self.llm,
             )
         return self._pipeline_executor
 

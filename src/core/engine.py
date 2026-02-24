@@ -24,7 +24,7 @@ from src.api.models import (
 )
 from src.core.dlq import DeadLetterQueue, get_dlq
 from src.core.job_context import JobContext as PipelineContext
-from src.core.pipeline import Pipeline as PipelineExecutor
+from src.core.pipeline import PipelineExecutor
 from src.core.retry import RetryContext, RetryStrategyType, get_retry_registry
 from src.core.routing import DestinationRouter, get_router
 from src.db.models import JobModel, get_async_engine

@@ -43,6 +43,12 @@ class JobContext(BaseModel):
         description="Text chunks created from extracted content"
     )
     
+    # Chunk models for database storage
+    chunk_models: list[Any] = Field(
+        default_factory=list,
+        description="Document chunk models for database persistence"
+    )
+    
     # Stage results
     stage_results: dict[str, Any] = Field(
         default_factory=dict,

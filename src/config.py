@@ -843,7 +843,10 @@ class EmbeddingOptimizationSettings(BaseSettings):
     @field_validator("default_model")
     @classmethod
     def validate_default_model(cls, v: str) -> str:
-        """Validate default model."""
+        """Validate default model.
+        
+        Supports both short names and litellm provider-prefixed formats.
+        """
         valid_models = {
             "text-embedding-3-small",
             "text-embedding-3-large",
@@ -857,9 +860,28 @@ class EmbeddingOptimizationSettings(BaseSettings):
             "enterprise",
             "auto",
         }
-        if v not in valid_models:
-            raise ValueError(f"Invalid default model: {v}")
-        return v
+        
+        # Check if it's a valid short name
+        if v in valid_models:
+            return v
+        
+        # Check if it's a litellm provider-prefixed format (e.g., azure/text-embedding-3-small)
+        if "/" in v:
+            # Extract model name after the last slash or after provider prefix
+            parts = v.split("/")
+            if len(parts) >= 2:
+                # Check for formats like: azure/text-embedding-3-small
+                # or openrouter/openai/text-embedding-3-small
+                model_name = parts[-1] if parts[-1] not in ("openai", "azure") else parts[-2] if len(parts) >= 3 else parts[-1]
+                # Also check the full model name without provider prefix
+                short_name = parts[-1]
+                if short_name in valid_models or model_name in valid_models:
+                    return v
+                # Allow any text-embedding model from OpenAI
+                if "text-embedding" in v:
+                    return v
+        
+        raise ValueError(f"Invalid default model: {v}")
     
     model_config = SettingsConfigDict(env_prefix="EMBEDDING_")
 

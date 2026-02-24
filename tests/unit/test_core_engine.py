@@ -219,8 +219,11 @@ class TestOrchestrationEngine:
     @pytest.mark.asyncio
     async def test_process_job_not_found(self, engine):
         """Test processing a non-existent job."""
-        with pytest.raises(ValueError, match="Job not found"):
-            await engine.process_job(uuid4())
+        # Mock _load_job_from_db to return None (job not found in DB either)
+        with patch.object(engine, "_load_job_from_db", return_value=None) as mock_load:
+            with pytest.raises(ValueError, match="Job not found"):
+                await engine.process_job(uuid4())
+            mock_load.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_process_job_failure(self, engine, sample_job_data, sample_pipeline_config):

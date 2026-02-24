@@ -6,10 +6,13 @@ from src.api.base_models import (
     ApiResponse,
     # Enums
     ContentType,
+    DestinationType,
     FilterOperator,
     HealthStatus,
     JobStatus,
+    ProcessingMode,
     SourceType,
+    StageStatus,
     # Detection
     ComponentHealth,
     ContentDetectionResult,
@@ -20,13 +23,16 @@ from src.api.base_models import (
     PipelineConfig,
     QualityConfig,
     StageProgress,
+    TextStatistics,
     # Job
     Job,
     JobCreateRequest,
     JobError,
     JobListResponse,
     JobResponse,
+    JobResult,
     JobRetryRequest,
+    PipelineConfig,
     RetryRecord,
     # Upload
     UploadMultipleResponse,
@@ -65,10 +71,13 @@ __all__ = [
     "ApiResponse",
     # Enums
     "ContentType",
+    "DestinationType",
     "FilterOperator",
     "HealthStatus",
     "JobStatus",
+    "ProcessingMode",
     "SourceType",
+    "StageStatus",
     # Detection
     "ComponentHealth",
     "ContentDetectionResult",
@@ -79,13 +88,16 @@ __all__ = [
     "PipelineConfig",
     "QualityConfig",
     "StageProgress",
+    "TextStatistics",
     # Job
     "Job",
     "JobCreateRequest",
     "JobError",
     "JobListResponse",
     "JobResponse",
+    "JobResult",
     "JobRetryRequest",
+    "PipelineConfig",
     "RetryRecord",
     # Upload
     "UploadMultipleResponse",

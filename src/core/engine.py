@@ -16,6 +16,9 @@ from src.api.models import (
     JobRetryRequest,
     JobStatus,
     PipelineConfig,
+    ProcessingMode,
+    RetryRecord,
+    SourceType,
     StageProgress,
 )
 from src.core.dlq import DeadLetterQueue, get_dlq
@@ -23,8 +26,11 @@ from src.core.job_context import JobContext as PipelineContext
 from src.core.pipeline import Pipeline as PipelineExecutor
 from src.core.retry import RetryContext, RetryStrategyType, get_retry_registry
 from src.core.routing import DestinationRouter, get_router
+from src.db.models import JobModel, get_async_engine
+from src.db.repositories.job import JobRepository
 from src.llm.provider import LLMProvider
 from src.plugins.registry import PluginRegistry
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +94,103 @@ class OrchestrationEngine:
             )
         return self._pipeline_executor
 
+    def _convert_job_model_to_job(self, job_model: JobModel) -> Job:
+        """Convert JobModel (DB) to Job (API Pydantic model).
+        
+        Args:
+            job_model: Database job model
+            
+        Returns:
+            Job API model
+        """
+        # Convert pipeline_config from dict to PipelineConfig if present
+        pipeline_config = None
+        if job_model.pipeline_config:
+            pipeline_config = PipelineConfig(**job_model.pipeline_config)
+        
+        # Convert error fields to JobError if present
+        error = None
+        if job_model.error_message or job_model.error_code:
+            error = JobError(
+                code=job_model.error_code or "UNKNOWN",
+                message=job_model.error_message or "Unknown error",
+            )
+        
+        # Parse priority from string to int (default priority scale: low=3, normal=5, high=8)
+        priority_map = {"low": 3, "normal": 5, "high": 8}
+        priority = priority_map.get(job_model.priority, 5)
+        
+        # Parse status enum
+        try:
+            status = JobStatus(job_model.status)
+        except ValueError:
+            status = JobStatus.CREATED
+        
+        # Parse source_type enum
+        try:
+            source_type = SourceType(job_model.source_type)
+        except ValueError:
+            source_type = SourceType.UPLOAD
+        
+        # Parse mode enum
+        try:
+            mode = ProcessingMode(job_model.mode)
+        except ValueError:
+            mode = ProcessingMode.ASYNC
+        
+        return Job(
+            id=job_model.id,
+            external_id=job_model.external_id,
+            source_type=source_type,
+            source_uri=job_model.source_uri or "",
+            file_name=job_model.file_name or "unknown",
+            file_size=job_model.file_size,
+            file_hash=None,  # Not stored in DB model
+            mime_type=job_model.mime_type,
+            mode=mode,
+            priority=priority,
+            pipeline_config=pipeline_config,
+            destinations=[],  # Not stored directly in JobModel
+            status=status,
+            current_stage=None,  # Not stored in JobModel
+            stage_progress={},  # Reconstructed from related models if needed
+            created_at=job_model.created_at or datetime.utcnow(),
+            started_at=job_model.started_at,
+            completed_at=job_model.completed_at,
+            expires_at=None,  # Not stored in JobModel
+            result=None,  # Fetched from JobResultModel if needed
+            error=error,
+            retry_count=job_model.retry_count or 0,
+            retry_history=[],  # Reconstructed from retry records if needed
+            created_by=None,  # Not stored in JobModel
+            source_ip=None,  # Not stored in JobModel
+        )
+
+    async def _load_job_from_db(self, job_id: UUID) -> Job | None:
+        """Load job from database if not in cache.
+        
+        Args:
+            job_id: Job ID to load
+            
+        Returns:
+            Job if found, None otherwise
+        """
+        engine = get_async_engine()
+        async with AsyncSession(engine) as session:
+            repo = JobRepository(session)
+            job_model = await repo.get_by_id(job_id)
+            
+            if job_model:
+                job = self._convert_job_model_to_job(job_model)
+                self._active_jobs[job_id] = job
+                self.logger.info(  # type: ignore[call-arg]
+                    "job_loaded_from_db",
+                    job_id=str(job_id),
+                    status=job.status.value,
+                )
+                return job
+            return None
+
     async def create_job(self, job_data: dict[str, Any]) -> Job:
         """Create a new job.
         
@@ -143,7 +246,13 @@ class OrchestrationEngine:
         Raises:
             ValueError: If job not found
         """
+        # Try cache first
         job = self._active_jobs.get(job_id)
+        
+        # Fall back to DB if not in cache
+        if not job:
+            job = await self._load_job_from_db(job_id)
+        
         if not job:
             raise ValueError(f"Job not found: {job_id}")
 

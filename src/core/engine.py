@@ -4,10 +4,11 @@ This module provides the orchestration engine that manages job lifecycle,
 pipeline execution, and coordination between plugins.
 """
 
-import logging
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
+
+import structlog
 
 from src.api.models import (
     Job,
@@ -32,7 +33,7 @@ from src.llm.provider import LLMProvider
 from src.plugins.registry import PluginRegistry
 from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class OrchestrationEngine:

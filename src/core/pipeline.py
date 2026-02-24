@@ -569,6 +569,7 @@ class EmbedStage(PipelineStage):
             chunk_models = []
             for chunk_data, embedding_result in zip(chunks, embedding_results):
                 chunk_model = DocumentChunkModel(
+                    id=uuid4(),
                     job_id=context.job_id,
                     chunk_index=chunk_data["chunk_index"],
                     content=chunk_data["content"],

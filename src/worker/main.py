@@ -94,12 +94,15 @@ them through the pipeline.
         # Initialize database engine
         engine = get_async_engine()
         
-        # Initialize orchestration engine
-        self.engine = OrchestrationEngine()
-
-        # Initialize processor
-        self.processor = JobProcessor(engine=self.engine, worker_id=self.worker_id)
+        # Initialize processor first (registers plugins)
+        self.processor = JobProcessor(worker_id=self.worker_id)
         await self.processor.initialize()
+        
+        # Initialize orchestration engine with processor's registry
+        self.engine = OrchestrationEngine(plugin_registry=self.processor.registry)
+        
+        # Update processor with the engine
+        self.processor.engine = self.engine
 
         logger.info("worker_service_initialized", worker_id=self.worker_id)
 

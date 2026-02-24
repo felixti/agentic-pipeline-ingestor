@@ -8,9 +8,42 @@ import structlog
 
 from src.core.content_detection.analyzer import PDFContentAnalyzer
 from src.core.content_detection.cache import DetectionCache, NullDetectionCache
-from src.core.content_detection.models import ContentAnalysisResult, ContentDetectionRecord
+from src.core.content_detection.models import (
+    ContentAnalysisResult,
+    ContentDetectionRecord,
+    ContentType,
+    ImageStatistics,
+    TextStatistics,
+)
 
 logger = structlog.get_logger(__name__)
+
+# File extension to content type mapping for non-PDF files
+EXTENSION_CONTENT_TYPE_MAP = {
+    # Microsoft Office
+    ".docx": (ContentType.OFFICE_DOC, "docling", 0.95),
+    ".doc": (ContentType.OFFICE_DOC, "docling", 0.90),
+    ".xlsx": (ContentType.OFFICE_SPREADSHEET, "docling", 0.95),
+    ".xls": (ContentType.OFFICE_SPREADSHEET, "docling", 0.90),
+    ".pptx": (ContentType.OFFICE_PRESENTATION, "docling", 0.95),
+    ".ppt": (ContentType.OFFICE_PRESENTATION, "docling", 0.90),
+    # Images
+    ".jpg": (ContentType.IMAGE, "azure_ocr", 0.95),
+    ".jpeg": (ContentType.IMAGE, "azure_ocr", 0.95),
+    ".png": (ContentType.IMAGE, "azure_ocr", 0.95),
+    ".tiff": (ContentType.IMAGE, "azure_ocr", 0.90),
+    ".tif": (ContentType.IMAGE, "azure_ocr", 0.90),
+    ".bmp": (ContentType.IMAGE, "azure_ocr", 0.85),
+    ".gif": (ContentType.IMAGE, "azure_ocr", 0.80),
+    # Data formats
+    ".csv": (ContentType.CSV, "docling", 1.0),
+    ".tsv": (ContentType.CSV, "docling", 1.0),
+    ".json": (ContentType.JSON, "docling", 1.0),
+    ".jsonl": (ContentType.JSON, "docling", 1.0),
+    ".xml": (ContentType.XML, "docling", 1.0),
+    # Archives
+    ".zip": (ContentType.ARCHIVE, "docling", 0.90),
+}
 
 
 class ContentDetectionService:
@@ -81,7 +114,24 @@ class ContentDetectionService:
             DetectionMetrics.record_cache_miss()
             log.info("content_detection.cache_miss", file_hash=file_hash)
         
-        # Step 2: Analyze file
+        # Step 2: Check if it's a non-PDF file first
+        non_pdf_result = self._detect_non_pdf_content(path)
+        if non_pdf_result:
+            log.info(
+                "content_detection.completed",
+                event_type="extension_based_detection",
+                file_hash=non_pdf_result.file_hash,
+                content_type=non_pdf_result.content_type.value,
+                confidence=non_pdf_result.confidence,
+                recommended_parser=non_pdf_result.recommended_parser,
+                duration_ms=non_pdf_result.processing_time_ms,
+                total_pages=1,
+            )
+            # Store in cache
+            await self._store_in_cache(non_pdf_result)
+            return non_pdf_result
+        
+        # Step 3: Analyze PDF file
         log.info(
             "content_detection.analysis_started",
             event_type="analysis_started",
@@ -291,6 +341,106 @@ class ContentDetectionService:
                 error=str(e)
             )
             return False
+    
+    def _detect_non_pdf_content(self, file_path: Path) -> ContentAnalysisResult | None:
+        """Detect content type for non-PDF files based on extension.
+        
+        Args:
+            file_path: Path to file
+            
+        Returns:
+            ContentAnalysisResult for non-PDF files, None for PDFs
+        """
+        ext = file_path.suffix.lower()
+        
+        # If it's a PDF, return None to trigger PDF analysis
+        if ext == ".pdf":
+            return None
+        
+        # Check if we have a mapping for this extension
+        if ext in EXTENSION_CONTENT_TYPE_MAP:
+            content_type, recommended_parser, confidence = EXTENSION_CONTENT_TYPE_MAP[ext]
+            
+            # Build alternative parsers based on content type
+            if content_type == ContentType.IMAGE:
+                alternative_parsers = ["docling"]
+            elif content_type in (ContentType.OFFICE_DOC, ContentType.OFFICE_SPREADSHEET, 
+                                  ContentType.OFFICE_PRESENTATION, ContentType.CSV,
+                                  ContentType.JSON, ContentType.XML, ContentType.ARCHIVE):
+                alternative_parsers = ["azure_ocr"]
+            else:
+                alternative_parsers = []
+            
+            file_hash = self._calculate_file_hash(file_path)
+            file_size = file_path.stat().st_size
+            
+            # Create appropriate statistics based on content type
+            text_stats = TextStatistics(
+                total_pages=1,
+                total_characters=0,
+                has_text_layer=False,
+                font_count=0,
+                encoding=None,
+                average_chars_per_page=0,
+            )
+            
+            image_stats = ImageStatistics(
+                total_images=0,
+                image_area_ratio=0.0,
+                average_dpi=None,
+                color_pages=0,
+                total_page_area=0.0,
+                total_image_area=0.0,
+            )
+            
+            import time
+            return ContentAnalysisResult(
+                file_hash=file_hash,
+                file_size=file_size,
+                content_type=content_type,
+                confidence=confidence,
+                recommended_parser=recommended_parser,
+                alternative_parsers=alternative_parsers,
+                text_statistics=text_stats,
+                image_statistics=image_stats,
+                page_results=[],
+                processing_time_ms=1,  # Minimal processing time
+            )
+        
+        # Unknown extension - treat as generic document
+        file_hash = self._calculate_file_hash(file_path)
+        file_size = file_path.stat().st_size
+        
+        text_stats = TextStatistics(
+            total_pages=1,
+            total_characters=0,
+            has_text_layer=False,
+            font_count=0,
+            encoding=None,
+            average_chars_per_page=0,
+        )
+        
+        image_stats = ImageStatistics(
+            total_images=0,
+            image_area_ratio=0.0,
+            average_dpi=None,
+            color_pages=0,
+            total_page_area=0.0,
+            total_image_area=0.0,
+        )
+        
+        return ContentAnalysisResult(
+            file_hash=file_hash,
+            file_size=file_size,
+            content_type=ContentType.UNKNOWN,
+            confidence=0.50,
+            recommended_parser="docling",
+            alternative_parsers=["azure_ocr"],
+            text_statistics=text_stats,
+            image_statistics=image_stats,
+            page_results=[],
+            processing_time_ms=1,
+        )
     
     @staticmethod
     def _calculate_file_hash(file_path: Path) -> str:

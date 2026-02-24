@@ -9,11 +9,25 @@ from pydantic import BaseModel, Field
 
 
 class ContentType(str, Enum):
-    """Content type classification for PDFs."""
+    """Content type classification for documents."""
     
+    # PDF-specific types
     TEXT_BASED = "text_based"
     SCANNED = "scanned"
     MIXED = "mixed"
+    
+    # Office document types
+    OFFICE_DOC = "office_doc"
+    OFFICE_SPREADSHEET = "office_spreadsheet"
+    OFFICE_PRESENTATION = "office_presentation"
+    
+    # Other document types
+    IMAGE = "image"
+    CSV = "csv"
+    JSON = "json"
+    XML = "xml"
+    ARCHIVE = "archive"
+    UNKNOWN = "unknown"
 
 
 class TextStatistics(BaseModel):

@@ -31,6 +31,12 @@ class JobContext(BaseModel):
         description="Selected fallback parser"
     )
     
+    # Extracted content
+    extracted_text: str | None = Field(
+        default=None,
+        description="Extracted text content from document"
+    )
+    
     # Stage results
     stage_results: dict[str, Any] = Field(
         default_factory=dict,

@@ -100,3 +100,6 @@ secrets/
 *.pem
 *.key
 *.crt
+
+# SSH Keys
+.ssh/

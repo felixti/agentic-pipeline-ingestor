@@ -738,8 +738,8 @@ class EmbeddingOptimizationSettings(BaseSettings):
     """
 
     default_model: str = Field(
-        default="text-embedding-3-small",
-        description="Default embedding model identifier",
+        default="azure/text-embedding-3-small",
+        description="Default embedding model identifier (Azure OpenAI primary, OpenRouter fallback)",
     )
     
     models: dict[str, dict[str, Any]] = Field(

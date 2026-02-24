@@ -26,7 +26,8 @@ class EmbeddingConfig:
         max_tokens: Maximum tokens per chunk for truncation
         provider_params: Provider-specific parameters (timeout, retries, etc.)
     """
-    model: str = "text-embedding-3-small"
+    # Default to Azure OpenAI (primary) with fallback support
+    model: str = "azure/text-embedding-3-small"
     dimensions: int = 1536
     batch_size: int = 100
     max_tokens: int = 8192
@@ -245,7 +246,7 @@ class VectorStoreConfig:
         # Parse embedding config
         embedding_data = vs_data.get("embedding", {})
         embedding = EmbeddingConfig(
-            model=embedding_data.get("model", "text-embedding-3-small"),
+            model=embedding_data.get("model", "azure/text-embedding-3-small"),
             dimensions=embedding_data.get("dimensions", 1536),
             batch_size=embedding_data.get("batch_size", 100),
             max_tokens=embedding_data.get("max_tokens", 8192),
@@ -341,11 +342,35 @@ class VectorStoreConfig:
                 logger.warning("Invalid EMBEDDING_DIMENSIONS value, using default")
         
         # Override API settings in provider_params
-        if "EMBEDDING_API_KEY" in os.environ:
+        # Priority: Azure OpenAI (primary) -> OpenRouter (fallback) -> OpenAI
+        if "AZURE_OPENAI_API_KEY" in os.environ:
+            # Azure OpenAI is the primary provider
+            config.embedding.provider_params["api_key"] = os.environ["AZURE_OPENAI_API_KEY"]
+            if "AZURE_OPENAI_API_BASE" in os.environ:
+                config.embedding.provider_params["api_base"] = os.environ["AZURE_OPENAI_API_BASE"]
+            # Ensure model uses azure/ prefix
+            if not config.embedding.model.startswith("azure/"):
+                config.embedding.model = f"azure/{config.embedding.model}"
+        elif "OPENROUTER_API_KEY" in os.environ:
+            # OpenRouter is the fallback provider
+            config.embedding.provider_params["api_key"] = os.environ["OPENROUTER_API_KEY"]
+            config.embedding.provider_params["api_base"] = "https://openrouter.ai/api/v1"
+            # Set OpenRouter model format if not already set
+            if not config.embedding.model.startswith("openrouter/"):
+                config.embedding.model = f"openrouter/openai/{config.embedding.model.replace('azure/', '')}"
+        elif "OPENAI_API_KEY" in os.environ:
+            # Direct OpenAI as last resort
+            config.embedding.provider_params["api_key"] = os.environ["OPENAI_API_KEY"]
+        elif "EMBEDDING_API_KEY" in os.environ:
+            # Generic fallback
             config.embedding.provider_params["api_key"] = os.environ["EMBEDDING_API_KEY"]
         
         if "EMBEDDING_API_BASE" in os.environ:
             config.embedding.provider_params["api_base"] = os.environ["EMBEDDING_API_BASE"]
+        
+        # Override embedding model if specified
+        if "EMBEDDING_MODEL" in os.environ:
+            config.embedding.model = os.environ["EMBEDDING_MODEL"]
         
         return config
 

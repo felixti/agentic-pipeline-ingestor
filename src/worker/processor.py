@@ -181,9 +181,9 @@ class JobProcessor:
                             "success": False,
                         }
 
-                    # Store results if completed
+                    # Store results if completed (use new session to avoid transaction issues)
                     if job.status == JobStatus.COMPLETED:
-                        await self._store_results(job, context, session)
+                        await self._store_results(job, context)
 
                     result = {
                         "job_id": str(job_id),
@@ -262,65 +262,73 @@ class JobProcessor:
         self,
         job: JobModel,
         context: Any,
-        session: AsyncSession,
     ) -> None:
         """Store job processing results.
         
         Args:
             job: Job model
             context: Pipeline context
-            session: Database session (managed by caller)
         """
+        # Create new session for storing results (separate from processing transaction)
+        engine = self._get_db_engine()
+        async_session = async_sessionmaker(
+            engine,
+            expire_on_commit=False,
+            class_=AsyncSession,
+        )
+        
         try:
-            repo = JobResultRepository(session)
-            
-            # Calculate processing time
-            processing_time_ms = None
-            if job.started_at and job.completed_at:
-                processing_time_ms = int((job.completed_at - job.started_at).total_seconds() * 1000)
-            
-            # Extract output data from context
-            output_data = {}
-            extracted_text = None
-            quality_score = None
-            
-            # Get parse result
-            parse_result = context.get_stage_result("parse")
-            if parse_result:
-                extracted_text = parse_result.get("text", "")
-                output_data["parse_result"] = parse_result
-            
-            # Get quality result
-            quality_result = context.get_stage_result("quality")
-            if quality_result:
-                quality_score = quality_result.get("overall_score")
-                output_data["quality_result"] = quality_result
-            
-            # Get other stage results
-            for stage in ["ingest", "detect", "enrich", "transform", "output"]:
-                stage_result = context.get_stage_result(stage)
-                if stage_result:
-                    output_data[f"{stage}_result"] = stage_result
-            
-            # Build metadata
-            result_metadata = {
-                "job_id": str(job.id),
-                "source_type": job.source_type,
-                "file_name": job.file_name,
-                "file_size": job.file_size,
-                "mime_type": job.mime_type,
-                "stages_completed": list(context.stage_results.keys()),
-            }
-            
-            # Save result - session is managed by caller via session.begin()
-            await repo.save(
-                job_id=str(job.id),
-                extracted_text=extracted_text,
-                output_data=output_data,
-                result_metadata=result_metadata,
-                quality_score=quality_score,
-                processing_time_ms=processing_time_ms,
-            )
+            async with async_session() as session:
+                async with session.begin():
+                    repo = JobResultRepository(session)
+                    
+                    # Calculate processing time
+                    processing_time_ms = None
+                    if job.started_at and job.completed_at:
+                        processing_time_ms = int((job.completed_at - job.started_at).total_seconds() * 1000)
+                    
+                    # Extract output data from context
+                    output_data = {}
+                    extracted_text = None
+                    quality_score = None
+                    
+                    # Get parse result
+                    parse_result = context.get_stage_result("parse")
+                    if parse_result:
+                        extracted_text = parse_result.get("text", "")
+                        output_data["parse_result"] = parse_result
+                    
+                    # Get quality result
+                    quality_result = context.get_stage_result("quality")
+                    if quality_result:
+                        quality_score = quality_result.get("overall_score")
+                        output_data["quality_result"] = quality_result
+                    
+                    # Get other stage results
+                    for stage in ["ingest", "detect", "enrich", "transform", "output"]:
+                        stage_result = context.get_stage_result(stage)
+                        if stage_result:
+                            output_data[f"{stage}_result"] = stage_result
+                    
+                    # Build metadata
+                    result_metadata = {
+                        "job_id": str(job.id),
+                        "source_type": job.source_type,
+                        "file_name": job.file_name,
+                        "file_size": job.file_size,
+                        "mime_type": job.mime_type,
+                        "stages_completed": list(context.stage_results.keys()),
+                    }
+                    
+                    # Save result within the transaction
+                    await repo.save(
+                        job_id=str(job.id),
+                        extracted_text=extracted_text,
+                        output_data=output_data,
+                        result_metadata=result_metadata,
+                        quality_score=quality_score,
+                        processing_time_ms=processing_time_ms,
+                    )
             
             logger.info(
                 "stored_job_results",

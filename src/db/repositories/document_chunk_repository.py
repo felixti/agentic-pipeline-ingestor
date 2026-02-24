@@ -286,6 +286,9 @@ class DocumentChunkRepository:
         Raises:
             SQLAlchemyError: If database operation fails
         """
+        from uuid import uuid4
+        from datetime import datetime
+        
         if not chunks:
             return [], 0, 0
         
@@ -293,6 +296,14 @@ class DocumentChunkRepository:
         # Convert embedding list to PostgreSQL vector format
         values = []
         for chunk in chunks:
+            # Generate UUID if not present (bulk insert doesn't trigger defaults)
+            if chunk.id is None:
+                chunk.id = uuid4()
+            
+            # Set created_at if not present
+            if chunk.created_at is None:
+                chunk.created_at = datetime.utcnow()
+            
             embedding_str = None
             if chunk.embedding is not None:
                 # Format as PostgreSQL vector: [x,y,z]

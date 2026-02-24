@@ -1,5 +1,8 @@
 # Docker Compose para Dokploy
 # Versão adaptada para usar serviços externos do Dokploy (PostgreSQL e Redis)
+#
+# NOTA: Não usar 'container_name' pois o Dokploy gerencia os nomes automaticamente.
+# Usar container_name fixo causa conflitos durante o redeploy.
 
 services:
   # ============================================================================
@@ -9,7 +12,6 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: pipeline-api
     ports:
       - "8000:8000"
     environment:

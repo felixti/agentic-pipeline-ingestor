@@ -266,7 +266,7 @@ class OrchestrationEngine:
         executor = self._get_executor(job.pipeline_config)
 
         try:
-            context = await executor.execute(job, enabled_stages)  # type: ignore[arg-type]
+            context = await executor.execute(job)  # type: ignore[arg-type]
 
             self.logger.info(  # type: ignore[call-arg]
                 "job_processing_completed",

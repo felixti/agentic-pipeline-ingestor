@@ -13,8 +13,9 @@ from uuid import UUID
 
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import joinedload
 
-from src.db.models import DocumentChunkModel
+from src.db.models import DocumentChunkModel, JobModel
 from src.db.repositories.document_chunk_repository import DocumentChunkRepository
 from src.observability.logging import get_logger
 
@@ -563,6 +564,9 @@ class TextSearchService:
         # Order by rank descending and limit
         stmt = stmt.order_by(rank.desc()).limit(top_k)
 
+        # Eager load job relationship
+        stmt = stmt.options(joinedload(DocumentChunkModel.job))
+
         return stmt
 
     def _build_fuzzy_search_query(
@@ -601,6 +605,9 @@ class TextSearchService:
         # Apply filters
         if filters:
             stmt = self._apply_filters(stmt, filters)
+
+        # Eager load job relationship
+        stmt = stmt.options(joinedload(DocumentChunkModel.job))
 
         return stmt
 

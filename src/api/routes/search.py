@@ -272,6 +272,10 @@ class TextSearchResultItem(SearchResultItem):
         default=None,
         description="List of matched terms",
     )
+    content_source_name: str | None = Field(
+        default=None,
+        description="Name of the content source (file name or source URI)",
+    )
 
 
 class HybridSearchResultItem(BaseModel):
@@ -317,6 +321,10 @@ class HybridSearchResultItem(BaseModel):
     )
     rank: int = Field(..., ge=1, description="Final rank (1-based)")
     fusion_method: str = Field(..., description="Fusion method used")
+    content_source_name: str | None = Field(
+        default=None,
+        description="Name of the content source (file name or source URI)",
+    )
 
 
 class SearchResultsResponse(BaseModel):
@@ -371,6 +379,23 @@ class ChunkNotFoundResponse(BaseModel):
 # Helper Functions
 # ============================================================================
 
+def _get_content_source_name(chunk: Any) -> str | None:
+    """Extract content source name from chunk's job relationship.
+    
+    Args:
+        chunk: DocumentChunkModel with loaded job relationship
+        
+    Returns:
+        Source name (file_name or source_uri) or None if not available
+    """
+    if hasattr(chunk, 'job') and chunk.job is not None:
+        job: Any = chunk.job
+        # Prefer file_name, fall back to source_uri
+        source: str | None = job.file_name or job.source_uri
+        return source
+    return None
+
+
 def _search_result_to_item(result: SearchResult) -> SearchResultItem:
     """Convert a SearchResult to a SearchResultItem.
     
@@ -412,6 +437,7 @@ def _text_search_result_to_item(result: TextSearchResult) -> TextSearchResultIte
         rank=result.rank,
         highlighted_content=result.highlighted_content,
         matched_terms=result.matched_terms,
+        content_source_name=_get_content_source_name(chunk),
     )
 
 
@@ -438,6 +464,7 @@ def _hybrid_search_result_to_item(result: HybridSearchResult) -> HybridSearchRes
         text_rank=result.text_rank,
         rank=result.rank,
         fusion_method=result.fusion_method,
+        content_source_name=_get_content_source_name(chunk),
     )
 
 
@@ -779,6 +806,7 @@ async def hybrid_search(
                 text_rank=result.rank,
                 rank=rank,
                 fusion_method="text_fallback",
+                content_source_name=_get_content_source_name(chunk),
             ))
         
         query_time_ms = (time.monotonic() - start_time) * 1000

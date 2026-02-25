@@ -14,8 +14,9 @@ from sqlalchemy import Float as SQLFloat
 from sqlalchemy import literal_column, select, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import joinedload
 
-from src.db.models import DocumentChunkModel
+from src.db.models import DocumentChunkModel, JobModel
 from src.db.repositories.document_chunk_repository import DocumentChunkRepository
 from src.observability.logging import get_logger
 
@@ -432,6 +433,9 @@ class VectorSearchService:
         # Apply filters
         if filters:
             stmt = self._apply_filters(stmt, filters)
+
+        # Eager load job relationship
+        stmt = stmt.options(joinedload(DocumentChunkModel.job))
 
         return stmt
 

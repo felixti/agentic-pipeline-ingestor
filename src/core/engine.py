@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models import (
     Job,
@@ -31,7 +32,6 @@ from src.db.models import JobModel, get_async_engine
 from src.db.repositories.job import JobRepository
 from src.llm.provider import LLMProvider
 from src.plugins.registry import PluginRegistry
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

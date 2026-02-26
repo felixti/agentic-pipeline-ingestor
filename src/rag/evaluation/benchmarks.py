@@ -33,8 +33,8 @@ from src.rag.evaluation.models import (
 )
 
 __all__ = [
-    "BenchmarkRunner",
     "BenchmarkDataset",  # Re-export for convenience
+    "BenchmarkRunner",
     "RAGSystem",
 ]
 

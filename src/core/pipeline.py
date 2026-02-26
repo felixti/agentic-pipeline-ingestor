@@ -587,7 +587,6 @@ class EmbedStage(PipelineStage):
             # Store chunks in database using upsert for idempotency
             # This handles retries gracefully - existing chunks are updated
             from src.db.models import get_async_engine
-            from sqlalchemy.ext.asyncio import AsyncSession
             
             engine = get_async_engine()
             async with AsyncSession(engine) as session:

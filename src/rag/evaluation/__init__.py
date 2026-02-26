@@ -47,20 +47,18 @@ from src.rag.evaluation.models import (
 )
 
 __all__ = [
-    # Main classes
-    "BenchmarkRunner",
-    "GenerationMetrics",
-    "RAGEvaluator",
-    "RetrievalMetrics",
-    # Models
     "ABTestResult",
     "BenchmarkConfig",
     "BenchmarkDataset",
     "BenchmarkResult",
+    "BenchmarkRunner",
     "EvaluationAlert",
     "EvaluationConfig",
     "GenerationEvaluation",
+    "GenerationMetrics",
     "MetricThresholds",
+    "RAGEvaluator",
     "RetrievalEvaluation",
+    "RetrievalMetrics",
     "StrategyComparison",
 ]

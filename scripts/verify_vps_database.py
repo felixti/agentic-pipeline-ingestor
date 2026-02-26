@@ -129,7 +129,7 @@ class DatabaseVerifier:
                     name=f"Table: {table}",
                     exists=exists,
                     details="Core table" if table in ["jobs", "document_chunks"] else "Supporting table",
-                    fix_sql=f"-- Run: alembic upgrade head" if not exists else ""
+                    fix_sql="-- Run: alembic upgrade head" if not exists else ""
                 ))
 
     async def _check_indexes(self) -> None:
@@ -151,7 +151,7 @@ class DatabaseVerifier:
                     name=f"Index: {index}",
                     exists=exists,
                     details=f"Type: {index_type}",
-                    fix_sql=f"-- Run: alembic upgrade head" if not exists else ""
+                    fix_sql="-- Run: alembic upgrade head" if not exists else ""
                 ))
 
     async def _check_constraints(self) -> None:
@@ -175,7 +175,7 @@ class DatabaseVerifier:
                     name=f"Constraint: {constraint} on {table}",
                     exists=exists,
                     details=f"Type: {constraint_type}",
-                    fix_sql=f"-- Run: alembic upgrade head" if not exists else ""
+                    fix_sql="-- Run: alembic upgrade head" if not exists else ""
                 ))
 
     async def _check_columns(self) -> None:
@@ -210,7 +210,7 @@ class DatabaseVerifier:
                     name=f"Column: {table}.{column}",
                     exists=exists,
                     details=f"Expected: {expected_type}, Found: {actual_type}",
-                    fix_sql=f"-- Run: alembic upgrade head" if not exists else ""
+                    fix_sql="-- Run: alembic upgrade head" if not exists else ""
                 ))
 
     def print_report(self) -> int:
@@ -279,7 +279,7 @@ class DatabaseVerifier:
             print("-- Or manually create missing structures:")
             for item in others:
                 print(f"-- {item.name}:")
-                print(item.fix_sql if item.fix_sql else "-- See migration files")
+                print(item.fix_sql or "-- See migration files")
                 print()
 
     async def close(self) -> None:
@@ -321,7 +321,7 @@ async def main() -> int:
     
     db_url = args.db_url or get_database_url()
     
-    print(f"Connecting to database...")
+    print("Connecting to database...")
     
     verifier = DatabaseVerifier(db_url)
     

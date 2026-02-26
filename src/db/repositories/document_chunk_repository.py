@@ -286,8 +286,8 @@ class DocumentChunkRepository:
         Raises:
             SQLAlchemyError: If database operation fails
         """
-        from uuid import uuid4
         from datetime import datetime
+        from uuid import uuid4
         
         if not chunks:
             return [], 0, 0

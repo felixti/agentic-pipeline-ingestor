@@ -33,12 +33,13 @@ from src.rag.strategies.hybrid_search import (
     MetadataFilter,
     QueryExpander,
     QueryExpansionResult,
-    WeightPreset as StrategyWeightPreset,
     reciprocal_rank_fusion,
+)
+from src.rag.strategies.hybrid_search import (
+    WeightPreset as StrategyWeightPreset,
 )
 from src.services.text_search_service import TextSearchResult, TextSearchService
 from src.services.vector_search_service import SearchResult, VectorSearchService
-
 
 # ============================================================================
 # Fixtures

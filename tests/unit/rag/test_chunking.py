@@ -8,8 +8,9 @@ This module tests all chunking strategies including:
 - ChunkingService: Tests the orchestration service
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from src.rag.chunking import (
     AgenticChunker,
@@ -25,7 +26,6 @@ from src.rag.chunking import (
     SemanticChunkerConfig,
 )
 from src.rag.models import Chunk, ChunkingStrategy, Document, DocumentSection
-
 
 # ============================================================================
 # Fixtures
@@ -657,7 +657,7 @@ class TestChunkingIntegration:
             
             # Code should be preserved
             assert "def hello_world()" in all_content, f"Strategy {strategy} lost code"
-            assert "print(\"Hello, World!\")" in all_content
+            assert 'print("Hello, World!")' in all_content
     
     @pytest.mark.asyncio
     async def test_performance_requirements(self, long_document):

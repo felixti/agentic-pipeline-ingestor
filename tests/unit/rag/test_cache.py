@@ -20,9 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # Import the module under test
 from src.rag.cache import (
-    CacheStats,
     CachedLLMResponse,
     CachedQueryResult,
+    CacheStats,
     EmbeddingCacheModel,
     L1RedisCache,
     L2PostgresCache,
@@ -168,7 +168,7 @@ class TestL1RedisCache:
     @pytest.mark.asyncio
     async def test_get_embedding_cache_hit(self, mock_redis: AsyncMock) -> None:
         """Test getting embedding from cache hit."""
-        mock_redis.get = AsyncMock(return_value='[0.1, 0.2, 0.3]')
+        mock_redis.get = AsyncMock(return_value="[0.1, 0.2, 0.3]")
         cache = L1RedisCache(redis_client=mock_redis)
         
         result = await cache.get_embedding("hash123", "model-1")
@@ -552,7 +552,7 @@ class TestMultiLayerCache:
     async def test_get_embedding_from_l1(self) -> None:
         """Test getting embedding from L1 cache."""
         mock_redis = AsyncMock(spec=redis.Redis)
-        mock_redis.get = AsyncMock(return_value='[0.1, 0.2, 0.3]')
+        mock_redis.get = AsyncMock(return_value="[0.1, 0.2, 0.3]")
         
         cache = MultiLayerCache(redis_client=mock_redis)
         result = await cache.get_embedding("test text", "model-1")

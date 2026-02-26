@@ -520,7 +520,7 @@ Respond with ONLY a number between 0 and 1."""
         """
         try:
             # Try to use nltk
-            from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+            from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
             
             reference = self._tokenize(ground_truth_answer.lower())
             candidate = self._tokenize(answer.lower())

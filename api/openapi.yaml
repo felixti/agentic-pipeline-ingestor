@@ -1,835 +1,3026 @@
 openapi: 3.1.0
 info:
-  title: Content Detection API
+  title: Agentic Data Pipeline Ingestor
+  description: Enterprise-grade agentic data pipeline for document ingestion
   version: 1.0.0
-  description: |
-    API for detecting content type of PDF documents.
-    
-    Automatically classifies PDFs as:
-    - **text_based**: Documents with extractable text layers
-    - **scanned**: Image-based documents requiring OCR
-    - **mixed**: Documents with both text and significant image content
-
-servers:
-  - url: http://localhost:8000/api/v1
-    description: Local development
-
 paths:
-  /detect:
-    post:
-      operationId: detectContent
-      summary: Detect content type of uploaded PDF
-      description: Upload a PDF file and detect whether it's text-based, scanned, or mixed content.
+  /health:
+    get:
       tags:
-        - Content Detection
+      - Health
+      summary: Health Check
+      description: "Comprehensive health check endpoint.\n\nPerforms health checks\
+        \ on all critical components:\n- Database\n- Redis\n- LLM Providers\n- Destinations\n\
+        - Storage\n- OpenTelemetry\n- Vector Store\n\nReturns:\n    Comprehensive\
+        \ health status of all components"
+      operationId: health_check_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComprehensiveHealthResponse'
+  /health/ready:
+    get:
+      tags:
+      - Health
+      summary: Readiness Probe
+      description: "Kubernetes readiness probe.\n\nChecks if the service is ready\
+        \ to receive traffic.\nThis should return success when all required dependencies\
+        \ are available.\n\nReturns:\n    Readiness status"
+      operationId: readiness_probe_health_ready_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+  /health/live:
+    get:
+      tags:
+      - Health
+      summary: Liveness Probe
+      description: "Kubernetes liveness probe.\n\nChecks if the service is alive and\
+        \ should not be restarted.\nThis is a lightweight check that just verifies\
+        \ the process is running.\n\nReturns:\n    Liveness status"
+      operationId: liveness_probe_health_live_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LivenessResponse'
+  /health/queue:
+    get:
+      tags:
+      - System
+      summary: Get Queue Health
+      description: Queue health and status.
+      operationId: get_queue_health_health_queue_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Get Queue Health Health Queue Get
+  /metrics:
+    get:
+      tags:
+      - System
+      summary: Get Metrics
+      description: Prometheus metrics endpoint.
+      operationId: get_metrics_metrics_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/openapi.yaml:
+    get:
+      tags:
+      - System
+      summary: Get Openapi Yaml
+      description: Get OpenAPI specification as YAML.
+      operationId: get_openapi_yaml_api_v1_openapi_yaml_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/jobs:
+    post:
+      tags:
+      - Jobs
+      summary: Create Job
+      description: Submit a new ingestion job.
+      operationId: create_job_api_v1_jobs_post
       requestBody:
         required: true
         content:
-          multipart/form-data:
+          application/json:
             schema:
               type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                  description: PDF file to analyze
-                detailed:
-                  type: boolean
-                  default: false
-                  description: Include detailed per-page analysis
+              additionalProperties: true
+              title: Job Data
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Job Api V1 Jobs Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Jobs
+      summary: List Jobs
+      description: List jobs with filtering.
+      operationId: list_jobs_api_v1_jobs_get
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 1
+          title: Page
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 20
+          title: Limit
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+      - name: source_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Type
+      - name: sort_by
+        in: query
+        required: false
+        schema:
+          type: string
+          default: created_at
+          title: Sort By
+      - name: sort_order
+        in: query
+        required: false
+        schema:
+          type: string
+          default: desc
+          title: Sort Order
       responses:
         '200':
-          description: Successful detection
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DetectionResponse'
-        '400':
-          description: Invalid file or request
+                type: object
+                additionalProperties: true
+                title: Response List Jobs Api V1 Jobs Get
+        '422':
+          description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: Rate limit exceeded
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /detect/url:
-    post:
-      operationId: detectContentFromUrl
-      summary: Detect content type from URL
-      description: Download a PDF from URL and detect its content type.
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}:
+    get:
       tags:
-        - Content Detection
+      - Jobs
+      summary: Get Job
+      description: Get job details.
+      operationId: get_job_api_v1_jobs__job_id__get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Job Api V1 Jobs  Job Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Jobs
+      summary: Cancel Job
+      description: Cancel a job.
+      operationId: cancel_job_api_v1_jobs__job_id__delete
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/hard:
+    delete:
+      tags:
+      - Jobs
+      summary: Delete Job And Chunks
+      description: 'Permanently delete a job and all its associated chunks.
+
+
+        This operation cannot be undone. Use with caution.'
+      operationId: delete_job_and_chunks_api_v1_jobs__job_id__hard_delete
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/bulk-delete:
+    post:
+      tags:
+      - Jobs
+      summary: Bulk Delete Jobs
+      description: "Bulk delete jobs and their chunks.\n\nRequest body:\n- job_ids:\
+        \ List of job IDs to delete\n- dry_run: If true, returns what would be deleted\
+        \ without actually deleting (default: false)\n\nExample:\n{\n    \"job_ids\"\
+        : [\"uuid1\", \"uuid2\"],\n    \"dry_run\": false\n}"
+      operationId: bulk_delete_jobs_api_v1_jobs_bulk_delete_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Delete Request
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Bulk Delete Jobs Api V1 Jobs Bulk Delete Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/retry:
+    post:
+      tags:
+      - Jobs
+      summary: Retry Job
+      description: Retry a failed job.
+      operationId: retry_job_api_v1_jobs__job_id__retry_post
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - type: object
+                additionalProperties: true
+              - type: 'null'
+              title: Retry Data
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Retry Job Api V1 Jobs  Job Id  Retry Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/result:
+    get:
+      tags:
+      - Jobs
+      summary: Get Job Result
+      description: Get job processing result.
+      operationId: get_job_result_api_v1_jobs__job_id__result_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Job Result Api V1 Jobs  Job Id  Result Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/upload:
+    post:
+      tags:
+      - Upload
+      summary: Upload Files
+      description: Upload file(s) for processing.
+      operationId: upload_files_api_v1_upload_post
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Upload Files Api V1 Upload Post
+  /api/v1/upload/url:
+    post:
+      tags:
+      - Upload
+      summary: Ingest From Url
+      description: Ingest from URL.
+      operationId: ingest_from_url_api_v1_upload_url_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Url Data
+        required: true
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Ingest From Url Api V1 Upload Url Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pipelines:
+    get:
+      tags:
+      - Pipelines
+      summary: List Pipelines
+      description: List pipeline configurations.
+      operationId: list_pipelines_api_v1_pipelines_get
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 1
+          title: Page
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Pipelines Api V1 Pipelines Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Pipelines
+      summary: Create Pipeline
+      description: Create pipeline configuration.
+      operationId: create_pipeline_api_v1_pipelines_post
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/DetectionUrlRequest'
-      responses:
-        '200':
-          description: Successful detection
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DetectionResponse'
-        '400':
-          description: Invalid URL or request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: Rate limit exceeded
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /detect/batch:
-    post:
-      operationId: detectContentBatch
-      summary: Batch content detection
-      description: Detect content type for multiple PDF files (max 10).
-      tags:
-        - Content Detection
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
             schema:
               type: object
-              properties:
-                files:
-                  type: array
-                  items:
-                    type: string
-                    format: binary
-                  description: PDF files to analyze (max 10)
-                detailed:
-                  type: boolean
-                  default: false
+              additionalProperties: true
+              title: Pipeline Data
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Pipeline Api V1 Pipelines Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pipelines/{pipeline_id}:
+    get:
+      tags:
+      - Pipelines
+      summary: Get Pipeline
+      description: Get pipeline configuration.
+      operationId: get_pipeline_api_v1_pipelines__pipeline_id__get
+      parameters:
+      - name: pipeline_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Pipeline Id
       responses:
         '200':
-          description: Successful batch detection
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BatchDetectionResponse'
+                type: object
+                additionalProperties: true
+                title: Response Get Pipeline Api V1 Pipelines  Pipeline Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Pipelines
+      summary: Update Pipeline
+      description: Update pipeline configuration.
+      operationId: update_pipeline_api_v1_pipelines__pipeline_id__put
+      parameters:
+      - name: pipeline_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Pipeline Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Pipeline Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Pipeline Api V1 Pipelines  Pipeline Id  Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Pipelines
+      summary: Delete Pipeline
+      description: Delete pipeline configuration.
+      operationId: delete_pipeline_api_v1_pipelines__pipeline_id__delete
+      parameters:
+      - name: pipeline_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Pipeline Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sources:
+    get:
+      tags:
+      - Sources
+      summary: List Sources
+      description: List source plugins.
+      operationId: list_sources_api_v1_sources_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response List Sources Api V1 Sources Get
+  /api/v1/destinations:
+    get:
+      tags:
+      - Destinations
+      summary: List Destinations
+      description: List destination plugins.
+      operationId: list_destinations_api_v1_destinations_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response List Destinations Api V1 Destinations Get
+  /api/v1/auth/login:
+    post:
+      tags:
+      - Authentication
+      summary: Login
+      description: Login and get JWT token.
+      operationId: login_api_v1_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Credentials
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Login Api V1 Auth Login Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/refresh:
+    post:
+      tags:
+      - Authentication
+      summary: Refresh Token
+      description: Refresh access token.
+      operationId: refresh_token_api_v1_auth_refresh_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Refresh Data
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Refresh Token Api V1 Auth Refresh Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/api-keys:
+    post:
+      tags:
+      - Authentication
+      summary: Create Api Key
+      description: Create a new API key.
+      operationId: create_api_key_api_v1_auth_api_keys_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Key Data
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Api Key Api V1 Auth Api Keys Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Authentication
+      summary: List Api Keys
+      description: List API keys.
+      operationId: list_api_keys_api_v1_auth_api_keys_get
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 1
+          title: Page
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Api Keys Api V1 Auth Api Keys Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/api-keys/{key_id}:
+    delete:
+      tags:
+      - Authentication
+      summary: Revoke Api Key
+      description: Revoke an API key.
+      operationId: revoke_api_key_api_v1_auth_api_keys__key_id__delete
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Key Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/webhooks:
+    post:
+      tags:
+      - Webhooks
+      summary: Create Webhook
+      description: Create a webhook subscription.
+      operationId: create_webhook_api_v1_webhooks_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Webhook Data
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Webhook Api V1 Webhooks Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Webhooks
+      summary: List Webhooks
+      description: List webhook subscriptions.
+      operationId: list_webhooks_api_v1_webhooks_get
+      parameters:
+      - name: user_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User Id
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 1
+          title: Page
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Webhooks Api V1 Webhooks Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/webhooks/{webhook_id}:
+    delete:
+      tags:
+      - Webhooks
+      summary: Delete Webhook
+      description: Delete a webhook subscription.
+      operationId: delete_webhook_api_v1_webhooks__webhook_id__delete
+      parameters:
+      - name: webhook_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Webhook Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/webhooks/{webhook_id}/deliveries:
+    get:
+      tags:
+      - Webhooks
+      summary: List Webhook Deliveries
+      description: List webhook deliveries for a subscription.
+      operationId: list_webhook_deliveries_api_v1_webhooks__webhook_id__deliveries_get
+      parameters:
+      - name: webhook_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Webhook Id
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 1
+          title: Page
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Webhook Deliveries Api V1 Webhooks  Webhook Id  Deliveries
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/audit/logs:
+    get:
+      tags:
+      - Audit
+      summary: Query Audit Logs
+      description: Query audit logs.
+      operationId: query_audit_logs_api_v1_audit_logs_get
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 1
+          title: Page
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 20
+          title: Limit
+      - name: user_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User Id
+      - name: action
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Action
+      - name: resource_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resource Type
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: End Date
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Query Audit Logs Api V1 Audit Logs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /health/vector:
+    get:
+      tags:
+      - Health
+      summary: Vector Store Health
+      description: "Vector store health check endpoint.\n\nChecks the availability\
+        \ of PostgreSQL extensions required for vector storage:\n- pgvector: For vector\
+        \ similarity search\n- pg_trgm: For trigram-based text search\n\nReturns:\n\
+        \    Vector store health status with extension version information"
+      operationId: vector_store_health_health_vector_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VectorStoreHealthResponse'
+  /health/detailed/{component}:
+    get:
+      tags:
+      - Health
+      summary: Detailed Component Health
+      description: "Get detailed health information for a specific component.\n\n\
+        Args:\n    component: Component name to check\n    \nReturns:\n    Detailed\
+        \ health information\n    \nRaises:\n    HTTPException: If component not found"
+      operationId: detailed_component_health_health_detailed__component__get
+      parameters:
+      - name: component
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Component
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Detailed Component Health Health Detailed  Component  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/chunks:
+    get:
+      tags:
+      - Document Chunks
+      summary: List chunks for a job
+      description: Retrieve paginated list of document chunks for a specific job.
+        Embeddings are excluded by default for performance.
+      operationId: list_chunks_api_v1_jobs__job_id__chunks_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          description: Maximum number of chunks to return
+          default: 100
+          title: Limit
+        description: Maximum number of chunks to return
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Number of chunks to skip
+          default: 0
+          title: Offset
+        description: Number of chunks to skip
+      - name: include_embedding
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Include vector embedding in response (performance impact)
+          default: false
+          title: Include Embedding
+        description: Include vector embedding in response (performance impact)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentChunkListResponse'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobNotFoundResponse'
         '400':
-          description: Invalid files or request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          description: Invalid UUID format
         '429':
           description: Rate limit exceeded
+        '422':
+          description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /jobs/{jobId}/parser-selection:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/chunks/{chunk_id}:
     get:
-      operationId: getParserSelection
-      summary: Get parser selection for a job
-      description: Retrieve parser selection based on content detection result.
       tags:
-        - Pipeline
+      - Document Chunks
+      summary: Get a specific chunk
+      description: Retrieve a single document chunk by ID with optional embedding
+        data.
+      operationId: get_chunk_api_v1_jobs__job_id__chunks__chunk_id__get
       parameters:
-        - name: jobId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Parser selection details
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ParserSelectionResponse'
-
-  /jobs:
-    get:
-      operationId: listJobs
-      summary: List all jobs
-      description: Retrieve a paginated list of jobs with optional filtering.
-      tags:
-        - Jobs
-      parameters:
-        - name: page
-          in: query
-          schema:
-            type: integer
-            default: 1
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 20
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [created, queued, processing, completed, failed, cancelled]
-        - name: source_type
-          in: query
-          schema:
-            type: string
-      responses:
-        '200':
-          description: List of jobs
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/JobListResponse'
-    
-    post:
-      operationId: createJob
-      summary: Create a new job
-      description: Submit a new ingestion job for processing.
-      tags:
-        - Jobs
-      requestBody:
+      - name: job_id
+        in: path
         required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: chunk_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Chunk Id
+      - name: include_embedding
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Include vector embedding in response
+          default: false
+          title: Include Embedding
+        description: Include vector embedding in response
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentChunkResponse'
+        '404':
+          description: Chunk not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/src__api__routes__chunks__ChunkNotFoundResponse'
+        '400':
+          description: Chunk doesn't belong to job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChunkJobMismatchResponse'
+        '429':
+          description: Rate limit exceeded
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/search/semantic:
+    post:
+      tags:
+      - Search
+      summary: Semantic search by embedding
+      description: Search for similar chunks using a pre-computed embedding vector
+        with cosine similarity.
+      operationId: semantic_search_api_v1_search_semantic_post
+      requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/JobCreateRequest'
-      responses:
-        '202':
-          description: Job created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/JobResponse'
-
-  /jobs/{jobId}:
-    parameters:
-      - name: jobId
-        in: path
+              $ref: '#/components/schemas/SemanticSearchRequest'
         required: true
-        schema:
-          type: string
-          format: uuid
-    
-    get:
-      operationId: getJob
-      summary: Get job details
-      description: Retrieve detailed information about a specific job.
-      tags:
-        - Jobs
       responses:
         '200':
-          description: Job details
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/JobResponse'
-        '404':
-          description: Job not found
-    
-    delete:
-      operationId: cancelJob
-      summary: Cancel a job
-      description: Cancel a job that is in created, queued, or processing state.
-      tags:
-        - Jobs
-      responses:
-        '204':
-          description: Job cancelled successfully
+                $ref: '#/components/schemas/SearchResultsResponse'
         '400':
-          description: Cannot cancel job in current state
-        '404':
-          description: Job not found
-
-  /jobs/{jobId}/hard:
-    parameters:
-      - name: jobId
+          description: Invalid embedding vector
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidEmbeddingResponse'
+        '422':
+          description: Validation error
+        '429':
+          description: Rate limit exceeded
+  /api/v1/search/semantic/text:
+    post:
+      tags:
+      - Search
+      summary: Semantic search by text query
+      description: Generate query embedding server-side and perform semantic vector
+        search.
+      operationId: semantic_text_search_api_v1_search_semantic_text_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SemanticTextSearchRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResultsResponse'
+        '400':
+          description: Invalid search query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidQueryResponse'
+        '422':
+          description: Validation error
+        '429':
+          description: Rate limit exceeded
+        '503':
+          description: Embedding service unavailable
+  /api/v1/search/text:
+    post:
+      tags:
+      - Search
+      summary: Text search
+      description: Search for chunks using full-text search with BM25 ranking and
+        optional fuzzy matching.
+      operationId: text_search_api_v1_search_text_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextSearchRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextSearchResultsResponse'
+        '400':
+          description: Invalid search query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidQueryResponse'
+        '422':
+          description: Validation error
+        '429':
+          description: Rate limit exceeded
+  /api/v1/search/hybrid:
+    post:
+      tags:
+      - Search
+      summary: Hybrid search
+      description: Combine vector similarity and text search using weighted sum or
+        RRF fusion.
+      operationId: hybrid_search_api_v1_search_hybrid_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HybridSearchRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HybridSearchResultsResponse'
+        '400':
+          description: Invalid search query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidQueryResponse'
+        '422':
+          description: Validation error
+        '429':
+          description: Rate limit exceeded
+        '503':
+          description: Embedding service unavailable
+  /api/v1/search/similar/{chunk_id}:
+    get:
+      tags:
+      - Search
+      summary: Find similar chunks
+      description: Find chunks semantically similar to a reference chunk using its
+        embedding.
+      operationId: find_similar_chunks_api_v1_search_similar__chunk_id__get
+      parameters:
+      - name: chunk_id
         in: path
         required: true
         schema:
           type: string
-          format: uuid
-    
-    delete:
-      operationId: deleteJobHard
-      summary: Permanently delete a job and its chunks
-      description: |
-        **⚠️ DANGER:** Permanently deletes a job and all its associated chunks.
-        This operation cannot be undone. Use with caution.
-      tags:
-        - Jobs
+          title: Chunk Id
+      - name: top_k
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of results
+          default: 10
+          title: Top K
+        description: Maximum number of results
+      - name: exclude_self
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Exclude the reference chunk from results
+          default: true
+          title: Exclude Self
+        description: Exclude the reference chunk from results
       responses:
-        '204':
-          description: Job and chunks deleted successfully
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResultsResponse'
+        '400':
+          description: Invalid UUID format
         '404':
-          description: Job not found
+          description: Reference chunk not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/src__api__routes__search__ChunkNotFoundResponse'
+        '429':
+          description: Rate limit exceeded
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rag/query:
+    post:
+      tags:
+      - RAG
+      summary: Execute RAG query
+      description: "Execute a Retrieval-Augmented Generation query with the specified\
+        \ strategy.\n    \n    The endpoint:\n    1. Classifies the query type (factual,\
+        \ analytical, comparative, vague, multi_hop)\n    2. Selects optimal strategies\
+        \ based on query type and preset\n    3. Rewrites the query for better retrieval\n\
+        \    4. Retrieves relevant documents\n    5. Re-ranks results (if enabled)\n\
+        \    6. Evaluates quality and self-corrects if needed\n    7. Generates the\
+        \ final answer with source attribution\n    \n    **Strategy Presets:**\n\
+        \    - `auto`: Automatically selects strategies based on query classification\n\
+        \    - `fast`: Prioritizes speed (query_rewrite + hybrid_search only)\n  \
+        \  - `balanced`: Balanced approach with reranking (default)\n    - `thorough`:\
+        \ Maximum quality with HyDE and all optimizations"
+      operationId: rag_query_api_v1_rag_query_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RAGQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RAGQueryResponse'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RAGValidationErrorResponse'
         '500':
-          description: Failed to delete job
-
-  /jobs/bulk-delete:
-    post:
-      operationId: bulkDeleteJobs
-      summary: Bulk delete jobs
-      description: Delete multiple jobs and their chunks in a single operation.
+          description: RAG processing failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RAGQueryErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rag/strategies:
+    get:
       tags:
-        - Jobs
+      - RAG
+      summary: List available RAG strategies
+      description: "Get information about all available RAG strategy presets.\n  \
+        \  \n    Returns details about each strategy including:\n    - Configuration\
+        \ settings (query_rewrite, hyde, reranking, hybrid_search)\n    - Recommended\
+        \ use cases\n    - Estimated latency"
+      operationId: list_strategies_api_v1_rag_strategies_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RAGStrategiesResponse'
+  /api/v1/rag/strategies/{name}/evaluate:
+    post:
+      tags:
+      - RAG
+      summary: Evaluate a RAG strategy
+      description: "Evaluate a specific RAG strategy against a test query with optional\
+        \ ground truth.\n    \n    This endpoint is useful for:\n    - Comparing strategy\
+        \ performance on specific query types\n    - Validating strategy configurations\n\
+        \    - Benchmarking before production deployment\n    \n    Provide ground_truth_relevant_ids\
+        \ and ground_truth_answer for comprehensive evaluation\n    including both\
+        \ retrieval and generation metrics."
+      operationId: evaluate_strategy_api_v1_rag_strategies__name__evaluate_post
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Name
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/BulkDeleteRequest'
+              $ref: '#/components/schemas/RAGStrategyEvaluateRequest'
       responses:
         '200':
-          description: Bulk delete results
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BulkDeleteResponse'
-
-  /jobs/{jobId}/retry:
-    parameters:
-      - name: jobId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    
-    post:
-      operationId: retryJob
-      summary: Retry a failed job
-      description: Create a new job with the same configuration as a failed job.
-      tags:
-        - Jobs
-      responses:
-        '202':
-          description: Job retry initiated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/JobRetryResponse'
+                $ref: '#/components/schemas/RAGStrategyEvaluateResponse'
         '400':
-          description: Only failed jobs can be retried
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RAGValidationErrorResponse'
         '404':
-          description: Job not found
-
-  /jobs/{jobId}/result:
-    parameters:
-      - name: jobId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    
+          description: Strategy not found
+        '500':
+          description: Evaluation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RAGQueryErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rag/metrics:
     get:
-      operationId: getJobResult
-      summary: Get job processing result
-      description: Retrieve the processing result for a completed job.
       tags:
-        - Jobs
+      - RAG
+      summary: Get RAG system metrics
+      description: "Retrieve current metrics for the RAG system.\n    \n    Returns:\n\
+        \    - Summary statistics (total queries, average latency, quality scores)\n\
+        \    - Component health status\n    - Recent evaluation alerts\n    - Performance\
+        \ trends\n    \n    Note: This endpoint returns real-time metrics. For historical\
+        \ data,\n    use the audit logs or monitoring dashboards."
+      operationId: get_metrics_api_v1_rag_metrics_get
       responses:
         '200':
-          description: Job result
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/JobResultResponse'
+                $ref: '#/components/schemas/RAGMetricsResponse'
+  /api/v1/rag/evaluate:
+    post:
+      tags:
+      - RAG
+      summary: Run benchmark evaluation
+      description: "Run a benchmark evaluation of the RAG system against a standard\
+        \ dataset.\n    \n    This endpoint is useful for:\n    - Assessing overall\
+        \ RAG system quality\n    - Comparing strategy performance\n    - Regression\
+        \ testing\n    - Capacity planning\n    \n    **Benchmarks:**\n    - `ms_marco`:\
+        \ Microsoft MARCO dataset (if available)\n    - `custom_qa`: Custom question-answer\
+        \ pairs (if configured)\n    \n    Note: Benchmark runs can take several minutes\
+        \ depending on max_queries.\n    Consider using async processing for large\
+        \ benchmarks."
+      operationId: run_benchmark_api_v1_rag_evaluate_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RAGBenchmarkRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RAGBenchmarkResponse'
         '400':
-          description: Job not complete
-        '404':
-          description: Job not found
-
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RAGValidationErrorResponse'
+        '500':
+          description: Benchmark failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RAGQueryErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
-    DetectionRequest:
-      type: object
+    ChunkJobMismatchResponse:
       properties:
-        detailed:
-          type: boolean
-          default: false
-
-    DetectionUrlRequest:
-      type: object
-      required:
-        - url
-      properties:
-        url:
+        detail:
           type: string
-          format: uri
-          example: https://example.com/document.pdf
-        headers:
-          type: object
-          additionalProperties:
-            type: string
-        detailed:
-          type: boolean
-          default: false
-
-    DetectionResponse:
+          title: Detail
+          default: Chunk does not belong to the specified job
+      type: object
+      title: ChunkJobMismatchResponse
+      description: Error response when chunk doesn't belong to job.
+    ComponentHealth:
+      properties:
+        status:
+          $ref: '#/components/schemas/HealthStatus'
+        latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Latency Ms
+        message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Message
       type: object
       required:
-        - data
-        - meta
+      - status
+      title: ComponentHealth
+      description: Health status of a system component.
+    ComprehensiveHealthResponse:
       properties:
-        data:
-          $ref: '#/components/schemas/DetectionResult'
-        meta:
-          $ref: '#/components/schemas/ResponseMeta'
-
-    DetectionResult:
-      type: object
-      required:
-        - content_type
-        - confidence
-        - recommended_parser
-        - text_statistics
-        - image_statistics
-        - processing_time_ms
-        - file_hash
-        - file_size
-      properties:
-        content_type:
-          type: string
-          enum: [text_based, scanned, mixed]
-        confidence:
-          type: number
-          minimum: 0
-          maximum: 1
-        recommended_parser:
-          type: string
-        alternative_parsers:
-          type: array
-          items:
-            type: string
-        text_statistics:
-          $ref: '#/components/schemas/TextStatistics'
-        image_statistics:
-          $ref: '#/components/schemas/ImageStatistics'
-        page_results:
-          type: array
-          items:
-            $ref: '#/components/schemas/PageResult'
-        processing_time_ms:
-          type: integer
-        file_hash:
-          type: string
-        file_size:
-          type: integer
-
-    TextStatistics:
-      type: object
-      properties:
-        total_pages:
-          type: integer
-        total_characters:
-          type: integer
-        has_text_layer:
-          type: boolean
-        font_count:
-          type: integer
-        encoding:
-          type: string
-          nullable: true
-        average_chars_per_page:
-          type: number
-
-    ImageStatistics:
-      type: object
-      properties:
-        total_images:
-          type: integer
-        image_area_ratio:
-          type: number
-        average_dpi:
-          type: integer
-          nullable: true
-        color_pages:
-          type: integer
-
-    PageResult:
-      type: object
-      properties:
-        page_number:
-          type: integer
-        content_type:
-          type: string
-          enum: [text_based, scanned, mixed]
-        confidence:
-          type: number
-        text_ratio:
-          type: number
-        image_ratio:
-          type: number
-        character_count:
-          type: integer
-        image_count:
-          type: integer
-
-    BatchDetectionResponse:
-      type: object
-      required:
-        - data
-        - meta
-      properties:
-        data:
-          type: object
-          properties:
-            results:
-              type: array
-              items:
-                $ref: '#/components/schemas/BatchDetectionItem'
-            summary:
-              type: object
-              properties:
-                total:
-                  type: integer
-                successful:
-                  type: integer
-                errors:
-                  type: integer
-                text_based:
-                  type: integer
-                scanned:
-                  type: integer
-                mixed:
-                  type: integer
-        meta:
-          $ref: '#/components/schemas/ResponseMeta'
-
-    BatchDetectionItem:
-      type: object
-      properties:
-        filename:
-          type: string
-        content_type:
-          type: string
-        confidence:
-          type: number
-        recommended_parser:
-          type: string
-        processing_time_ms:
-          type: integer
-        error:
-          type: string
-          nullable: true
-
-    ParserSelectionResponse:
-      type: object
-      required:
-        - data
-        - meta
-      properties:
-        data:
-          type: object
-          properties:
-            job_id:
-              type: string
-            detection_result:
-              type: object
-            selection:
-              type: object
-              properties:
-                primary_parser:
-                  type: string
-                fallback_parser:
-                  type: string
-                  nullable: true
-                rationale:
-                  type: string
-                overridden:
-                  type: boolean
-            estimated_processing_time:
-              type: string
-            estimated_cost:
-              type: number
-        meta:
-          $ref: '#/components/schemas/ResponseMeta'
-
-    ResponseMeta:
-      type: object
-      required:
-        - request_id
-        - timestamp
-        - api_version
-      properties:
-        request_id:
-          type: string
-          format: uuid
+        status:
+          $ref: '#/components/schemas/HealthStatus'
         timestamp:
           type: string
-          format: date-time
-        api_version:
+          title: Timestamp
+        version:
           type: string
-
-    ErrorResponse:
+          title: Version
+        environment:
+          type: string
+          title: Environment
+        components:
+          additionalProperties:
+            $ref: '#/components/schemas/ComponentHealth'
+          type: object
+          title: Components
+        overall_healthy:
+          type: boolean
+          title: Overall Healthy
       type: object
       required:
-        - error
-        - meta
-      properties:
-        error:
-          type: object
-          properties:
-            code:
-              type: string
-            message:
-              type: string
-            details:
-              type: array
-              items:
-                type: object
-        meta:
-          $ref: '#/components/schemas/ResponseMeta'
-
-    # Job Schemas
-    JobCreateRequest:
-      type: object
-      required:
-        - source_type
-      properties:
-        source_type:
-          type: string
-          enum: [upload, s3, url, gcs, azure_blob]
-          example: upload
-        source_uri:
-          type: string
-          description: URI to the source file (if not upload)
-        file_name:
-          type: string
-          example: document.pdf
-        file_size:
-          type: integer
-          example: 1024567
-        mime_type:
-          type: string
-          example: application/pdf
-        priority:
-          type: string
-          enum: [low, normal, high]
-          default: normal
-        mode:
-          type: string
-          enum: [sync, async]
-          default: async
-        external_id:
-          type: string
-          description: External reference ID
-        metadata:
-          type: object
-          description: Additional metadata
-        pipeline_id:
-          type: string
-          description: Pipeline configuration ID
-
-    JobResponse:
-      type: object
+      - status
+      - timestamp
+      - version
+      - environment
+      - components
+      - overall_healthy
+      title: ComprehensiveHealthResponse
+      description: Comprehensive health check response.
+    DocumentChunkListItem:
       properties:
         id:
           type: string
           format: uuid
-        status:
+          title: Id
+          description: Unique chunk identifier
+        job_id:
           type: string
-          enum: [created, queued, processing, completed, failed, cancelled]
-        source_type:
-          type: string
-        source_uri:
-          type: string
-        file_name:
-          type: string
-        file_size:
+          format: uuid
+          title: Job Id
+          description: Parent job identifier
+        chunk_index:
           type: integer
-        mime_type:
+          minimum: 0.0
+          title: Chunk Index
+          description: Position within document (0-indexed)
+        content:
           type: string
-        priority:
-          type: integer
-        mode:
-          type: string
-        external_id:
-          type: string
-        retry_count:
-          type: integer
-        max_retries:
-          type: integer
-        error:
+          title: Content
+          description: Text content of the chunk
+        content_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Content Hash
+          description: SHA-256 hash for deduplication
+        metadata:
+          additionalProperties: true
           type: object
-          nullable: true
-          properties:
-            message:
-              type: string
-            code:
-              type: string
+          title: Metadata
+          description: Chunk metadata (page numbers, etc.)
         created_at:
           type: string
           format: date-time
-        updated_at:
+          title: Created At
+          description: Timestamp of record creation
+      type: object
+      required:
+      - id
+      - job_id
+      - chunk_index
+      - content
+      - created_at
+      title: DocumentChunkListItem
+      description: 'List item response for document chunks (excludes embedding by
+        default).
+
+
+        Used in list endpoints where embedding data is excluded for performance.'
+    DocumentChunkListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/DocumentChunkListItem'
+          type: array
+          title: Items
+          description: List of chunks
+        total:
+          type: integer
+          minimum: 0.0
+          title: Total
+          description: Total number of chunks for this job
+        limit:
+          type: integer
+          maximum: 1000.0
+          minimum: 1.0
+          title: Limit
+          description: Number of items returned
+        offset:
+          type: integer
+          minimum: 0.0
+          title: Offset
+          description: Offset from start of results
+      type: object
+      required:
+      - total
+      - limit
+      - offset
+      title: DocumentChunkListResponse
+      description: Response model for paginated chunk list.
+    DocumentChunkResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Unique chunk identifier
+        job_id:
+          type: string
+          format: uuid
+          title: Job Id
+          description: Parent job identifier
+        chunk_index:
+          type: integer
+          minimum: 0.0
+          title: Chunk Index
+          description: Position within document (0-indexed)
+        content:
+          type: string
+          title: Content
+          description: Text content of the chunk
+        content_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Content Hash
+          description: SHA-256 hash for deduplication
+        embedding:
+          anyOf:
+          - items:
+              type: number
+            type: array
+          - type: 'null'
+          title: Embedding
+          description: Vector embedding for semantic search (only when requested)
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+          description: Chunk metadata (page numbers, etc.)
+        created_at:
           type: string
           format: date-time
+          title: Created At
+          description: Timestamp of record creation
+      type: object
+      required:
+      - id
+      - job_id
+      - chunk_index
+      - content
+      - created_at
+      title: DocumentChunkResponse
+      description: 'Response model for a single document chunk.
+
+
+        Used for both list items and detailed responses. The embedding field
+
+        is only included when explicitly requested via include_embedding parameter.'
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HealthStatus:
+      type: string
+      enum:
+      - healthy
+      - degraded
+      - unhealthy
+      title: HealthStatus
+      description: Component health status.
+    HybridSearchRequest:
+      properties:
+        query:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Query
+          description: Search query text
+        top_k:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Top K
+          description: Maximum number of results to return
+          default: 10
+        vector_weight:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Vector Weight
+          description: Weight for vector search scores
+          default: 0.7
+        text_weight:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Text Weight
+          description: Weight for text search scores
+          default: 0.3
+        fusion_method:
+          type: string
+          pattern: ^(weighted_sum|rrf)$
+          title: Fusion Method
+          description: 'Fusion method: ''weighted_sum'' or ''rrf'' (reciprocal rank
+            fusion)'
+          default: weighted_sum
+        min_similarity:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Min Similarity
+          description: Minimum similarity threshold for vector search
+          default: 0.5
+        filters:
+          additionalProperties: true
+          type: object
+          title: Filters
+          description: Optional filters (e.g., job_id)
+      type: object
+      required:
+      - query
+      title: HybridSearchRequest
+      description: 'Request body for hybrid search.
+
+
+        Combines vector similarity search and text search using configurable fusion
+        methods
+
+        (weighted sum or reciprocal rank fusion).'
+      example:
+        filters: {}
+        fusion_method: weighted_sum
+        min_similarity: 0.5
+        query: neural network architecture
+        text_weight: 0.3
+        top_k: 10
+        vector_weight: 0.7
+    HybridSearchResultItem:
+      properties:
+        chunk_id:
+          type: string
+          title: Chunk Id
+          description: Unique chunk identifier
+        job_id:
+          type: string
+          title: Job Id
+          description: Parent job identifier
+        chunk_index:
+          type: integer
+          minimum: 0.0
+          title: Chunk Index
+          description: Position within document
+        content:
+          type: string
+          title: Content
+          description: Text content of the chunk
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+          description: Chunk metadata
+        hybrid_score:
+          type: number
+          title: Hybrid Score
+          description: Combined hybrid score (0-1)
+        vector_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Vector Score
+          description: Vector similarity score (0-1) if available
+        text_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Text Score
+          description: Text search score (0-1) if available
+        vector_rank:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Vector Rank
+          description: Rank in vector search results
+        text_rank:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Text Rank
+          description: Rank in text search results
+        rank:
+          type: integer
+          minimum: 1.0
+          title: Rank
+          description: Final rank (1-based)
+        fusion_method:
+          type: string
+          title: Fusion Method
+          description: Fusion method used
+        content_source_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Content Source Name
+          description: Name of the content source (file name or source URI)
+      type: object
+      required:
+      - chunk_id
+      - job_id
+      - chunk_index
+      - content
+      - hybrid_score
+      - rank
+      - fusion_method
+      title: HybridSearchResultItem
+      description: Hybrid search result with component scores.
+      example:
+        chunk_id: 123e4567-e89b-12d3-a456-426614174000
+        chunk_index: 0
+        content: Sample chunk content...
+        fusion_method: weighted_sum
+        hybrid_score: 0.88
+        job_id: 123e4567-e89b-12d3-a456-426614174001
+        metadata:
+          page: 1
+        rank: 1
+        text_rank: 2
+        text_score: 0.78
+        vector_rank: 1
+        vector_score: 0.92
+    HybridSearchResultsResponse:
+      properties:
+        results:
+          items:
+            $ref: '#/components/schemas/HybridSearchResultItem'
+          type: array
+          title: Results
+          description: Search results
+        total:
+          type: integer
+          minimum: 0.0
+          title: Total
+          description: Total number of results
+        query_time_ms:
+          type: number
+          title: Query Time Ms
+          description: Query execution time in milliseconds
+      type: object
+      required:
+      - total
+      - query_time_ms
+      title: HybridSearchResultsResponse
+      description: Response model for hybrid search results.
+    InvalidEmbeddingResponse:
+      properties:
+        detail:
+          type: string
+          title: Detail
+          default: Invalid embedding vector
+      type: object
+      title: InvalidEmbeddingResponse
+      description: Error response for invalid embedding.
+    InvalidQueryResponse:
+      properties:
+        detail:
+          type: string
+          title: Detail
+          default: Invalid search query
+      type: object
+      title: InvalidQueryResponse
+      description: Error response for invalid query.
+    JobNotFoundResponse:
+      properties:
+        detail:
+          type: string
+          title: Detail
+          default: Job not found
+      type: object
+      title: JobNotFoundResponse
+      description: Error response when job is not found.
+    LivenessResponse:
+      properties:
+        alive:
+          type: boolean
+          title: Alive
+        timestamp:
+          type: string
+          title: Timestamp
+      type: object
+      required:
+      - alive
+      - timestamp
+      title: LivenessResponse
+      description: Kubernetes liveness probe response.
+    QueryType:
+      type: string
+      enum:
+      - factual
+      - analytical
+      - comparative
+      - vague
+      - multi_hop
+      title: QueryType
+      description: "Query classification types for RAG strategy selection.\n\nThis\
+        \ enum defines the different types of queries that can be classified\nto determine\
+        \ the optimal RAG retrieval strategy.\n\nAttributes:\n    FACTUAL: Simple\
+        \ fact lookup (e.g., \"What is X?\", \"Who is Y?\")\n    ANALYTICAL: Requires\
+        \ explanation or synthesis (e.g., \"Explain X\", \"How does Y work?\")\n \
+        \   COMPARATIVE: Compares multiple items (e.g., \"Compare X and Y\", \"Pros/cons\"\
+        )\n    VAGUE: Unclear or broad queries (e.g., \"Tell me about...\", \"Information\
+        \ on...\")\n    MULTI_HOP: Requires multiple retrieval steps (e.g., \"Author\
+        \ of X on topic Y\")"
+    RAGBenchmarkRequest:
+      properties:
+        benchmark_name:
+          type: string
+          minLength: 1
+          title: Benchmark Name
+          description: Name of benchmark dataset (ms_marco, custom_qa, etc.)
+        max_queries:
+          type: integer
+          maximum: 1000.0
+          minimum: 1.0
+          title: Max Queries
+          description: Maximum number of queries to evaluate
+          default: 100
+        k_values:
+          items:
+            type: integer
+          type: array
+          title: K Values
+          description: K values for retrieval metrics
+        strategy_preset:
+          type: string
+          pattern: ^(auto|fast|balanced|thorough)$
+          title: Strategy Preset
+          description: Strategy preset to evaluate
+          default: balanced
+      type: object
+      required:
+      - benchmark_name
+      title: RAGBenchmarkRequest
+      description: "Request model for running benchmark evaluation.\n\nAttributes:\n\
+        \    benchmark_name: Name of the benchmark dataset (e.g., ms_marco, custom_qa)\n\
+        \    max_queries: Maximum number of queries to evaluate\n    k_values: K values\
+        \ for retrieval metrics\n    strategy_preset: Strategy preset to evaluate"
+      example:
+        benchmark_name: ms_marco
+        k_values:
+        - 5
+        - 10
+        max_queries: 100
+        strategy_preset: balanced
+    RAGBenchmarkResponse:
+      properties:
+        benchmark_name:
+          type: string
+          title: Benchmark Name
+          description: Name of the benchmark
+        strategy_preset:
+          type: string
+          title: Strategy Preset
+          description: Strategy preset evaluated
+        aggregate_metrics:
+          additionalProperties:
+            type: number
+          type: object
+          title: Aggregate Metrics
+          description: Aggregated metrics across all queries
+        per_query_results:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Per Query Results
+          description: Individual results
+        total_queries:
+          type: integer
+          title: Total Queries
+          description: Total number of queries processed
+        successful_queries:
+          type: integer
+          title: Successful Queries
+          description: Number of successfully processed queries
+        failed_queries:
+          type: integer
+          title: Failed Queries
+          description: Number of failed queries
+        total_latency_ms:
+          type: number
+          title: Total Latency Ms
+          description: Total time for benchmark run
         started_at:
           type: string
           format: date-time
-          nullable: true
+          title: Started At
+          description: When benchmark started
         completed_at:
-          type: string
-          format: date-time
-          nullable: true
-
-    JobListResponse:
-      type: object
-      properties:
-        data:
-          type: object
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/JobResponse'
-            total:
-              type: integer
-            page:
-              type: integer
-            page_size:
-              type: integer
-        meta:
-          $ref: '#/components/schemas/ResponseMeta'
-
-    JobRetryResponse:
-      type: object
-      properties:
-        data:
-          type: object
-          properties:
-            original_job_id:
-              type: string
-              format: uuid
-            new_job_id:
-              type: string
-              format: uuid
-            status:
-              type: string
-            message:
-              type: string
-            job:
-              $ref: '#/components/schemas/JobResponse'
-        meta:
-          $ref: '#/components/schemas/ResponseMeta'
-
-    JobResultResponse:
-      type: object
-      properties:
-        data:
-          type: object
-          properties:
-            job_id:
-              type: string
-            status:
-              type: string
-            success:
-              type: boolean
-            extracted_text:
-              type: string
-              nullable: true
-            output_data:
-              type: object
-              nullable: true
-            metadata:
-              type: object
-              nullable: true
-            quality_score:
-              type: number
-              nullable: true
-            processing_time_ms:
-              type: integer
-              nullable: true
-            output_uri:
-              type: string
-              nullable: true
-            created_at:
-              type: string
-              format: date-time
-              nullable: true
-        meta:
-          $ref: '#/components/schemas/ResponseMeta'
-
-    BulkDeleteRequest:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+          description: When benchmark completed
       type: object
       required:
-        - job_ids
+      - benchmark_name
+      - strategy_preset
+      - aggregate_metrics
+      - total_queries
+      - successful_queries
+      - failed_queries
+      - total_latency_ms
+      - started_at
+      title: RAGBenchmarkResponse
+      description: "Response model for benchmark evaluation.\n\nAttributes:\n    benchmark_name:\
+        \ Name of the benchmark\n    strategy_preset: Strategy preset evaluated\n\
+        \    aggregate_metrics: Aggregated metrics across all queries\n    per_query_results:\
+        \ Individual results for each query\n    total_queries: Total number of queries\
+        \ processed\n    successful_queries: Number of successfully processed queries\n\
+        \    failed_queries: Number of failed queries\n    total_latency_ms: Total\
+        \ time for benchmark run\n    started_at: When benchmark started\n    completed_at:\
+        \ When benchmark completed"
+    RAGMetrics:
       properties:
-        job_ids:
+        latency_ms:
+          type: number
+          title: Latency Ms
+          description: Total query processing time in milliseconds
+        tokens_used:
+          type: integer
+          minimum: 0.0
+          title: Tokens Used
+          description: Total tokens consumed by LLM calls
+          default: 0
+        retrieval_score:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Retrieval Score
+          description: Average relevance score of retrieved chunks
+        classification_confidence:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Classification Confidence
+          description: Confidence score of query classification
+        rewrite_time_ms:
+          type: number
+          minimum: 0.0
+          title: Rewrite Time Ms
+          description: Time spent on query rewriting
+          default: 0.0
+        retrieval_time_ms:
+          type: number
+          minimum: 0.0
+          title: Retrieval Time Ms
+          description: Time spent on document retrieval
+          default: 0.0
+        reranking_time_ms:
+          type: number
+          minimum: 0.0
+          title: Reranking Time Ms
+          description: Time spent on re-ranking (if enabled)
+          default: 0.0
+        generation_time_ms:
+          type: number
+          minimum: 0.0
+          title: Generation Time Ms
+          description: Time spent on answer generation
+          default: 0.0
+        chunks_retrieved:
+          type: integer
+          minimum: 0.0
+          title: Chunks Retrieved
+          description: Number of chunks retrieved
+          default: 0
+        chunks_used:
+          type: integer
+          minimum: 0.0
+          title: Chunks Used
+          description: Number of chunks used in final answer
+          default: 0
+        self_correction_iterations:
+          type: integer
+          minimum: 0.0
+          title: Self Correction Iterations
+          description: Number of self-correction iterations
+          default: 0
+      type: object
+      required:
+      - latency_ms
+      - retrieval_score
+      - classification_confidence
+      title: RAGMetrics
+      description: "Metrics for RAG pipeline execution.\n\nTracks performance and\
+        \ quality metrics for a RAG query execution,\nuseful for monitoring, optimization,\
+        \ and debugging.\n\nAttributes:\n    latency_ms: Total query processing time\
+        \ in milliseconds\n    tokens_used: Total tokens consumed by LLM calls\n \
+        \   retrieval_score: Average relevance score of retrieved chunks\n    classification_confidence:\
+        \ Confidence score of query classification\n    rewrite_time_ms: Time spent\
+        \ on query rewriting\n    retrieval_time_ms: Time spent on document retrieval\n\
+        \    reranking_time_ms: Time spent on re-ranking (if enabled)\n    generation_time_ms:\
+        \ Time spent on answer generation\n    chunks_retrieved: Number of chunks\
+        \ retrieved\n    chunks_used: Number of chunks used in final answer\n    self_correction_iterations:\
+        \ Number of self-correction iterations"
+      examples:
+      - chunks_retrieved: 20
+        chunks_used: 5
+        classification_confidence: 0.95
+        generation_time_ms: 44.8
+        latency_ms: 245.5
+        reranking_time_ms: 35.5
+        retrieval_score: 0.82
+        retrieval_time_ms: 120.0
+        rewrite_time_ms: 45.2
+        self_correction_iterations: 0
+        tokens_used: 850
+    RAGMetricsResponse:
+      properties:
+        summary:
+          $ref: '#/components/schemas/RAGMetricsSummary'
+          description: Summary metrics
+        component_health:
+          additionalProperties: true
+          type: object
+          title: Component Health
+          description: Health status of RAG components
+        recent_alerts:
+          items:
+            additionalProperties: true
+            type: object
           type: array
-          description: List of job IDs to delete
+          title: Recent Alerts
+          description: Recent evaluation alerts
+        performance_trends:
+          additionalProperties: true
+          type: object
+          title: Performance Trends
+          description: Performance trend data
+      type: object
+      required:
+      - summary
+      title: RAGMetricsResponse
+      description: "Response model for RAG metrics endpoint.\n\nAttributes:\n    summary:\
+        \ Summary metrics\n    component_health: Health status of RAG components\n\
+        \    recent_alerts: Recent evaluation alerts\n    performance_trends: Performance\
+        \ trend data"
+    RAGMetricsSummary:
+      properties:
+        total_queries:
+          type: integer
+          title: Total Queries
+          description: Total number of queries processed
+          default: 0
+        avg_latency_ms:
+          type: number
+          title: Avg Latency Ms
+          description: Average query latency
+          default: 0.0
+        avg_retrieval_score:
+          type: number
+          title: Avg Retrieval Score
+          description: Average retrieval quality score
+          default: 0.0
+        avg_classification_confidence:
+          type: number
+          title: Avg Classification Confidence
+          description: Average classification confidence
+          default: 0.0
+        strategy_usage:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Strategy Usage
+          description: Usage count per strategy
+        query_type_distribution:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Query Type Distribution
+          description: Distribution of query types
+        timestamp:
+          type: string
+          format: date-time
+          title: Timestamp
+          description: When metrics were collected
+      type: object
+      title: RAGMetricsSummary
+      description: "Summary of RAG system metrics.\n\nAttributes:\n    total_queries:\
+        \ Total number of queries processed\n    avg_latency_ms: Average query latency\n\
+        \    avg_retrieval_score: Average retrieval quality score\n    strategy_usage:\
+        \ Usage count per strategy\n    query_type_distribution: Distribution of query\
+        \ types\n    timestamp: When metrics were collected"
+    RAGQueryErrorResponse:
+      properties:
+        error:
+          additionalProperties: true
+          type: object
+          title: Error
+          description: Error details
+        query_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Query Id
+          description: Query ID if available
+      type: object
+      required:
+      - error
+      title: RAGQueryErrorResponse
+      description: Error response for RAG query endpoint.
+    RAGQueryRequest:
+      properties:
+        query:
+          type: string
+          maxLength: 4000
+          minLength: 1
+          title: Query
+          description: The user's natural language query
+        strategy:
+          type: string
+          pattern: ^(auto|fast|balanced|thorough)$
+          title: Strategy
+          description: 'Strategy preset: auto, fast, balanced, or thorough'
+          default: auto
+        context:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Context
+          description: Optional conversation context with previous_queries, previous_responses,
+            session_id
+        filters:
+          additionalProperties: true
+          type: object
+          title: Filters
+          description: Reserved for future use. Must be empty for now.
+        top_k:
+          type: integer
+          maximum: 20.0
+          minimum: 1.0
+          title: Top K
+          description: Reserved for future use. Must be 5 for now.
+          default: 5
+      type: object
+      required:
+      - query
+      title: RAGQueryRequest
+      description: "Request model for RAG query endpoint.\n\nAttributes:\n    query:\
+        \ The user's natural language query\n    strategy: Strategy preset to use\
+        \ (auto, fast, balanced, thorough)\n    context: Optional conversation context\
+        \ for follow-up queries\n    filters: Optional metadata filters for document\
+        \ retrieval\n    top_k: Number of sources to retrieve (default: 5)"
+      example:
+        context:
+          previous_queries:
+          - Tell me about programming trends
+          session_id: session_123
+        filters:
+          source_type: documentation
+        query: What is vibe coding and what are its pros and cons?
+        strategy: balanced
+        top_k: 5
+    RAGQueryResponse:
+      properties:
+        answer:
+          type: string
+          title: Answer
+          description: Generated answer text
+        sources:
+          items:
+            $ref: '#/components/schemas/RAGSource'
+          type: array
+          title: Sources
+          description: List of source documents used
+        metrics:
+          $ref: '#/components/schemas/RAGMetrics'
+          description: Execution metrics
+        strategy_used:
+          type: string
+          title: Strategy Used
+          description: Strategy preset used for this query
+        query_type:
+          $ref: '#/components/schemas/QueryType'
+          description: Type of query classified
+        query_id:
+          type: string
+          title: Query Id
+          description: Unique identifier for this query
+      type: object
+      required:
+      - answer
+      - metrics
+      - strategy_used
+      - query_type
+      - query_id
+      title: RAGQueryResponse
+      description: "Response model for RAG query endpoint.\n\nAttributes:\n    answer:\
+        \ Generated answer text\n    sources: List of source documents used\n    metrics:\
+        \ Execution metrics\n    strategy_used: Strategy preset used for this query\n\
+        \    query_type: Type of query classified\n    query_id: Unique identifier\
+        \ for this query"
+      example:
+        answer: Vibe coding is a programming approach that emphasizes...
+        metrics:
+          chunks_retrieved: 20
+          chunks_used: 5
+          classification_confidence: 0.95
+          generation_time_ms: 44.8
+          latency_ms: 245.5
+          reranking_time_ms: 35.5
+          retrieval_score: 0.82
+          retrieval_time_ms: 120.0
+          rewrite_time_ms: 45.2
+          self_correction_iterations: 0
+          tokens_used: 850
+        query_id: rag_query_123
+        query_type: factual
+        sources:
+        - chunk_id: 550e8400-e29b-41d4-a716-446655440000
+          content: Vibe coding is a programming approach...
+          metadata:
+            page: 3
+            source: doc1.pdf
+          score: 0.92
+        strategy_used: balanced
+    RAGSource:
+      properties:
+        chunk_id:
+          type: string
+          title: Chunk Id
+          description: Unique identifier of the source chunk
+        content:
+          type: string
+          title: Content
+          description: Text content from the source
+        score:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Score
+          description: Relevance score (0-1)
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+          description: Additional metadata
+      type: object
+      required:
+      - chunk_id
+      - content
+      - score
+      title: RAGSource
+      description: "Source document in RAG response.\n\nAttributes:\n    chunk_id:\
+        \ Unique identifier of the source chunk\n    content: Text content from the\
+        \ source\n    score: Relevance score (0-1)\n    metadata: Additional metadata\
+        \ about the source"
+    RAGStrategiesResponse:
+      properties:
+        strategies:
+          items:
+            $ref: '#/components/schemas/RAGStrategyInfo'
+          type: array
+          title: Strategies
+          description: List of available strategies
+        default_strategy:
+          type: string
+          title: Default Strategy
+          description: Default strategy name
+          default: balanced
+        total_count:
+          type: integer
+          title: Total Count
+          description: Total number of strategies
+      type: object
+      required:
+      - strategies
+      - total_count
+      title: RAGStrategiesResponse
+      description: "Response model listing available RAG strategies.\n\nAttributes:\n\
+        \    strategies: List of available strategies\n    default_strategy: Default\
+        \ strategy name\n    total_count: Total number of strategies"
+    RAGStrategyEvaluateRequest:
+      properties:
+        query:
+          type: string
+          maxLength: 4000
+          minLength: 1
+          title: Query
+          description: The test query to evaluate
+        ground_truth_relevant_ids:
           items:
             type: string
-            format: uuid
-          example: ["e38d4503-0c10-4d3e-8851-8b8322a83453"]
-        dry_run:
-          type: boolean
-          description: If true, returns what would be deleted without actually deleting
-          default: false
-
-    BulkDeleteResponse:
+          type: array
+          title: Ground Truth Relevant Ids
+          description: List of expected relevant chunk IDs
+        ground_truth_answer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ground Truth Answer
+          description: Expected answer text for generation evaluation
+        iterations:
+          type: integer
+          maximum: 10.0
+          minimum: 1.0
+          title: Iterations
+          description: Number of iterations to run for averaging
+          default: 1
+        context:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Context
+          description: Optional conversation context
       type: object
+      required:
+      - query
+      title: RAGStrategyEvaluateRequest
+      description: "Request model for evaluating a specific RAG strategy.\n\nAttributes:\n\
+        \    query: The test query to evaluate\n    ground_truth_relevant_ids: List\
+        \ of expected relevant chunk IDs\n    ground_truth_answer: Expected answer\
+        \ text (optional)\n    iterations: Number of iterations to run for averaging"
+      example:
+        ground_truth_answer: Machine learning is a subset of AI...
+        ground_truth_relevant_ids:
+        - chunk_1
+        - chunk_2
+        iterations: 3
+        query: What is machine learning?
+    RAGStrategyEvaluateResponse:
       properties:
-        data:
+        strategy_name:
+          type: string
+          title: Strategy Name
+          description: Name of the evaluated strategy
+        query:
+          type: string
+          title: Query
+          description: The test query used
+        retrieval_metrics:
+          additionalProperties: true
           type: object
-          properties:
-            summary:
-              type: object
-              properties:
-                total_requested:
-                  type: integer
-                jobs_deleted:
-                  type: integer
-                jobs_not_found:
-                  type: integer
-                jobs_failed:
-                  type: integer
-                total_chunks_deleted:
-                  type: integer
-                dry_run:
-                  type: boolean
-            details:
-              type: object
-              properties:
-                deleted:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      job_id:
-                        type: string
-                      file_name:
-                        type: string
-                      chunks:
-                        type: integer
-                not_found:
-                  type: array
-                  items:
-                    type: string
-                failed:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      job_id:
-                        type: string
-                      error:
-                        type: string
-        meta:
-          $ref: '#/components/schemas/ResponseMeta'
+          title: Retrieval Metrics
+          description: Retrieval quality metrics
+        generation_metrics:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Generation Metrics
+          description: Generation quality metrics (if ground truth provided)
+        latency_ms:
+          type: number
+          title: Latency Ms
+          description: Total evaluation time in milliseconds
+        query_type:
+          $ref: '#/components/schemas/QueryType'
+          description: Classified query type
+        per_iteration_results:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Per Iteration Results
+          description: Results from each iteration
+      type: object
+      required:
+      - strategy_name
+      - query
+      - retrieval_metrics
+      - latency_ms
+      - query_type
+      title: RAGStrategyEvaluateResponse
+      description: "Response model for strategy evaluation.\n\nAttributes:\n    strategy_name:\
+        \ Name of the evaluated strategy\n    query: The test query used\n    retrieval_metrics:\
+        \ Retrieval quality metrics\n    generation_metrics: Generation quality metrics\
+        \ (if ground truth provided)\n    latency_ms: Total evaluation time\n    query_type:\
+        \ Classified query type\n    per_iteration_results: Results from each iteration"
+    RAGStrategyInfo:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: Strategy name
+        description:
+          type: string
+          title: Description
+          description: Human-readable description
+        config:
+          additionalProperties:
+            type: boolean
+          type: object
+          title: Config
+          description: Strategy configuration settings
+        use_cases:
+          items:
+            type: string
+          type: array
+          title: Use Cases
+          description: Recommended use cases
+        estimated_latency_ms:
+          type: integer
+          title: Estimated Latency Ms
+          description: Estimated latency in milliseconds
+          default: 0
+      type: object
+      required:
+      - name
+      - description
+      - config
+      title: RAGStrategyInfo
+      description: "Information about a RAG strategy.\n\nAttributes:\n    name: Strategy\
+        \ name (fast, balanced, thorough)\n    description: Human-readable description\n\
+        \    config: Strategy configuration settings\n    use_cases: Recommended use\
+        \ cases"
+    RAGValidationErrorResponse:
+      properties:
+        error:
+          additionalProperties: true
+          type: object
+          title: Error
+          description: Error details
+        validation_errors:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Validation Errors
+          description: Validation errors
+      type: object
+      required:
+      - error
+      title: RAGValidationErrorResponse
+      description: Validation error response.
+    ReadinessResponse:
+      properties:
+        ready:
+          type: boolean
+          title: Ready
+        timestamp:
+          type: string
+          title: Timestamp
+        checks:
+          additionalProperties:
+            type: boolean
+          type: object
+          title: Checks
+      type: object
+      required:
+      - ready
+      - timestamp
+      - checks
+      title: ReadinessResponse
+      description: Kubernetes readiness probe response.
+    SearchResultItem:
+      properties:
+        chunk_id:
+          type: string
+          title: Chunk Id
+          description: Unique chunk identifier
+        job_id:
+          type: string
+          title: Job Id
+          description: Parent job identifier
+        chunk_index:
+          type: integer
+          minimum: 0.0
+          title: Chunk Index
+          description: Position within document
+        content:
+          type: string
+          title: Content
+          description: Text content of the chunk
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+          description: Chunk metadata
+        similarity_score:
+          type: number
+          title: Similarity Score
+          description: Similarity score (0-1)
+        rank:
+          type: integer
+          minimum: 1.0
+          title: Rank
+          description: Result rank (1-based)
+      type: object
+      required:
+      - chunk_id
+      - job_id
+      - chunk_index
+      - content
+      - similarity_score
+      - rank
+      title: SearchResultItem
+      description: Single search result item.
+      example:
+        chunk_id: 123e4567-e89b-12d3-a456-426614174000
+        chunk_index: 0
+        content: Sample chunk content...
+        job_id: 123e4567-e89b-12d3-a456-426614174001
+        metadata:
+          page: 1
+        rank: 1
+        similarity_score: 0.95
+    SearchResultsResponse:
+      properties:
+        results:
+          items:
+            $ref: '#/components/schemas/SearchResultItem'
+          type: array
+          title: Results
+          description: Search results
+        total:
+          type: integer
+          minimum: 0.0
+          title: Total
+          description: Total number of results
+        query_time_ms:
+          type: number
+          title: Query Time Ms
+          description: Query execution time in milliseconds
+      type: object
+      required:
+      - total
+      - query_time_ms
+      title: SearchResultsResponse
+      description: Response model for search results.
+      example:
+        query_time_ms: 25.5
+        results: []
+        total: 0
+    SemanticSearchRequest:
+      properties:
+        query_embedding:
+          items:
+            type: number
+          type: array
+          minItems: 1
+          title: Query Embedding
+          description: Query embedding vector (list of floats)
+        top_k:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Top K
+          description: Maximum number of results to return
+          default: 10
+        min_similarity:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Min Similarity
+          description: Minimum similarity threshold (0-1)
+          default: 0.7
+        filters:
+          additionalProperties: true
+          type: object
+          title: Filters
+          description: Optional filters (e.g., job_id)
+      type: object
+      required:
+      - query_embedding
+      title: SemanticSearchRequest
+      description: 'Request body for semantic search.
+
+
+        Performs cosine similarity search using a pre-computed embedding vector.'
+      example:
+        filters:
+          job_id: 123e4567-e89b-12d3-a456-426614174000
+        min_similarity: 0.7
+        query_embedding:
+        - 0.1
+        - 0.2
+        - 0.3
+        - 0.4
+        top_k: 10
+    SemanticTextSearchRequest:
+      properties:
+        query:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Query
+          description: Natural language query text
+        top_k:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Top K
+          description: Maximum number of results to return
+          default: 10
+        min_similarity:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Min Similarity
+          description: Minimum similarity threshold (0-1)
+          default: 0.7
+        filters:
+          additionalProperties: true
+          type: object
+          title: Filters
+          description: Optional filters (e.g., job_id)
+      type: object
+      required:
+      - query
+      title: SemanticTextSearchRequest
+      example:
+        filters:
+          job_id: 123e4567-e89b-12d3-a456-426614174000
+        min_similarity: 0.7
+        query: neural network architecture
+        top_k: 10
+    TextSearchRequest:
+      properties:
+        query:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Query
+          description: Search query text
+        top_k:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Top K
+          description: Maximum number of results to return
+          default: 10
+        language:
+          type: string
+          title: Language
+          description: Text search language configuration
+          default: english
+        use_fuzzy:
+          type: boolean
+          title: Use Fuzzy
+          description: Include fuzzy trigram matching
+          default: true
+        highlight:
+          type: boolean
+          title: Highlight
+          description: Include highlighted snippets with matched terms
+          default: false
+        filters:
+          additionalProperties: true
+          type: object
+          title: Filters
+          description: Optional filters (e.g., job_id)
+      type: object
+      required:
+      - query
+      title: TextSearchRequest
+      description: 'Request body for text search.
+
+
+        Performs full-text search using PostgreSQL''s tsvector/tsquery with BM25 ranking
+
+        and optional fuzzy trigram matching.'
+      example:
+        filters: {}
+        highlight: true
+        language: english
+        query: machine learning architecture
+        top_k: 10
+        use_fuzzy: true
+    TextSearchResultItem:
+      properties:
+        chunk_id:
+          type: string
+          title: Chunk Id
+          description: Unique chunk identifier
+        job_id:
+          type: string
+          title: Job Id
+          description: Parent job identifier
+        chunk_index:
+          type: integer
+          minimum: 0.0
+          title: Chunk Index
+          description: Position within document
+        content:
+          type: string
+          title: Content
+          description: Text content of the chunk
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+          description: Chunk metadata
+        similarity_score:
+          type: number
+          title: Similarity Score
+          description: Similarity score (0-1)
+        rank:
+          type: integer
+          minimum: 1.0
+          title: Rank
+          description: Result rank (1-based)
+        highlighted_content:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Highlighted Content
+          description: Content with matched terms highlighted
+        matched_terms:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Matched Terms
+          description: List of matched terms
+        content_source_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Content Source Name
+          description: Name of the content source (file name or source URI)
+      type: object
+      required:
+      - chunk_id
+      - job_id
+      - chunk_index
+      - content
+      - similarity_score
+      - rank
+      title: TextSearchResultItem
+      description: Text search result with additional fields.
+      example:
+        chunk_id: 123e4567-e89b-12d3-a456-426614174000
+        chunk_index: 0
+        content: Sample chunk content...
+        highlighted_content: Sample <mark>chunk</mark> content...
+        job_id: 123e4567-e89b-12d3-a456-426614174001
+        matched_terms:
+        - chunk
+        metadata:
+          page: 1
+        rank: 1
+        similarity_score: 0.85
+    TextSearchResultsResponse:
+      properties:
+        results:
+          items:
+            $ref: '#/components/schemas/TextSearchResultItem'
+          type: array
+          title: Results
+          description: Search results
+        total:
+          type: integer
+          minimum: 0.0
+          title: Total
+          description: Total number of results
+        query_time_ms:
+          type: number
+          title: Query Time Ms
+          description: Query execution time in milliseconds
+      type: object
+      required:
+      - total
+      - query_time_ms
+      title: TextSearchResultsResponse
+      description: Response model for text search results.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    VectorStoreHealthResponse:
+      properties:
+        healthy:
+          type: boolean
+          title: Healthy
+        status:
+          $ref: '#/components/schemas/HealthStatus'
+        message:
+          type: string
+          title: Message
+        latency_ms:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Latency Ms
+        extensions:
+          anyOf:
+          - additionalProperties:
+              type: string
+            type: object
+          - type: 'null'
+          title: Extensions
+        pgvector_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pgvector Version
+        pg_trgm_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pg Trgm Version
+        missing_extensions:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Missing Extensions
+        timestamp:
+          type: string
+          title: Timestamp
+      type: object
+      required:
+      - healthy
+      - status
+      - message
+      - timestamp
+      title: VectorStoreHealthResponse
+      description: Response model for vector store health check.
+    src__api__routes__chunks__ChunkNotFoundResponse:
+      properties:
+        detail:
+          type: string
+          title: Detail
+          default: Chunk not found
+      type: object
+      title: ChunkNotFoundResponse
+      description: Error response when chunk is not found.
+    src__api__routes__search__ChunkNotFoundResponse:
+      properties:
+        detail:
+          type: string
+          title: Detail
+          default: Reference chunk not found
+      type: object
+      title: ChunkNotFoundResponse
+      description: Error response when reference chunk not found.

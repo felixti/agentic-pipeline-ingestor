@@ -439,17 +439,12 @@ class TextSearchService:
 
         for token in tokens:
             # Skip standalone operators
-            if token in ("|", "<->"):
-                processed_tokens.append(token)
-            # Handle already-processed operators
-            elif token.startswith("|") or token.endswith("|"):
-                processed_tokens.append(token)
-            elif token.startswith("<") or token.endswith(">"):
+            if token in ("|", "<->") or token.startswith("|") or token.endswith("|") or token.startswith("<") or token.endswith(">"):
                 processed_tokens.append(token)
             else:
                 # Regular word - escape special characters for tsquery
                 # Remove or escape characters that break tsquery
-                cleaned = re.sub(r'[&|!()@]', ' ', token).strip()
+                cleaned = re.sub(r"[&|!()@]", " ", token).strip()
                 if cleaned:
                     processed_tokens.append(cleaned)
 

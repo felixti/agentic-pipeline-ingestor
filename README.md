@@ -182,7 +182,26 @@ curl -X POST "http://localhost:8000/api/v1/search/semantic" \
 }
 ```
 
-### 2. Text Search (Full-Text + Fuzzy)
+### 2. Semantic Search (Text Query)
+
+Find documents semantically similar to a natural-language query. The API generates
+the query embedding server-side:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/search/semantic/text" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "query": "machine learning architecture",
+    "top_k": 10,
+    "min_similarity": 0.7,
+    "filters": {
+      "job_id": "123e4567-e89b-12d3-a456-426614174000"
+    }
+  }'
+```
+
+### 3. Text Search (Full-Text + Fuzzy)
 
 Search using PostgreSQL full-text search with BM25 ranking:
 
@@ -217,7 +236,7 @@ curl -X POST "http://localhost:8000/api/v1/search/text" \
 }
 ```
 
-### 3. Hybrid Search (Vector + Text Fusion)
+### 4. Hybrid Search (Vector + Text Fusion)
 
 Combine semantic and text search for best results:
 
@@ -257,7 +276,7 @@ curl -X POST "http://localhost:8000/api/v1/search/hybrid" \
 }
 ```
 
-### 4. List Document Chunks
+### 5. List Document Chunks
 
 Retrieve chunks for a processed document:
 

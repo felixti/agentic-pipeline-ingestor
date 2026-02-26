@@ -705,6 +705,152 @@ def _add_routes(app: FastAPI) -> None:
         # Update status to cancelled
         await repo.update_status(job_id, JobStatus.CANCELLED)
 
+    @app.delete(f"{api_prefix}/jobs/{{job_id}}/hard", status_code=status.HTTP_204_NO_CONTENT, tags=["Jobs"])
+    async def delete_job_and_chunks(
+        job_id: str,
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
+        """Permanently delete a job and all its associated chunks.
+        
+        This operation cannot be undone. Use with caution.
+        """
+        from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.db.repositories.job import JobRepository
+
+        request_id = getattr(request.state, "request_id", str(uuid4()))
+        logger = logging.getLogger(__name__)
+
+        job_repo = JobRepository(db)
+        chunk_repo = DocumentChunkRepository(db)
+
+        # Check if job exists
+        job = await job_repo.get_by_id(job_id)
+        if job is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job with ID '{job_id}' not found",
+            )
+
+        # Delete chunks first (foreign key constraint safety)
+        chunks_deleted = await chunk_repo.delete_by_job_id(UUID(job_id))
+        logger.info(
+            "job_chunks_deleted",
+            job_id=job_id,
+            chunks_deleted=chunks_deleted,
+            request_id=str(request_id),
+        )
+
+        # Delete the job
+        job_deleted = await job_repo.delete(job_id)
+        if not job_deleted:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete job after deleting chunks",
+            )
+
+        logger.info(
+            "job_deleted",
+            job_id=job_id,
+            file_name=job.file_name,
+            request_id=str(request_id),
+        )
+
+    @app.post(f"{api_prefix}/jobs/bulk-delete", status_code=status.HTTP_200_OK, tags=["Jobs"])
+    async def bulk_delete_jobs(
+        request: Request,
+        delete_request: dict[str, Any],
+        db: AsyncSession = Depends(get_db),
+    ) -> dict[str, Any]:
+        """Bulk delete jobs and their chunks.
+        
+        Request body:
+        - job_ids: List of job IDs to delete
+        - dry_run: If true, returns what would be deleted without actually deleting (default: false)
+        
+        Example:
+        {
+            "job_ids": ["uuid1", "uuid2"],
+            "dry_run": false
+        }
+        """
+        from src.api.models import ApiResponse
+        from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+        from src.db.repositories.job import JobRepository
+
+        request_id = getattr(request.state, "request_id", str(uuid4()))
+        logger = logging.getLogger(__name__)
+
+        job_ids = delete_request.get("job_ids", [])
+        dry_run = delete_request.get("dry_run", False)
+
+        if not job_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": "job_ids is required and must be a non-empty list"},
+            )
+
+        job_repo = JobRepository(db)
+        chunk_repo = DocumentChunkRepository(db)
+
+        results = {
+            "deleted": [],
+            "not_found": [],
+            "failed": [],
+            "chunks_deleted": 0,
+            "dry_run": dry_run,
+        }
+
+        for job_id in job_ids:
+            try:
+                job = await job_repo.get_by_id(job_id)
+                if not job:
+                    results["not_found"].append(job_id)
+                    continue
+
+                if dry_run:
+                    # Count chunks without deleting
+                    chunk_count = await chunk_repo.count_by_job_id(UUID(job_id))
+                    results["deleted"].append({
+                        "job_id": job_id,
+                        "file_name": job.file_name,
+                        "chunks": chunk_count,
+                    })
+                    results["chunks_deleted"] += chunk_count
+                else:
+                    # Actually delete
+                    chunks_deleted = await chunk_repo.delete_by_job_id(UUID(job_id))
+                    job_deleted = await job_repo.delete(job_id)
+                    
+                    if job_deleted:
+                        results["deleted"].append({
+                            "job_id": job_id,
+                            "file_name": job.file_name,
+                            "chunks": chunks_deleted,
+                        })
+                        results["chunks_deleted"] += chunks_deleted
+                    else:
+                        results["failed"].append(job_id)
+                        
+            except Exception as e:
+                logger.error(f"Failed to delete job {job_id}: {e}")
+                results["failed"].append({"job_id": job_id, "error": str(e)})
+
+        return ApiResponse.create(
+            data={
+                "summary": {
+                    "total_requested": len(job_ids),
+                    "jobs_deleted": len(results["deleted"]),
+                    "jobs_not_found": len(results["not_found"]),
+                    "jobs_failed": len(results["failed"]),
+                    "total_chunks_deleted": results["chunks_deleted"],
+                    "dry_run": dry_run,
+                },
+                "details": results,
+            },
+            request_id=UUID(str(request_id)),
+        ).model_dump()
+
     @app.post(f"{api_prefix}/jobs/{{job_id}}/retry", status_code=status.HTTP_202_ACCEPTED, tags=["Jobs"])
     async def retry_job(
         job_id: str,

@@ -200,12 +200,17 @@ class HybridSearchService:
         start_time = time.monotonic()
 
         try:
-            # Use defaults if not specified
-            vector_weight = vector_weight or self.config.default_vector_weight
-            text_weight = text_weight or self.config.default_text_weight
-            fusion_method = fusion_method or self.config.default_fusion_method
-            min_similarity = min_similarity or self.config.min_similarity
-            fallback_mode = fallback_mode or self.config.fallback_mode
+            # Use defaults if not specified (check for None, not falsy - 0 is valid)
+            if vector_weight is None:
+                vector_weight = self.config.default_vector_weight
+            if text_weight is None:
+                text_weight = self.config.default_text_weight
+            if fusion_method is None:
+                fusion_method = self.config.default_fusion_method
+            if min_similarity is None:
+                min_similarity = self.config.min_similarity
+            if fallback_mode is None:
+                fallback_mode = self.config.fallback_mode
 
             # Validate inputs
             self._validate_weights(vector_weight, text_weight)
@@ -306,12 +311,17 @@ class HybridSearchService:
         """
         start_time = time.monotonic()
 
-        # Use defaults if not specified
-        vector_weight = vector_weight or self.config.default_vector_weight
-        text_weight = text_weight or self.config.default_text_weight
-        fusion_method = fusion_method or self.config.default_fusion_method
-        min_similarity = min_similarity or self.config.min_similarity
-        fallback_mode = fallback_mode or self.config.fallback_mode
+        # Use defaults if not specified (check for None, not falsy - 0 is valid)
+        if vector_weight is None:
+            vector_weight = self.config.default_vector_weight
+        if text_weight is None:
+            text_weight = self.config.default_text_weight
+        if fusion_method is None:
+            fusion_method = self.config.default_fusion_method
+        if min_similarity is None:
+            min_similarity = self.config.min_similarity
+        if fallback_mode is None:
+            fallback_mode = self.config.fallback_mode
 
         # Validate inputs
         self._validate_weights(vector_weight, text_weight)

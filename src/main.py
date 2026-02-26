@@ -719,7 +719,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.db.repositories.job import JobRepository
 
         request_id = getattr(request.state, "request_id", str(uuid4()))
-        logger = logging.getLogger(__name__)
+        logger = get_logger(__name__)
 
         job_repo = JobRepository(db)
         chunk_repo = DocumentChunkRepository(db)

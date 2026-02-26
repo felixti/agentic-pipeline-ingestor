@@ -415,7 +415,7 @@ class TextSearchService:
         # Normalize whitespace
         query = " ".join(query.split())
 
-        # Handle quoted phrases
+        # Handle quoted phrases first (before other processing)
         phrases = re.findall(r'"([^"]+)"', query)
         for phrase in phrases:
             # Replace quoted phrase with processed version
@@ -425,24 +425,52 @@ class TextSearchService:
         # Handle NOT operator
         query = re.sub(r"\bNOT\s+(\w+)", r"!\1", query, flags=re.IGNORECASE)
 
-        # Handle AND operator (implicit)
-        query = re.sub(r"\bAND\b", "&", query, flags=re.IGNORECASE)
-
-        # Handle OR operator
+        # Handle OR operator (do this before splitting)
         query = re.sub(r"\bOR\b", "|", query, flags=re.IGNORECASE)
 
-        # Replace remaining spaces with AND operators for default behavior
-        # But preserve already processed operators
-        words = query.split()
-        if words:
-            # Join with & for full-text search AND behavior
-            query = " & ".join(words)
+        # Split into tokens, but preserve | and <-> operators
+        # Replace spaces around operators with special markers
+        query = re.sub(r"\s*\|\s*", " | ", query)
+        query = re.sub(r"\s*<->\s*", " <-> ", query)
 
-        # Clean up multiple operators
+        # Split and process words
+        tokens = query.split()
+        processed_tokens = []
+
+        for token in tokens:
+            # Skip standalone operators
+            if token in ("|", "<->"):
+                processed_tokens.append(token)
+            # Handle already-processed operators
+            elif token.startswith("|") or token.endswith("|"):
+                processed_tokens.append(token)
+            elif token.startswith("<") or token.endswith(">"):
+                processed_tokens.append(token)
+            else:
+                # Regular word - escape special characters for tsquery
+                # Remove or escape characters that break tsquery
+                cleaned = re.sub(r'[&|!()@]', ' ', token).strip()
+                if cleaned:
+                    processed_tokens.append(cleaned)
+
+        # Join with & for full-text search AND behavior
+        # But be careful not to double-join around existing operators
+        if processed_tokens:
+            result_parts = []
+            for i, token in enumerate(processed_tokens):
+                if i > 0 and token not in ("|", "<->") and processed_tokens[i-1] not in ("|", "<->"):
+                    result_parts.append("&")
+                result_parts.append(token)
+            query = " ".join(result_parts)
+
+        # Clean up multiple operators and whitespace
+        query = re.sub(r"\s+", " ", query)
         query = re.sub(r"&\s*\|", "|", query)
         query = re.sub(r"\|\s*&", "|", query)
-        query = re.sub(r"&+", "&", query)
-        query = re.sub(r"\|+", "|", query)
+        query = re.sub(r"&\s*&+", "&", query)
+        query = re.sub(r"\|\s*\|+", "|", query)
+        query = re.sub(r"<->\s*<->+", "<->", query)
+        query = query.strip()
 
         return query
 

@@ -161,6 +161,200 @@ paths:
               schema:
                 $ref: '#/components/schemas/ParserSelectionResponse'
 
+  /jobs:
+    get:
+      operationId: listJobs
+      summary: List all jobs
+      description: Retrieve a paginated list of jobs with optional filtering.
+      tags:
+        - Jobs
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [created, queued, processing, completed, failed, cancelled]
+        - name: source_type
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobListResponse'
+    
+    post:
+      operationId: createJob
+      summary: Create a new job
+      description: Submit a new ingestion job for processing.
+      tags:
+        - Jobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobCreateRequest'
+      responses:
+        '202':
+          description: Job created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+
+  /jobs/{jobId}:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    
+    get:
+      operationId: getJob
+      summary: Get job details
+      description: Retrieve detailed information about a specific job.
+      tags:
+        - Jobs
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '404':
+          description: Job not found
+    
+    delete:
+      operationId: cancelJob
+      summary: Cancel a job
+      description: Cancel a job that is in created, queued, or processing state.
+      tags:
+        - Jobs
+      responses:
+        '204':
+          description: Job cancelled successfully
+        '400':
+          description: Cannot cancel job in current state
+        '404':
+          description: Job not found
+
+  /jobs/{jobId}/hard:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    
+    delete:
+      operationId: deleteJobHard
+      summary: Permanently delete a job and its chunks
+      description: |
+        **⚠️ DANGER:** Permanently deletes a job and all its associated chunks.
+        This operation cannot be undone. Use with caution.
+      tags:
+        - Jobs
+      responses:
+        '204':
+          description: Job and chunks deleted successfully
+        '404':
+          description: Job not found
+        '500':
+          description: Failed to delete job
+
+  /jobs/bulk-delete:
+    post:
+      operationId: bulkDeleteJobs
+      summary: Bulk delete jobs
+      description: Delete multiple jobs and their chunks in a single operation.
+      tags:
+        - Jobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkDeleteRequest'
+      responses:
+        '200':
+          description: Bulk delete results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResponse'
+
+  /jobs/{jobId}/retry:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    
+    post:
+      operationId: retryJob
+      summary: Retry a failed job
+      description: Create a new job with the same configuration as a failed job.
+      tags:
+        - Jobs
+      responses:
+        '202':
+          description: Job retry initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobRetryResponse'
+        '400':
+          description: Only failed jobs can be retried
+        '404':
+          description: Job not found
+
+  /jobs/{jobId}/result:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    
+    get:
+      operationId: getJobResult
+      summary: Get job processing result
+      description: Retrieve the processing result for a completed job.
+      tags:
+        - Jobs
+      responses:
+        '200':
+          description: Job result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResultResponse'
+        '400':
+          description: Job not complete
+        '404':
+          description: Job not found
+
 components:
   schemas:
     DetectionRequest:
@@ -400,5 +594,242 @@ components:
               type: array
               items:
                 type: object
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+
+    # Job Schemas
+    JobCreateRequest:
+      type: object
+      required:
+        - source_type
+      properties:
+        source_type:
+          type: string
+          enum: [upload, s3, url, gcs, azure_blob]
+          example: upload
+        source_uri:
+          type: string
+          description: URI to the source file (if not upload)
+        file_name:
+          type: string
+          example: document.pdf
+        file_size:
+          type: integer
+          example: 1024567
+        mime_type:
+          type: string
+          example: application/pdf
+        priority:
+          type: string
+          enum: [low, normal, high]
+          default: normal
+        mode:
+          type: string
+          enum: [sync, async]
+          default: async
+        external_id:
+          type: string
+          description: External reference ID
+        metadata:
+          type: object
+          description: Additional metadata
+        pipeline_id:
+          type: string
+          description: Pipeline configuration ID
+
+    JobResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [created, queued, processing, completed, failed, cancelled]
+        source_type:
+          type: string
+        source_uri:
+          type: string
+        file_name:
+          type: string
+        file_size:
+          type: integer
+        mime_type:
+          type: string
+        priority:
+          type: integer
+        mode:
+          type: string
+        external_id:
+          type: string
+        retry_count:
+          type: integer
+        max_retries:
+          type: integer
+        error:
+          type: object
+          nullable: true
+          properties:
+            message:
+              type: string
+            code:
+              type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    JobListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/JobResponse'
+            total:
+              type: integer
+            page:
+              type: integer
+            page_size:
+              type: integer
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+
+    JobRetryResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            original_job_id:
+              type: string
+              format: uuid
+            new_job_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+            message:
+              type: string
+            job:
+              $ref: '#/components/schemas/JobResponse'
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+
+    JobResultResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            job_id:
+              type: string
+            status:
+              type: string
+            success:
+              type: boolean
+            extracted_text:
+              type: string
+              nullable: true
+            output_data:
+              type: object
+              nullable: true
+            metadata:
+              type: object
+              nullable: true
+            quality_score:
+              type: number
+              nullable: true
+            processing_time_ms:
+              type: integer
+              nullable: true
+            output_uri:
+              type: string
+              nullable: true
+            created_at:
+              type: string
+              format: date-time
+              nullable: true
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+
+    BulkDeleteRequest:
+      type: object
+      required:
+        - job_ids
+      properties:
+        job_ids:
+          type: array
+          description: List of job IDs to delete
+          items:
+            type: string
+            format: uuid
+          example: ["e38d4503-0c10-4d3e-8851-8b8322a83453"]
+        dry_run:
+          type: boolean
+          description: If true, returns what would be deleted without actually deleting
+          default: false
+
+    BulkDeleteResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            summary:
+              type: object
+              properties:
+                total_requested:
+                  type: integer
+                jobs_deleted:
+                  type: integer
+                jobs_not_found:
+                  type: integer
+                jobs_failed:
+                  type: integer
+                total_chunks_deleted:
+                  type: integer
+                dry_run:
+                  type: boolean
+            details:
+              type: object
+              properties:
+                deleted:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      job_id:
+                        type: string
+                      file_name:
+                        type: string
+                      chunks:
+                        type: integer
+                not_found:
+                  type: array
+                  items:
+                    type: string
+                failed:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      job_id:
+                        type: string
+                      error:
+                        type: string
         meta:
           $ref: '#/components/schemas/ResponseMeta'

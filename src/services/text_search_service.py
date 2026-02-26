@@ -32,11 +32,13 @@ class TextSearchError(Exception):
 
 class InvalidQueryError(TextSearchError):
     """Raised when a search query is invalid."""
+
     pass
 
 
 class LanguageNotSupportedError(TextSearchError):
     """Raised when an unsupported language is specified."""
+
     pass
 
 
@@ -439,7 +441,13 @@ class TextSearchService:
 
         for token in tokens:
             # Skip standalone operators
-            if token in ("|", "<->") or token.startswith("|") or token.endswith("|") or token.startswith("<") or token.endswith(">"):
+            if (
+                token in ("|", "<->")
+                or token.startswith("|")
+                or token.endswith("|")
+                or token.startswith("<")
+                or token.endswith(">")
+            ):
                 processed_tokens.append(token)
             else:
                 # Regular word - escape special characters for tsquery
@@ -453,7 +461,11 @@ class TextSearchService:
         if processed_tokens:
             result_parts = []
             for i, token in enumerate(processed_tokens):
-                if i > 0 and token not in ("|", "<->") and processed_tokens[i-1] not in ("|", "<->"):
+                if (
+                    i > 0
+                    and token not in ("|", "<->")
+                    and processed_tokens[i - 1] not in ("|", "<->")
+                ):
                     result_parts.append("&")
                 result_parts.append(token)
             query = " ".join(result_parts)
@@ -549,7 +561,7 @@ class TextSearchService:
         tsquery_str = self._build_tsquery(query)
 
         # Create tsvector and tsquery expressions
-        tsvector = func.to_tsvector(language, DocumentChunkModel.content)
+        tsvector = DocumentChunkModel.search_vector
         tsquery = func.to_tsquery(language, tsquery_str)
 
         # Calculate BM25 rank
@@ -560,9 +572,7 @@ class TextSearchService:
 
         # Add highlighting if requested
         if highlight:
-            highlighted = self._highlight_content(
-                DocumentChunkModel.content, tsquery, language
-            )
+            highlighted = self._highlight_content(DocumentChunkModel.content, tsquery, language)
             columns.append(highlighted.label("highlighted"))
 
         # Build base query with full-text search
@@ -655,9 +665,7 @@ class TextSearchService:
         # Filter by metadata JSONB
         if metadata_filters := filters.get("metadata"):
             if isinstance(metadata_filters, dict):
-                query = query.where(
-                    DocumentChunkModel.chunk_metadata.op("@>")(metadata_filters)
-                )
+                query = query.where(DocumentChunkModel.chunk_metadata.op("@>")(metadata_filters))
 
         # Filter by chunk_index
         if chunk_index := filters.get("chunk_index"):
@@ -683,9 +691,7 @@ class TextSearchService:
             raise InvalidQueryError("Search query cannot be empty")
 
         if len(query.strip()) < min_length:
-            raise InvalidQueryError(
-                f"Search query must be at least {min_length} characters long"
-            )
+            raise InvalidQueryError(f"Search query must be at least {min_length} characters long")
 
         # Limit query length to prevent abuse
         if len(query) > 1024:
@@ -716,10 +722,14 @@ class TextSearchService:
             List of matched terms (unique, lowercase)
         """
         # Extract text between highlight tags
-        pattern = re.escape(self.config.highlight_start_tag) + "(.+?)" + re.escape(self.config.highlight_end_tag)
+        pattern = (
+            re.escape(self.config.highlight_start_tag)
+            + "(.+?)"
+            + re.escape(self.config.highlight_end_tag)
+        )
         matches = re.findall(pattern, highlighted_content, re.IGNORECASE)
 
         # Normalize and deduplicate
         terms = list(set(term.lower().strip() for term in matches))
 
-        return sorted(terms) if terms else None
+        return sorted(terms)

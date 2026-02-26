@@ -22,8 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.dependencies import get_db
 from src.api.routes import chunks, health, rag, search
 from src.config import settings
-from src.db.models import _engine as db_engine
-from src.db.models import init_db, init_engine
+from src.db.models import get_async_engine, init_db, init_engine
 from src.observability.logging import get_logger, setup_logging
 from src.observability.metrics import SYSTEM_INFO, get_metrics_manager
 
@@ -31,6 +30,7 @@ from src.observability.metrics import SYSTEM_INFO, get_metrics_manager
 from src.observability.tracing import setup_tracing_from_settings
 from src.plugins.loaders import AutoDiscoveryPluginLoader
 from src.plugins.registry import get_registry
+from src.vector_store_config.vector_store import validate_embedding_dimensions
 
 # Configure logging
 structlog.configure(
@@ -57,16 +57,16 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager.
-    
+
     Handles startup and shutdown events:
     - Initialize database connection
     - Load plugins
     - Initialize LLM provider
     - Cleanup resources on shutdown
-    
+
     Args:
         app: FastAPI application instance
-        
+
     Yields:
         Control to the application
     """
@@ -78,11 +78,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_tracing_from_settings()
 
     # Record system info in metrics
-    SYSTEM_INFO.info({
-        "app_name": settings.app_name,
-        "version": settings.app_version,
-        "environment": settings.env,
-    })
+    SYSTEM_INFO.info(
+        {
+            "app_name": settings.app_name,
+            "version": settings.app_version,
+            "environment": settings.env,
+        }
+    )
 
     logger.info(
         "starting_application",
@@ -100,11 +102,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             pool_size=settings.database.pool_size,
             max_overflow=settings.database.max_overflow,
         )
+        db_engine = get_async_engine()
 
         # Create tables (in production, use Alembic migrations)
-        if db_engine:
-            await init_db(db_engine)
-            logger.info("database_initialized")
+        await init_db(db_engine)
+        logger.info("database_initialized")
+        await validate_embedding_dimensions()
+        logger.info("embedding_dimensions_validated")
 
         # Load plugins
         logger.info("loading_plugins")
@@ -143,9 +147,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("plugins_shutdown")
 
         # Close database connections
-        if db_engine:
-            await db_engine.dispose()
-            logger.info("database_connections_closed")
+        await get_async_engine().dispose()
+        logger.info("database_connections_closed")
 
         logger.info("application_shutdown_complete")
 
@@ -155,7 +158,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application.
-    
+
     Returns:
         Configured FastAPI application instance
     """
@@ -192,7 +195,7 @@ def create_app() -> FastAPI:
 
 def _add_middleware(app: FastAPI) -> None:
     """Add middleware to the application.
-    
+
     Args:
         app: FastAPI application
     """
@@ -210,7 +213,9 @@ def _add_middleware(app: FastAPI) -> None:
 
     # Observability middleware for tracing and metrics
     @app.middleware("http")
-    async def observability_middleware(request: Request, call_next: "Callable[[Request], Awaitable[Response]]") -> Response:
+    async def observability_middleware(
+        request: Request, call_next: "Callable[[Request], Awaitable[Response]]"
+    ) -> Response:
         """Middleware for tracing, metrics, and logging."""
         from opentelemetry.trace import SpanKind, Status, StatusCode
 
@@ -278,7 +283,9 @@ def _add_middleware(app: FastAPI) -> None:
 
     # Request ID and timing middleware
     @app.middleware("http")
-    async def add_request_metadata(request: Request, call_next: "Callable[[Request], Awaitable[Response]]") -> Response:
+    async def add_request_metadata(
+        request: Request, call_next: "Callable[[Request], Awaitable[Response]]"
+    ) -> Response:
         """Add request ID and track timing."""
         request_id = str(uuid4())
         start_time = time.time()
@@ -324,7 +331,7 @@ def _add_middleware(app: FastAPI) -> None:
 
 def _add_routes(app: FastAPI) -> None:
     """Add routes to the application.
-    
+
     Args:
         app: FastAPI application
     """
@@ -350,6 +357,7 @@ def _add_routes(app: FastAPI) -> None:
             from sqlalchemy import text
 
             from src.db.models import get_session
+
             async for session in get_session():
                 await session.execute(text("SELECT 1"))
                 components["database"] = ComponentHealth(status=HealthStatus.HEALTHY)
@@ -402,12 +410,14 @@ def _add_routes(app: FastAPI) -> None:
     async def get_readiness() -> dict[str, Any]:
         """Kubernetes readiness probe."""
         from src.api.models import HealthReady
+
         return HealthReady().model_dump()
 
     @app.get("/health/live", tags=["System"])
     async def get_liveness() -> dict[str, Any]:
         """Kubernetes liveness probe."""
         from src.api.models import HealthAlive
+
         return HealthAlive().model_dump()
 
     @app.get("/health/queue", tags=["System"])
@@ -422,14 +432,16 @@ def _add_routes(app: FastAPI) -> None:
             queue = get_queue()
             depths = await queue.get_queue_depths()
             processing = await queue.get_processing_count()
-            
+
             return ApiResponse.create(
                 data={
                     "status": "healthy",
                     "queue_depths": depths,
                     "processing": processing,
                     "total_pending": sum(depths.values()),
-                    "total_processing": sum(processing.values()) if isinstance(processing, dict) else 0,
+                    "total_processing": sum(processing.values())
+                    if isinstance(processing, dict)
+                    else 0,
                 },
                 request_id=UUID(str(request_id)),
             ).model_dump()
@@ -482,7 +494,9 @@ def _add_routes(app: FastAPI) -> None:
         if not job_data.get("source_type"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"error": {"code": "MISSING_SOURCE_TYPE", "message": "source_type is required"}}
+                detail={
+                    "error": {"code": "MISSING_SOURCE_TYPE", "message": "source_type is required"}
+                },
             )
 
         # Validate pipeline if provided
@@ -494,7 +508,12 @@ def _add_routes(app: FastAPI) -> None:
             if pipeline is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={"error": {"code": "INVALID_PIPELINE", "message": f"Pipeline '{pipeline_id}' not found"}},
+                    detail={
+                        "error": {
+                            "code": "INVALID_PIPELINE",
+                            "message": f"Pipeline '{pipeline_id}' not found",
+                        }
+                    },
                 )
             pipeline_config = pipeline.config
 
@@ -523,7 +542,7 @@ def _add_routes(app: FastAPI) -> None:
                 queue_priority = QueuePriority.HIGH
             elif priority == "low":
                 queue_priority = QueuePriority.LOW
-            
+
             await queue.enqueue(str(job.id), priority=queue_priority)
             logger.info("job_enqueued", job_id=str(job.id), priority=priority)
         except Exception as e:
@@ -586,24 +605,28 @@ def _add_routes(app: FastAPI) -> None:
         # Convert to response models
         job_responses = []
         for job in jobs:
-            job_responses.append(JobResponse(
-                id=job.id,  # type: ignore[arg-type]
-                status=job.status,  # type: ignore[arg-type]
-                source_type=SourceType(job.source_type) if job.source_type in [e.value for e in SourceType] else SourceType.UPLOAD,
-                source_uri=job.source_uri or "",  # type: ignore[arg-type]
-                file_name=job.file_name,  # type: ignore[arg-type]
-                file_size=job.file_size,  # type: ignore[arg-type]
-                mime_type=job.mime_type,  # type: ignore[arg-type]
-                priority=5 if job.priority == "normal" else 10 if job.priority == "high" else 1,
-                mode=job.mode,  # type: ignore[arg-type]
-                external_id=job.external_id,  # type: ignore[arg-type]
-                retry_count=job.retry_count,  # type: ignore[arg-type]
-                max_retries=job.max_retries,  # type: ignore[arg-type]
-                created_at=job.created_at,  # type: ignore[arg-type]
-                updated_at=job.updated_at,  # type: ignore[arg-type]
-                started_at=job.started_at,  # type: ignore[arg-type]
-                completed_at=job.completed_at,  # type: ignore[arg-type]
-            ))
+            job_responses.append(
+                JobResponse(
+                    id=job.id,  # type: ignore[arg-type]
+                    status=job.status,  # type: ignore[arg-type]
+                    source_type=SourceType(job.source_type)
+                    if job.source_type in [e.value for e in SourceType]
+                    else SourceType.UPLOAD,
+                    source_uri=job.source_uri or "",  # type: ignore[arg-type]
+                    file_name=job.file_name,  # type: ignore[arg-type]
+                    file_size=job.file_size,  # type: ignore[arg-type]
+                    mime_type=job.mime_type,  # type: ignore[arg-type]
+                    priority=5 if job.priority == "normal" else 10 if job.priority == "high" else 1,
+                    mode=job.mode,  # type: ignore[arg-type]
+                    external_id=job.external_id,  # type: ignore[arg-type]
+                    retry_count=job.retry_count,  # type: ignore[arg-type]
+                    max_retries=job.max_retries,  # type: ignore[arg-type]
+                    created_at=job.created_at,  # type: ignore[arg-type]
+                    updated_at=job.updated_at,  # type: ignore[arg-type]
+                    started_at=job.started_at,  # type: ignore[arg-type]
+                    completed_at=job.completed_at,  # type: ignore[arg-type]
+                )
+            )
 
         # Build list response
         list_response = JobListResponse(
@@ -616,11 +639,11 @@ def _add_routes(app: FastAPI) -> None:
         # Build pagination links
         links = ApiLinks(self=str(request.url))
         base_url = str(request.url).split("?")[0]
-        
+
         if page > 1:
-            links.prev = f"{base_url}?page={page-1}&limit={limit}"
+            links.prev = f"{base_url}?page={page - 1}&limit={limit}"
         if total is not None and (page * limit) < total:
-            links.next = f"{base_url}?page={page+1}&limit={limit}"
+            links.next = f"{base_url}?page={page + 1}&limit={limit}"
 
         return ApiResponse.create(
             data=list_response.model_dump(),
@@ -655,7 +678,9 @@ def _add_routes(app: FastAPI) -> None:
         response_data = JobResponse(
             id=job.id,  # type: ignore[arg-type]
             status=job.status,  # type: ignore[arg-type]
-            source_type=SourceType(job.source_type) if job.source_type in [e.value for e in SourceType] else SourceType.UPLOAD,
+            source_type=SourceType(job.source_type)
+            if job.source_type in [e.value for e in SourceType]
+            else SourceType.UPLOAD,
             source_uri=job.source_uri or "",  # type: ignore[arg-type]
             file_name=job.file_name,  # type: ignore[arg-type]
             file_size=job.file_size,  # type: ignore[arg-type]
@@ -669,7 +694,9 @@ def _add_routes(app: FastAPI) -> None:
             updated_at=job.updated_at,  # type: ignore[arg-type]
             started_at=job.started_at,  # type: ignore[arg-type]
             completed_at=job.completed_at,  # type: ignore[arg-type]
-            error={"message": job.error_message, "code": job.error_code} if job.error_message or job.error_code else None,  # type: ignore[arg-type]
+            error={"message": job.error_message, "code": job.error_code}
+            if job.error_message or job.error_code
+            else None,  # type: ignore[arg-type]
         )
 
         return ApiResponse.create(
@@ -677,7 +704,9 @@ def _add_routes(app: FastAPI) -> None:
             request_id=UUID(str(request_id)),
         ).model_dump()
 
-    @app.delete(f"{api_prefix}/jobs/{{job_id}}", status_code=status.HTTP_204_NO_CONTENT, tags=["Jobs"])
+    @app.delete(
+        f"{api_prefix}/jobs/{{job_id}}", status_code=status.HTTP_204_NO_CONTENT, tags=["Jobs"]
+    )
     async def cancel_job(
         job_id: str,
         db: AsyncSession = Depends(get_db),
@@ -705,14 +734,16 @@ def _add_routes(app: FastAPI) -> None:
         # Update status to cancelled
         await repo.update_status(job_id, JobStatus.CANCELLED)
 
-    @app.delete(f"{api_prefix}/jobs/{{job_id}}/hard", status_code=status.HTTP_204_NO_CONTENT, tags=["Jobs"])
+    @app.delete(
+        f"{api_prefix}/jobs/{{job_id}}/hard", status_code=status.HTTP_204_NO_CONTENT, tags=["Jobs"]
+    )
     async def delete_job_and_chunks(
         job_id: str,
         request: Request,
         db: AsyncSession = Depends(get_db),
     ) -> None:
         """Permanently delete a job and all its associated chunks.
-        
+
         This operation cannot be undone. Use with caution.
         """
         from src.db.repositories.document_chunk_repository import DocumentChunkRepository
@@ -763,11 +794,11 @@ def _add_routes(app: FastAPI) -> None:
         db: AsyncSession = Depends(get_db),
     ) -> dict[str, Any]:
         """Bulk delete jobs and their chunks.
-        
+
         Request body:
         - job_ids: List of job IDs to delete
         - dry_run: If true, returns what would be deleted without actually deleting (default: false)
-        
+
         Example:
         {
             "job_ids": ["uuid1", "uuid2"],
@@ -811,27 +842,31 @@ def _add_routes(app: FastAPI) -> None:
                 if dry_run:
                     # Count chunks without deleting
                     chunk_count = await chunk_repo.count_by_job_id(UUID(job_id))
-                    results["deleted"].append({
-                        "job_id": job_id,
-                        "file_name": job.file_name,
-                        "chunks": chunk_count,
-                    })
+                    results["deleted"].append(
+                        {
+                            "job_id": job_id,
+                            "file_name": job.file_name,
+                            "chunks": chunk_count,
+                        }
+                    )
                     results["chunks_deleted"] += chunk_count
                 else:
                     # Actually delete
                     chunks_deleted = await chunk_repo.delete_by_job_id(UUID(job_id))
                     job_deleted = await job_repo.delete(job_id)
-                    
+
                     if job_deleted:
-                        results["deleted"].append({
-                            "job_id": job_id,
-                            "file_name": job.file_name,
-                            "chunks": chunks_deleted,
-                        })
+                        results["deleted"].append(
+                            {
+                                "job_id": job_id,
+                                "file_name": job.file_name,
+                                "chunks": chunks_deleted,
+                            }
+                        )
                         results["chunks_deleted"] += chunks_deleted
                     else:
                         results["failed"].append(job_id)
-                        
+
             except Exception as e:
                 logger.error(f"Failed to delete job {job_id}: {e}")
                 results["failed"].append({"job_id": job_id, "error": str(e)})
@@ -851,7 +886,9 @@ def _add_routes(app: FastAPI) -> None:
             request_id=UUID(str(request_id)),
         ).model_dump()
 
-    @app.post(f"{api_prefix}/jobs/{{job_id}}/retry", status_code=status.HTTP_202_ACCEPTED, tags=["Jobs"])
+    @app.post(
+        f"{api_prefix}/jobs/{{job_id}}/retry", status_code=status.HTTP_202_ACCEPTED, tags=["Jobs"]
+    )
     async def retry_job(
         job_id: str,
         request: Request,
@@ -866,7 +903,7 @@ def _add_routes(app: FastAPI) -> None:
         request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = JobRepository(db)
-        
+
         # Get original job
         original_job = await repo.get_by_id(job_id)
         if original_job is None:
@@ -904,7 +941,9 @@ def _add_routes(app: FastAPI) -> None:
         response_data = JobResponse(
             id=new_job.id,  # type: ignore[arg-type]
             status=new_job.status,  # type: ignore[arg-type]
-            source_type=SourceType(new_job.source_type) if new_job.source_type in [e.value for e in SourceType] else SourceType.UPLOAD,
+            source_type=SourceType(new_job.source_type)
+            if new_job.source_type in [e.value for e in SourceType]
+            else SourceType.UPLOAD,
             source_uri=new_job.source_uri or "",  # type: ignore[arg-type]
             file_name=new_job.file_name,  # type: ignore[arg-type]
             file_size=new_job.file_size,  # type: ignore[arg-type]
@@ -1025,12 +1064,17 @@ def _add_routes(app: FastAPI) -> None:
         if not content_type.startswith("multipart/form-data"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"error": {"code": "INVALID_CONTENT_TYPE", "message": "Content-Type must be multipart/form-data"}}
+                detail={
+                    "error": {
+                        "code": "INVALID_CONTENT_TYPE",
+                        "message": "Content-Type must be multipart/form-data",
+                    }
+                },
             )
-        
+
         # Read and parse form data
         form_data = await request.form()
-        
+
         # Extract files from form data
         files: list[UploadFile] = []
         for key, value in form_data.multi_items():
@@ -1040,7 +1084,7 @@ def _add_routes(app: FastAPI) -> None:
         if not files:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"error": {"code": "NO_FILES", "message": "No files provided"}}
+                detail={"error": {"code": "NO_FILES", "message": "No files provided"}},
             )
 
         # Create staging directory
@@ -1077,11 +1121,13 @@ def _add_routes(app: FastAPI) -> None:
                     metadata={"original_filename": upload_file.filename},
                 )
 
-                uploaded_jobs.append({
-                    "job_id": job.id,
-                    "file_name": upload_file.filename,
-                    "file_size": file_size,
-                })
+                uploaded_jobs.append(
+                    {
+                        "job_id": job.id,
+                        "file_name": upload_file.filename,
+                        "file_size": file_size,
+                    }
+                )
 
             except Exception as e:
                 # Clean up file on error
@@ -1089,7 +1135,12 @@ def _add_routes(app: FastAPI) -> None:
                     file_path.unlink()
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail={"error": {"code": "UPLOAD_FAILED", "message": f"Failed to process {upload_file.filename}: {e!s}"}}
+                    detail={
+                        "error": {
+                            "code": "UPLOAD_FAILED",
+                            "message": f"Failed to process {upload_file.filename}: {e!s}",
+                        }
+                    },
                 )
 
         # Build response
@@ -1133,7 +1184,7 @@ def _add_routes(app: FastAPI) -> None:
         if not url:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"error": {"code": "MISSING_URL", "message": "URL is required"}}
+                detail={"error": {"code": "MISSING_URL", "message": "URL is required"}},
             )
 
         # Create staging directory
@@ -1145,28 +1196,29 @@ def _add_routes(app: FastAPI) -> None:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, timeout=30.0, follow_redirects=True)
                 response.raise_for_status()
-                
+
                 # Determine filename
                 filename = url_data.get("filename")
                 if not filename:
                     # Try to get from Content-Disposition header
                     content_disp = response.headers.get("content-disposition", "")
                     if "filename=" in content_disp:
-                        filename = content_disp.split("filename=")[1].strip('"\'')
+                        filename = content_disp.split("filename=")[1].strip("\"'")
                     else:
                         # Extract from URL
                         from urllib.parse import urlparse
+
                         parsed = urlparse(url)
                         filename = Path(parsed.path).name or "downloaded_file"
-                
+
                 # Save file
                 file_id = str(uuid4())
                 file_ext = Path(filename).suffix
                 file_path = staging_dir / f"{file_id}{file_ext}"
-                
+
                 with open(file_path, "wb") as f:
                     f.write(response.content)
-                
+
                 file_size = len(response.content)
                 content_type = response.headers.get("content-type", "application/octet-stream")
 
@@ -1199,12 +1251,22 @@ def _add_routes(app: FastAPI) -> None:
         except httpx.HTTPError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"error": {"code": "DOWNLOAD_FAILED", "message": f"Failed to download from URL: {e!s}"}}
+                detail={
+                    "error": {
+                        "code": "DOWNLOAD_FAILED",
+                        "message": f"Failed to download from URL: {e!s}",
+                    }
+                },
             )
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={"error": {"code": "INGESTION_FAILED", "message": f"Failed to process URL: {e!s}"}}
+                detail={
+                    "error": {
+                        "code": "INGESTION_FAILED",
+                        "message": f"Failed to process URL: {e!s}",
+                    }
+                },
             )
 
     # Pipeline Configuration Routes
@@ -1227,26 +1289,28 @@ def _add_routes(app: FastAPI) -> None:
         # Build response
         pipeline_data = []
         for p in pipelines:
-            pipeline_data.append({
-                "id": str(p.id),
-                "name": p.name,
-                "description": p.description,
-                "config": p.config,
-                "version": p.version,
-                "is_active": bool(p.is_active),
-                "created_by": p.created_by,
-                "created_at": p.created_at.isoformat() if p.created_at else None,
-                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-            })
+            pipeline_data.append(
+                {
+                    "id": str(p.id),
+                    "name": p.name,
+                    "description": p.description,
+                    "config": p.config,
+                    "version": p.version,
+                    "is_active": bool(p.is_active),
+                    "created_by": p.created_by,
+                    "created_at": p.created_at.isoformat() if p.created_at else None,
+                    "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                }
+            )
 
         # Build pagination links
         links = ApiLinks(self=str(request.url))
         base_url = str(request.url).split("?")[0]
-        
+
         if page > 1:
-            links.prev = f"{base_url}?page={page-1}&limit={limit}"
+            links.prev = f"{base_url}?page={page - 1}&limit={limit}"
         if total is not None and (page * limit) < total:
-            links.next = f"{base_url}?page={page+1}&limit={limit}"
+            links.next = f"{base_url}?page={page + 1}&limit={limit}"
 
         return ApiResponse.create(
             data={
@@ -1281,14 +1345,20 @@ def _add_routes(app: FastAPI) -> None:
             )
 
         config = pipeline_data.get("config", {})
-        
+
         # Validate config
         repo = PipelineRepository(db)
         is_valid, errors = repo.validate_config(config)
         if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"error": {"code": "INVALID_CONFIG", "message": "Invalid configuration", "errors": errors}},
+                detail={
+                    "error": {
+                        "code": "INVALID_CONFIG",
+                        "message": "Invalid configuration",
+                        "errors": errors,
+                    }
+                },
             )
 
         # Create pipeline
@@ -1361,7 +1431,7 @@ def _add_routes(app: FastAPI) -> None:
         request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = PipelineRepository(db)
-        
+
         # Check if pipeline exists
         existing = await repo.get_by_id(pipeline_id)
         if existing is None:
@@ -1377,7 +1447,13 @@ def _add_routes(app: FastAPI) -> None:
             if not is_valid:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={"error": {"code": "INVALID_CONFIG", "message": "Invalid configuration", "errors": errors}},
+                    detail={
+                        "error": {
+                            "code": "INVALID_CONFIG",
+                            "message": "Invalid configuration",
+                            "errors": errors,
+                        }
+                    },
                 )
 
         # Update pipeline
@@ -1406,7 +1482,11 @@ def _add_routes(app: FastAPI) -> None:
             request_id=UUID(str(request_id)),
         ).model_dump()
 
-    @app.delete(f"{api_prefix}/pipelines/{{pipeline_id}}", status_code=status.HTTP_204_NO_CONTENT, tags=["Pipelines"])
+    @app.delete(
+        f"{api_prefix}/pipelines/{{pipeline_id}}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        tags=["Pipelines"],
+    )
     async def delete_pipeline(
         pipeline_id: str,
         db: AsyncSession = Depends(get_db),
@@ -1415,7 +1495,7 @@ def _add_routes(app: FastAPI) -> None:
         from src.db.repositories.pipeline import PipelineRepository
 
         repo = PipelineRepository(db)
-        
+
         # Check if pipeline exists
         existing = await repo.get_by_id(pipeline_id)
         if existing is None:
@@ -1475,7 +1555,7 @@ def _add_routes(app: FastAPI) -> None:
     ) -> dict[str, Any]:
         """Login and get JWT token."""
         from uuid import uuid4
-        
+
         from src.api.models import ApiResponse
         from src.auth.jwt import JWTHandler
         from src.config import settings
@@ -1485,11 +1565,16 @@ def _add_routes(app: FastAPI) -> None:
         # Validate credentials (simplified - in production use proper user auth)
         username = credentials.get("username")
         password = credentials.get("password")
-        
+
         if not username or not password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"error": {"code": "MISSING_CREDENTIALS", "message": "Username and password are required"}},
+                detail={
+                    "error": {
+                        "code": "MISSING_CREDENTIALS",
+                        "message": "Username and password are required",
+                    }
+                },
             )
 
         # Create JWT handler
@@ -1561,7 +1646,9 @@ def _add_routes(app: FastAPI) -> None:
                 detail={"error": {"code": "INVALID_TOKEN", "message": str(e)}},
             )
 
-    @app.post(f"{api_prefix}/auth/api-keys", status_code=status.HTTP_201_CREATED, tags=["Authentication"])
+    @app.post(
+        f"{api_prefix}/auth/api-keys", status_code=status.HTTP_201_CREATED, tags=["Authentication"]
+    )
     async def create_api_key(
         request: Request,
         key_data: dict[str, Any],
@@ -1569,14 +1656,14 @@ def _add_routes(app: FastAPI) -> None:
     ) -> dict[str, Any]:
         """Create a new API key."""
         from datetime import datetime, timedelta
-        
+
         from src.api.models import ApiResponse
         from src.db.repositories.api_key import APIKeyRepository
 
         request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = APIKeyRepository(db)
-        
+
         # Parse expiration
         expires_at = None
         expires_in_days = key_data.get("expires_in_days")
@@ -1622,23 +1709,25 @@ def _add_routes(app: FastAPI) -> None:
         # Build response (excluding key_hash)
         key_data = []
         for k in keys:
-            key_data.append({
-                "id": str(k.id),
-                "name": k.name,
-                "permissions": k.permissions,
-                "is_active": bool(k.is_active),
-                "created_by": k.created_by,
-                "created_at": k.created_at.isoformat() if k.created_at else None,
-                "expires_at": k.expires_at.isoformat() if k.expires_at else None,
-                "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
-            })
+            key_data.append(
+                {
+                    "id": str(k.id),
+                    "name": k.name,
+                    "permissions": k.permissions,
+                    "is_active": bool(k.is_active),
+                    "created_by": k.created_by,
+                    "created_at": k.created_at.isoformat() if k.created_at else None,
+                    "expires_at": k.expires_at.isoformat() if k.expires_at else None,
+                    "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
+                }
+            )
 
         links = ApiLinks(self=str(request.url))
         base_url = str(request.url).split("?")[0]
         if page > 1:
-            links.prev = f"{base_url}?page={page-1}&limit={limit}"
+            links.prev = f"{base_url}?page={page - 1}&limit={limit}"
         if total is not None and (page * limit) < total:
-            links.next = f"{base_url}?page={page+1}&limit={limit}"
+            links.next = f"{base_url}?page={page + 1}&limit={limit}"
 
         return ApiResponse.create(
             data={
@@ -1652,7 +1741,11 @@ def _add_routes(app: FastAPI) -> None:
             links=links,
         ).model_dump()
 
-    @app.delete(f"{api_prefix}/auth/api-keys/{{key_id}}", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
+    @app.delete(
+        f"{api_prefix}/auth/api-keys/{{key_id}}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        tags=["Authentication"],
+    )
     async def revoke_api_key(
         key_id: str,
         db: AsyncSession = Depends(get_db),
@@ -1685,17 +1778,22 @@ def _add_routes(app: FastAPI) -> None:
         # Validate required fields
         url = webhook_data.get("url")
         events = webhook_data.get("events", [])
-        
+
         if not url:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"error": {"code": "MISSING_URL", "message": "Webhook URL is required"}},
             )
-        
+
         if not events:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"error": {"code": "MISSING_EVENTS", "message": "At least one event type is required"}},
+                detail={
+                    "error": {
+                        "code": "MISSING_EVENTS",
+                        "message": "At least one event type is required",
+                    }
+                },
             )
 
         # Create subscription
@@ -1742,20 +1840,22 @@ def _add_routes(app: FastAPI) -> None:
         # Build response (excluding secret)
         sub_data = []
         for s in subs:
-            sub_data.append({
-                "id": str(s.id),
-                "url": s.url,
-                "events": s.events,
-                "is_active": bool(s.is_active),
-                "created_at": s.created_at.isoformat() if s.created_at else None,
-            })
+            sub_data.append(
+                {
+                    "id": str(s.id),
+                    "url": s.url,
+                    "events": s.events,
+                    "is_active": bool(s.is_active),
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                }
+            )
 
         links = ApiLinks(self=str(request.url))
         base_url = str(request.url).split("?")[0]
         if page > 1:
-            links.prev = f"{base_url}?page={page-1}&limit={limit}"
+            links.prev = f"{base_url}?page={page - 1}&limit={limit}"
         if total is not None and (page * limit) < total:
-            links.next = f"{base_url}?page={page+1}&limit={limit}"
+            links.next = f"{base_url}?page={page + 1}&limit={limit}"
 
         return ApiResponse.create(
             data={
@@ -1769,7 +1869,11 @@ def _add_routes(app: FastAPI) -> None:
             links=links,
         ).model_dump()
 
-    @app.delete(f"{api_prefix}/webhooks/{{webhook_id}}", status_code=status.HTTP_204_NO_CONTENT, tags=["Webhooks"])
+    @app.delete(
+        f"{api_prefix}/webhooks/{{webhook_id}}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        tags=["Webhooks"],
+    )
     async def delete_webhook(
         webhook_id: str,
         db: AsyncSession = Depends(get_db),
@@ -1804,11 +1908,12 @@ def _add_routes(app: FastAPI) -> None:
         request_id = getattr(request.state, "request_id", str(uuid4()))
 
         repo = WebhookRepository(db)
-        
+
         # Verify subscription exists
         sub = await repo.get_subscription(UUID(webhook_id))
         if not sub:
             from fastapi import status as fastapi_status
+
             raise HTTPException(
                 status_code=fastapi_status.HTTP_404_NOT_FOUND,
                 detail=f"Webhook '{webhook_id}' not found",
@@ -1824,25 +1929,27 @@ def _add_routes(app: FastAPI) -> None:
         # Build response
         delivery_data = []
         for d in deliveries:
-            delivery_data.append({
-                "id": str(d.id),
-                "event_type": d.event_type,
-                "status": d.status,
-                "attempts": d.attempts,
-                "max_attempts": d.max_attempts,
-                "http_status": d.http_status,
-                "last_error": d.last_error,
-                "created_at": d.created_at.isoformat() if d.created_at else None,
-                "delivered_at": d.delivered_at.isoformat() if d.delivered_at else None,
-                "next_retry_at": d.next_retry_at.isoformat() if d.next_retry_at else None,
-            })
+            delivery_data.append(
+                {
+                    "id": str(d.id),
+                    "event_type": d.event_type,
+                    "status": d.status,
+                    "attempts": d.attempts,
+                    "max_attempts": d.max_attempts,
+                    "http_status": d.http_status,
+                    "last_error": d.last_error,
+                    "created_at": d.created_at.isoformat() if d.created_at else None,
+                    "delivered_at": d.delivered_at.isoformat() if d.delivered_at else None,
+                    "next_retry_at": d.next_retry_at.isoformat() if d.next_retry_at else None,
+                }
+            )
 
         links = ApiLinks(self=str(request.url))
         base_url = str(request.url).split("?")[0]
         if page > 1:
-            links.prev = f"{base_url}?page={page-1}&limit={limit}"
+            links.prev = f"{base_url}?page={page - 1}&limit={limit}"
         if total is not None and (page * limit) < total:
-            links.next = f"{base_url}?page={page+1}&limit={limit}"
+            links.next = f"{base_url}?page={page + 1}&limit={limit}"
 
         return ApiResponse.create(
             data={
@@ -1889,30 +1996,32 @@ def _add_routes(app: FastAPI) -> None:
         # Build response
         log_data = []
         for log in logs:
-            log_data.append({
-                "id": str(log.id),
-                "timestamp": log.timestamp.isoformat() if log.timestamp else None,
-                "user_id": log.user_id,
-                "api_key_id": log.api_key_id,
-                "action": log.action,
-                "resource_type": log.resource_type,
-                "resource_id": log.resource_id,
-                "request_method": log.request_method,
-                "request_path": log.request_path,
-                "request_details": log.request_details,
-                "success": bool(log.success),
-                "error_message": log.error_message,
-                "ip_address": log.ip_address,
-                "user_agent": log.user_agent,
-                "duration_ms": log.duration_ms,
-            })
+            log_data.append(
+                {
+                    "id": str(log.id),
+                    "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+                    "user_id": log.user_id,
+                    "api_key_id": log.api_key_id,
+                    "action": log.action,
+                    "resource_type": log.resource_type,
+                    "resource_id": log.resource_id,
+                    "request_method": log.request_method,
+                    "request_path": log.request_path,
+                    "request_details": log.request_details,
+                    "success": bool(log.success),
+                    "error_message": log.error_message,
+                    "ip_address": log.ip_address,
+                    "user_agent": log.user_agent,
+                    "duration_ms": log.duration_ms,
+                }
+            )
 
         links = ApiLinks(self=str(request.url))
         base_url = str(request.url).split("?")[0]
         if page > 1:
-            links.prev = f"{base_url}?page={page-1}&limit={limit}"
+            links.prev = f"{base_url}?page={page - 1}&limit={limit}"
         if total is not None and (page * limit) < total:
-            links.next = f"{base_url}?page={page+1}&limit={limit}"
+            links.next = f"{base_url}?page={page + 1}&limit={limit}"
 
         return ApiResponse.create(
             data={

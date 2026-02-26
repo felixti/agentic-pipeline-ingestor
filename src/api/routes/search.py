@@ -4,7 +4,8 @@ This module provides endpoints for semantic, text, hybrid, and similar chunk
 search operations using the vector and text search services.
 """
 
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, TypeVar
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -19,6 +20,7 @@ from src.api.middleware.rate_limiter import (
     rate_limit_text_search,
 )
 from src.api.models import ApiResponse, DocumentChunkListItem
+from src.api.models.search import ChunkContext
 from src.api.validators.search_validators import (
     HybridSearchValidatorsMixin,
     SemanticSearchValidatorsMixin,
@@ -27,7 +29,12 @@ from src.api.validators.search_validators import (
     validate_language,
 )
 from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+from src.db.repositories.document_entity_repository import DocumentEntityRepository
 from src.observability.logging import get_logger
+from src.rag.contextual import ContextualRetrieval
+from src.rag.models import ContextType, ContextualContext, RankedChunk
+from src.rag.strategies.reranking import Chunk as ReRankChunk
+from src.rag.strategies.reranking import ReRanker
 from src.services.embedding_service import EmbeddingError, EmbeddingService
 from src.services.hybrid_search_service import (
     FusionMethod,
@@ -46,6 +53,21 @@ from src.services.vector_search_service import (
 router = APIRouter(prefix="/search", tags=["Search"])
 logger = get_logger(__name__)
 
+_reranker: ReRanker | None = None
+
+SearchResultType = TypeVar("SearchResultType", SearchResult, TextSearchResult, HybridSearchResult)
+
+
+def _get_reranker() -> ReRanker | None:
+    global _reranker
+    if _reranker is None:
+        try:
+            _reranker = ReRanker.from_settings()
+        except Exception as e:
+            logger.warning("reranker_initialization_failed", error=str(e))
+            return None
+    return _reranker
+
 
 # ============================================================================
 # Request Models
@@ -62,8 +84,11 @@ class SemanticSearchRequest(BaseModel, SemanticSearchValidatorsMixin):
         "json_schema_extra": {
             "example": {
                 "query_embedding": [0.1, 0.2, 0.3, 0.4],
+                "query_text": "neural network architecture",
                 "top_k": 10,
                 "min_similarity": 0.7,
+                "rerank": True,
+                "rerank_top_k": 5,
                 "filters": {"job_id": "123e4567-e89b-12d3-a456-426614174000"},
             }
         }
@@ -73,6 +98,12 @@ class SemanticSearchRequest(BaseModel, SemanticSearchValidatorsMixin):
         ...,
         description="Query embedding vector (list of floats)",
         min_length=1,
+    )
+    query_text: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=1024,
+        description="Optional query text used when rerank is enabled",
     )
     top_k: int = Field(
         default=10,
@@ -86,9 +117,50 @@ class SemanticSearchRequest(BaseModel, SemanticSearchValidatorsMixin):
         le=1.0,
         description="Minimum similarity threshold (0-1)",
     )
+    min_quality: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Minimum quality score filter (0.0-1.0)",
+    )
     filters: dict[str, Any] = Field(
         default_factory=dict,
         description="Optional filters (e.g., job_id)",
+    )
+    entity_filter: str | None = Field(
+        default=None,
+        description="Filter by entity text",
+    )
+    entity_type_filter: str | None = Field(
+        default=None,
+        description="Filter by entity type",
+    )
+    deduplicate: bool = Field(
+        default=False,
+        description="Deduplicate results by content_hash, keeping highest-score result",
+    )
+    rerank: bool = Field(
+        default=False,
+        description="Apply cross-encoder reranking to results",
+    )
+    rerank_top_k: int | None = Field(
+        default=None,
+        ge=1,
+        le=100,
+        description="Number of results to return after reranking (default: same as top_k)",
+    )
+    include_context: bool = Field(
+        default=False,
+        description="Include surrounding context for each result",
+    )
+    context_type: ContextType | None = Field(
+        default=ContextType.WINDOW,
+        description="Context retrieval strategy",
+    )
+    context_window_size: int = Field(
+        default=1,
+        ge=1,
+        description="Number of neighboring chunks to include (for WINDOW type)",
     )
 
     @field_validator("query_embedding")
@@ -148,6 +220,18 @@ class TextSearchRequest(BaseModel, TextSearchValidatorsMixin):
         default_factory=dict,
         description="Optional filters (e.g., job_id)",
     )
+    entity_filter: str | None = Field(
+        default=None,
+        description="Filter by entity text",
+    )
+    entity_type_filter: str | None = Field(
+        default=None,
+        description="Filter by entity type",
+    )
+    deduplicate: bool = Field(
+        default=False,
+        description="Deduplicate results by content_hash, keeping highest-score result",
+    )
 
     @field_validator("query")
     @classmethod
@@ -186,9 +270,27 @@ class SemanticTextSearchRequest(BaseModel):
         le=1.0,
         description="Minimum similarity threshold (0-1)",
     )
+    min_quality: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Minimum quality score filter (0.0-1.0)",
+    )
     filters: dict[str, Any] = Field(
         default_factory=dict,
         description="Optional filters (e.g., job_id)",
+    )
+    entity_filter: str | None = Field(
+        default=None,
+        description="Filter by entity text",
+    )
+    entity_type_filter: str | None = Field(
+        default=None,
+        description="Filter by entity type",
+    )
+    deduplicate: bool = Field(
+        default=False,
+        description="Deduplicate results by content_hash, keeping highest-score result",
     )
 
     @field_validator("query")
@@ -214,6 +316,8 @@ class HybridSearchRequest(BaseModel, HybridSearchValidatorsMixin):
                 "text_weight": 0.3,
                 "fusion_method": "weighted_sum",
                 "min_similarity": 0.5,
+                "rerank": True,
+                "rerank_top_k": 5,
                 "filters": {},
             }
         }
@@ -254,9 +358,50 @@ class HybridSearchRequest(BaseModel, HybridSearchValidatorsMixin):
         le=1.0,
         description="Minimum similarity threshold for vector search",
     )
+    min_quality: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Minimum quality score filter (0.0-1.0)",
+    )
     filters: dict[str, Any] = Field(
         default_factory=dict,
         description="Optional filters (e.g., job_id)",
+    )
+    entity_filter: str | None = Field(
+        default=None,
+        description="Filter by entity text",
+    )
+    entity_type_filter: str | None = Field(
+        default=None,
+        description="Filter by entity type",
+    )
+    deduplicate: bool = Field(
+        default=False,
+        description="Deduplicate results by content_hash, keeping highest-score result",
+    )
+    rerank: bool = Field(
+        default=False,
+        description="Apply cross-encoder reranking to results",
+    )
+    rerank_top_k: int | None = Field(
+        default=None,
+        ge=1,
+        le=100,
+        description="Number of results to return after reranking (default: same as top_k)",
+    )
+    include_context: bool = Field(
+        default=False,
+        description="Include surrounding context for each result",
+    )
+    context_type: ContextType | None = Field(
+        default=ContextType.WINDOW,
+        description="Context retrieval strategy",
+    )
+    context_window_size: int = Field(
+        default=1,
+        ge=1,
+        description="Number of neighboring chunks to include (for WINDOW type)",
     )
 
     @field_validator("query")
@@ -302,6 +447,11 @@ class SearchResultItem(BaseModel):
     content: str = Field(..., description="Text content of the chunk")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Chunk metadata")
     similarity_score: float = Field(..., description="Similarity score (0-1)")
+    rerank_score: float | None = Field(
+        default=None,
+        description="Reranking score if applied",
+    )
+    context: ChunkContext | None = Field(default=None, description="Context if requested")
     rank: int = Field(..., ge=1, description="Result rank (1-based)")
 
 
@@ -382,6 +532,11 @@ class HybridSearchResultItem(BaseModel):
         default=None,
         description="Rank in text search results",
     )
+    rerank_score: float | None = Field(
+        default=None,
+        description="Reranking score if applied",
+    )
+    context: ChunkContext | None = Field(default=None, description="Context if requested")
     rank: int = Field(..., ge=1, description="Final rank (1-based)")
     fusion_method: str = Field(..., description="Fusion method used")
     content_source_name: str | None = Field(
@@ -406,6 +561,11 @@ class SearchResultsResponse(BaseModel):
     results: list[SearchResultItem] = Field(default_factory=list, description="Search results")
     total: int = Field(..., ge=0, description="Total number of results")
     query_time_ms: float = Field(..., description="Query execution time in milliseconds")
+    deduplicated_count: int | None = Field(
+        default=None,
+        ge=0,
+        description="Number of duplicate results removed by content_hash deduplication",
+    )
 
 
 class TextSearchResultsResponse(BaseModel):
@@ -414,6 +574,11 @@ class TextSearchResultsResponse(BaseModel):
     results: list[TextSearchResultItem] = Field(default_factory=list, description="Search results")
     total: int = Field(..., ge=0, description="Total number of results")
     query_time_ms: float = Field(..., description="Query execution time in milliseconds")
+    deduplicated_count: int | None = Field(
+        default=None,
+        ge=0,
+        description="Number of duplicate results removed by content_hash deduplication",
+    )
 
 
 class HybridSearchResultsResponse(BaseModel):
@@ -424,6 +589,11 @@ class HybridSearchResultsResponse(BaseModel):
     )
     total: int = Field(..., ge=0, description="Total number of results")
     query_time_ms: float = Field(..., description="Query execution time in milliseconds")
+    deduplicated_count: int | None = Field(
+        default=None,
+        ge=0,
+        description="Number of duplicate results removed by content_hash deduplication",
+    )
 
 
 # ============================================================================
@@ -476,6 +646,148 @@ def _get_content_source_name(chunk: Any) -> str | None:
     return None
 
 
+def _get_result_score(result: SearchResult | TextSearchResult | HybridSearchResult) -> float:
+    if hasattr(result, "similarity_score"):
+        return float(getattr(result, "similarity_score"))
+    if hasattr(result, "rank_score"):
+        return float(getattr(result, "rank_score"))
+    return float(getattr(result, "hybrid_score"))
+
+
+def _get_contextual_retrieval(
+    session: AsyncSession,
+    context_window_size: int = 1,
+) -> ContextualRetrieval:
+    contextual = ContextualRetrieval(db_session=session)
+    contextual.config.window.window_size = context_window_size
+    return contextual
+
+
+def _to_chunk_context(context: ContextualContext) -> ChunkContext:
+    hierarchy_path = " > ".join(context.hierarchy_path) if context.hierarchy_path else None
+    previous_chunks = [context.previous_chunk_content] if context.previous_chunk_content else None
+    next_chunks = [context.next_chunk_content] if context.next_chunk_content else None
+    section_headers = context.section_headers or None
+    return ChunkContext(
+        previous_chunks=previous_chunks,
+        next_chunks=next_chunks,
+        document_title=context.document_title,
+        section_headers=section_headers,
+        hierarchy_path=hierarchy_path,
+    )
+
+
+def _merge_context_into_items(
+    items: list[SearchResultItem] | list[HybridSearchResultItem],
+    enhanced_chunks: list[Any],
+) -> None:
+    by_chunk_id = {enhanced.chunk_id: enhanced for enhanced in enhanced_chunks}
+    for item in items:
+        enhanced = by_chunk_id.get(item.chunk_id)
+        if enhanced is None:
+            continue
+        item.context = _to_chunk_context(enhanced.context)
+
+
+def _deduplicate_results_by_hash(
+    results: list[SearchResultType],
+) -> list[SearchResultType]:
+    seen_hashes: dict[str, tuple[float, int]] = {}
+    deduped: list[SearchResultType] = []
+
+    for result in results:
+        content_hash = getattr(result.chunk, "content_hash", None)
+        if content_hash is None:
+            deduped.append(result)
+            continue
+
+        score = _get_result_score(result)
+        existing = seen_hashes.get(content_hash)
+
+        if existing is None:
+            seen_hashes[content_hash] = (score, len(deduped))
+            deduped.append(result)
+            continue
+
+        existing_score, existing_index = existing
+        if score > existing_score:
+            deduped[existing_index] = result
+            seen_hashes[content_hash] = (score, existing_index)
+
+    for rank, result in enumerate(deduped, start=1):
+        result.rank = rank
+
+    return deduped
+
+
+async def _filter_results_by_entity(
+    db: AsyncSession,
+    results: list[SearchResultType],
+    entity_filter: str | None,
+    entity_type_filter: str | None,
+) -> list[SearchResultType]:
+    normalized_entity_filter = (entity_filter or "").strip()
+    normalized_entity_type = (entity_type_filter or "").strip()
+
+    if not normalized_entity_filter and not normalized_entity_type:
+        return results
+
+    entity_repo = DocumentEntityRepository(db)
+    chunk_ids = await entity_repo.search_by_entity(
+        entity_text=normalized_entity_filter,
+        entity_type=normalized_entity_type or None,
+    )
+
+    if not chunk_ids:
+        return []
+
+    allowed_chunk_ids = set(chunk_ids)
+    filtered = [result for result in results if result.chunk.id in allowed_chunk_ids]
+
+    for rank, result in enumerate(filtered, start=1):
+        result.rank = rank
+
+    return filtered
+
+
+def _to_reranker_chunks(results: Sequence[Any]) -> list[ReRankChunk]:
+    chunks: list[ReRankChunk] = []
+    for result in results:
+        chunk = result.chunk
+        metadata = getattr(chunk, "chunk_metadata", None)
+        if not isinstance(metadata, dict):
+            metadata = getattr(chunk, "metadata", None)
+        if not isinstance(metadata, dict):
+            metadata = {}
+
+        chunks.append(
+            ReRankChunk(
+                chunk_id=str(chunk.id),
+                content=str(chunk.content),
+                metadata=metadata,
+            )
+        )
+    return chunks
+
+
+def _merge_rerank_results(
+    candidate_results: list[SearchResultType],
+    reranked_results: list[RankedChunk],
+) -> list[SearchResultType]:
+    result_map = {str(result.chunk.id): result for result in candidate_results}
+    merged: list[SearchResultType] = []
+
+    for reranked in reranked_results:
+        result = result_map.get(reranked.chunk_id)
+        if result is None:
+            continue
+        result.rank = reranked.rank
+        setattr(result, "rerank_score", float(reranked.score))
+        merged.append(result)
+
+    return merged
+
+
 def _search_result_to_item(result: SearchResult) -> SearchResultItem:
     """Convert a SearchResult to a SearchResultItem.
 
@@ -493,6 +805,7 @@ def _search_result_to_item(result: SearchResult) -> SearchResultItem:
         content=str(chunk.content),
         metadata=dict(chunk.chunk_metadata or {}),
         similarity_score=result.similarity_score,
+        rerank_score=getattr(result, "rerank_score", None),
         rank=result.rank,
     )
 
@@ -552,6 +865,7 @@ def _hybrid_search_result_to_item(result: HybridSearchResult) -> HybridSearchRes
         text_score=result.text_score,
         vector_rank=result.vector_rank,
         text_rank=result.text_rank,
+        rerank_score=getattr(result, "rerank_score", None),
         rank=result.rank,
         fusion_method=result.fusion_method,
         content_source_name=_get_content_source_name(chunk),
@@ -616,6 +930,8 @@ async def semantic_search(
 
         # Process job_id filter if present
         filters = dict(search_request.filters)
+        if search_request.min_quality is not None:
+            filters["min_quality"] = search_request.min_quality
         if "job_id" in filters and isinstance(filters["job_id"], str):
             try:
                 filters["job_id"] = parse_uuid(filters["job_id"])
@@ -626,15 +942,69 @@ async def semantic_search(
                 ) from e
 
         # Perform search
+        top_k = search_request.top_k
         results = await service.search_by_vector(
             query_embedding=search_request.query_embedding,
-            top_k=search_request.top_k,
+            top_k=top_k,
             min_similarity=search_request.min_similarity,
             filters=filters or None,
         )
 
+        if search_request.rerank:
+            reranker = _get_reranker()
+            rerank_query = (search_request.query_text or "").strip()
+            if reranker is None:
+                logger.warning("semantic_search_reranker_unavailable", request_id=request_id)
+            elif not rerank_query:
+                logger.warning(
+                    "semantic_search_rerank_query_missing",
+                    request_id=request_id,
+                )
+            else:
+                try:
+                    candidate_top_k = min(top_k * 3, 100)
+                    candidate_results = await service.search_by_vector(
+                        query_embedding=search_request.query_embedding,
+                        top_k=candidate_top_k,
+                        min_similarity=search_request.min_similarity,
+                        filters=filters or None,
+                    )
+                    reranked = await reranker.rerank(
+                        rerank_query,
+                        _to_reranker_chunks(candidate_results),
+                        top_k=search_request.rerank_top_k or top_k,
+                    )
+                    results = _merge_rerank_results(candidate_results, reranked)
+                except Exception as e:
+                    logger.warning(
+                        "semantic_search_rerank_failed",
+                        request_id=request_id,
+                        error=str(e),
+                    )
+
+        results = await _filter_results_by_entity(
+            db,
+            results,
+            search_request.entity_filter,
+            search_request.entity_type_filter,
+        )
+
+        deduplicated_count: int | None = None
+        if search_request.deduplicate:
+            original_count = len(results)
+            results = _deduplicate_results_by_hash(results)
+            deduplicated_count = original_count - len(results)
+
         # Convert to response items
         items = [_search_result_to_item(r) for r in results]
+
+        if search_request.include_context and results:
+            contextual = _get_contextual_retrieval(db, search_request.context_window_size)
+            enhanced_chunks = await contextual.enhance_chunks_batch(
+                [r.chunk for r in results],
+                search_request.context_type or ContextType.WINDOW,
+            )
+            _merge_context_into_items(items, enhanced_chunks)
 
         query_time_ms = (time.monotonic() - start_time) * 1000
 
@@ -649,6 +1019,7 @@ async def semantic_search(
             results=items,
             total=len(items),
             query_time_ms=round(query_time_ms, 2),
+            deduplicated_count=deduplicated_count,
         )
 
     except InvalidEmbeddingError as e:
@@ -711,6 +1082,8 @@ async def semantic_text_search(
         service = VectorSearchService(repo)
 
         filters = dict(search_request.filters)
+        if search_request.min_quality is not None:
+            filters["min_quality"] = search_request.min_quality
         if "job_id" in filters and isinstance(filters["job_id"], str):
             try:
                 filters["job_id"] = parse_uuid(filters["job_id"])
@@ -729,6 +1102,19 @@ async def semantic_text_search(
             filters=filters or None,
         )
 
+        results = await _filter_results_by_entity(
+            db,
+            results,
+            search_request.entity_filter,
+            search_request.entity_type_filter,
+        )
+
+        deduplicated_count: int | None = None
+        if search_request.deduplicate:
+            original_count = len(results)
+            results = _deduplicate_results_by_hash(results)
+            deduplicated_count = original_count - len(results)
+
         items = [_search_result_to_item(r) for r in results]
         query_time_ms = (time.monotonic() - start_time) * 1000
 
@@ -743,6 +1129,7 @@ async def semantic_text_search(
             results=items,
             total=len(items),
             query_time_ms=round(query_time_ms, 2),
+            deduplicated_count=deduplicated_count,
         )
 
     except EmbeddingError as e:
@@ -856,6 +1243,19 @@ async def text_search(
             filters=filters or None,
         )
 
+        results = await _filter_results_by_entity(
+            db,
+            results,
+            search_request.entity_filter,
+            search_request.entity_type_filter,
+        )
+
+        deduplicated_count: int | None = None
+        if search_request.deduplicate:
+            original_count = len(results)
+            results = _deduplicate_results_by_hash(results)
+            deduplicated_count = original_count - len(results)
+
         # Convert to response items
         items = [_text_search_result_to_item(r) for r in results]
 
@@ -872,6 +1272,7 @@ async def text_search(
             results=items,
             total=len(items),
             query_time_ms=round(query_time_ms, 2),
+            deduplicated_count=deduplicated_count,
         )
 
     except Exception as e:
@@ -964,6 +1365,8 @@ async def hybrid_search(
 
         # Process job_id filter if present
         filters = dict(search_request.filters)
+        if search_request.min_quality is not None:
+            filters["min_quality"] = search_request.min_quality
         if "job_id" in filters and isinstance(filters["job_id"], str):
             try:
                 filters["job_id"] = parse_uuid(filters["job_id"])
@@ -979,10 +1382,11 @@ async def hybrid_search(
             fusion_method = FusionMethod.RECIPROCAL_RANK_FUSION
 
         embedding_result = await embedder.embed_text(search_request.query)
+        top_k = search_request.top_k
         hybrid_results = await hybrid_service.search_with_embedding(
             query_embedding=embedding_result.embedding,
             query_text=search_request.query,
-            top_k=search_request.top_k,
+            top_k=top_k,
             min_similarity=search_request.min_similarity,
             vector_weight=search_request.vector_weight,
             text_weight=search_request.text_weight,
@@ -990,7 +1394,58 @@ async def hybrid_search(
             filters=filters or None,
         )
 
+        if search_request.rerank:
+            reranker = _get_reranker()
+            if reranker is None:
+                logger.warning("hybrid_search_reranker_unavailable", request_id=request_id)
+            else:
+                try:
+                    candidate_top_k = min(top_k * 3, 100)
+                    candidate_results = await hybrid_service.search_with_embedding(
+                        query_embedding=embedding_result.embedding,
+                        query_text=search_request.query,
+                        top_k=candidate_top_k,
+                        min_similarity=search_request.min_similarity,
+                        vector_weight=search_request.vector_weight,
+                        text_weight=search_request.text_weight,
+                        fusion_method=fusion_method,
+                        filters=filters or None,
+                    )
+                    reranked = await reranker.rerank(
+                        search_request.query,
+                        _to_reranker_chunks(candidate_results),
+                        top_k=search_request.rerank_top_k or top_k,
+                    )
+                    hybrid_results = _merge_rerank_results(candidate_results, reranked)
+                except Exception as e:
+                    logger.warning(
+                        "hybrid_search_rerank_failed",
+                        request_id=request_id,
+                        error=str(e),
+                    )
+
+        hybrid_results = await _filter_results_by_entity(
+            db,
+            hybrid_results,
+            search_request.entity_filter,
+            search_request.entity_type_filter,
+        )
+
+        deduplicated_count: int | None = None
+        if search_request.deduplicate:
+            original_count = len(hybrid_results)
+            hybrid_results = _deduplicate_results_by_hash(hybrid_results)
+            deduplicated_count = original_count - len(hybrid_results)
+
         items = [_hybrid_search_result_to_item(r) for r in hybrid_results]
+
+        if search_request.include_context and hybrid_results:
+            contextual = _get_contextual_retrieval(db, search_request.context_window_size)
+            enhanced_chunks = await contextual.enhance_chunks_batch(
+                [r.chunk for r in hybrid_results],
+                search_request.context_type or ContextType.WINDOW,
+            )
+            _merge_context_into_items(items, enhanced_chunks)
 
         query_time_ms = (time.monotonic() - start_time) * 1000
 
@@ -1006,6 +1461,7 @@ async def hybrid_search(
             results=items,
             total=len(items),
             query_time_ms=round(query_time_ms, 2),
+            deduplicated_count=deduplicated_count,
         )
 
     except Exception as e:

@@ -6,6 +6,7 @@ TextSearchService (BM25/fuzzy matching) using either weighted sum or
 Reciprocal Rank Fusion (RRF) methods.
 """
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -29,11 +30,13 @@ class HybridSearchError(Exception):
 
 class InvalidFusionMethodError(HybridSearchError):
     """Raised when an invalid fusion method is specified."""
+
     pass
 
 
 class InvalidWeightError(HybridSearchError):
     """Raised when weights are invalid."""
+
     pass
 
 
@@ -157,42 +160,42 @@ class HybridSearchService:
     ) -> list[HybridSearchResult]:
         """Perform hybrid search by converting text to embedding.
 
-        Generates an embedding from the query text using the provided embedder,
-        then performs both vector and text searches and combines results using
-the specified fusion method.
+                Generates an embedding from the query text using the provided embedder,
+                then performs both vector and text searches and combines results using
+        the specified fusion method.
 
-        Args:
-            query_text: Natural language search query
-            embedder: Embedding model with an `encode` method that returns
-                a vector or converts text to embeddings
-            top_k: Maximum number of results to return (default: 10)
-            vector_weight: Weight for vector scores in weighted sum (default: 0.7)
-            text_weight: Weight for text scores in weighted sum (default: 0.3)
-            fusion_method: Fusion method to use (default: WEIGHTED_SUM)
-            min_similarity: Minimum similarity threshold (default: 0.5)
-            filters: Optional filters to apply:
-                - job_id: Filter by specific job UUID
-                - metadata: Dict of metadata key-value pairs to match
-            fallback_mode: Override default fallback strategy
+                Args:
+                    query_text: Natural language search query
+                    embedder: Embedding model with an `encode` method that returns
+                        a vector or converts text to embeddings
+                    top_k: Maximum number of results to return (default: 10)
+                    vector_weight: Weight for vector scores in weighted sum (default: 0.7)
+                    text_weight: Weight for text scores in weighted sum (default: 0.3)
+                    fusion_method: Fusion method to use (default: WEIGHTED_SUM)
+                    min_similarity: Minimum similarity threshold (default: 0.5)
+                    filters: Optional filters to apply:
+                        - job_id: Filter by specific job UUID
+                        - metadata: Dict of metadata key-value pairs to match
+                    fallback_mode: Override default fallback strategy
 
-        Returns:
-            List of HybridSearchResult ordered by hybrid_score descending
+                Returns:
+                    List of HybridSearchResult ordered by hybrid_score descending
 
-        Raises:
-            HybridSearchError: If embedding generation or search fails
-            InvalidWeightError: If weights don't sum to 1.0
-            InvalidFusionMethodError: If fusion method is invalid
+                Raises:
+                    HybridSearchError: If embedding generation or search fails
+                    InvalidWeightError: If weights don't sum to 1.0
+                    InvalidFusionMethodError: If fusion method is invalid
 
-        Example:
-            >>> results = await service.search(
-            ...     query_text="neural network architecture",
-            ...     embedder=embedding_model,
-            ...     top_k=10,
-            ...     vector_weight=0.6,
-            ...     text_weight=0.4,
-            ...     fusion_method=FusionMethod.RECIPROCAL_RANK_FUSION,
-            ...     filters={"job_id": job_uuid}
-            ... )
+                Example:
+                    >>> results = await service.search(
+                    ...     query_text="neural network architecture",
+                    ...     embedder=embedding_model,
+                    ...     top_k=10,
+                    ...     vector_weight=0.6,
+                    ...     text_weight=0.4,
+                    ...     fusion_method=FusionMethod.RECIPROCAL_RANK_FUSION,
+                    ...     filters={"job_id": job_uuid}
+                    ... )
         """
         start_time = time.monotonic()
 
@@ -326,20 +329,40 @@ the specified fusion method.
         )
 
         try:
-            # Run both searches
-            # Note: We run sequentially since we need the same session
-            vector_results = await self.vector_service.search_by_vector(
+            # Run both searches in parallel. We allow partial results: if one search fails,
+            # we keep the successful search output and continue fusion/fallback processing.
+            vector_task = self.vector_service.search_by_vector(
                 query_embedding=query_embedding,
                 top_k=top_k,
                 min_similarity=min_similarity,
                 filters=filters,
             )
 
-            text_results = await self.text_service.search_by_text(
+            text_task = self.text_service.search_by_text(
                 query=query_text,
                 top_k=top_k,
                 filters=filters,
             )
+
+            vector_results, text_results = await asyncio.gather(
+                vector_task,
+                text_task,
+                return_exceptions=True,
+            )
+
+            if isinstance(vector_results, BaseException):
+                self.logger.error(
+                    "hybrid_search_vector_search_failed",
+                    error=str(vector_results),
+                )
+                vector_results = []
+
+            if isinstance(text_results, BaseException):
+                self.logger.error(
+                    "hybrid_search_text_search_failed",
+                    error=str(text_results),
+                )
+                text_results = []
 
             self.logger.debug(
                 "search_results_collected",
@@ -363,14 +386,10 @@ the specified fusion method.
                     vector_results, text_results, vector_weight, text_weight
                 )
             elif fusion_method == FusionMethod.RECIPROCAL_RANK_FUSION:
-                fused_results = self._fuse_rrf(
-                    vector_results, text_results, k=self.config.rrf_k
-                )
+                fused_results = self._fuse_rrf(vector_results, text_results, k=self.config.rrf_k)
             else:
                 # Should not reach here due to validation
-                raise InvalidFusionMethodError(
-                    f"Unsupported fusion method: {fusion_method}"
-                )
+                raise InvalidFusionMethodError(f"Unsupported fusion method: {fusion_method}")
 
             # Sort by hybrid score descending and assign final ranks
             fused_results.sort(key=lambda x: x.hybrid_score, reverse=True)
@@ -460,7 +479,9 @@ the specified fusion method.
             hybrid_score = (vector_weight * vector_score) + (text_weight * text_score)
 
             # Get the chunk (prefer vector result if available, otherwise text)
-            chunk = vector_result.chunk if vector_result else text_result.chunk if text_result else None
+            chunk = (
+                vector_result.chunk if vector_result else text_result.chunk if text_result else None
+            )
 
             fused_results.append(
                 HybridSearchResult(
@@ -564,9 +585,7 @@ the specified fusion method.
 
         return fused_results
 
-    def _normalize_scores(
-        self, results: list[TextSearchResult]
-    ) -> dict[str, float]:
+    def _normalize_scores(self, results: list[TextSearchResult]) -> dict[str, float]:
         """Normalize text search scores to 0-1 range.
 
         Text search scores (BM25) can vary widely, so we normalize them
@@ -718,6 +737,5 @@ the specified fusion method.
         """
         if mode not in self.FALLBACK_MODES:
             raise HybridSearchError(
-                f"Invalid fallback mode: {mode}. "
-                f"Must be one of: {self.FALLBACK_MODES}"
+                f"Invalid fallback mode: {mode}. Must be one of: {self.FALLBACK_MODES}"
             )

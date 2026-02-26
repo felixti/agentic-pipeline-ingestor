@@ -6,19 +6,25 @@ system, including embedding settings, HNSW index parameters, and search defaults
 
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
+
+
+class ConfigurationError(ValueError):
+    pass
 
 
 @dataclass
 class EmbeddingConfig:
     """Configuration for text embedding generation.
-    
+
     Attributes:
         model: Model identifier for embeddings (litellm format)
         dimensions: Expected embedding dimensions (must match model output)
@@ -26,16 +32,19 @@ class EmbeddingConfig:
         max_tokens: Maximum tokens per chunk for truncation
         provider_params: Provider-specific parameters (timeout, retries, etc.)
     """
+
     # Default to Azure OpenAI (primary) with fallback support
     model: str = "azure/text-embedding-3-small"
     dimensions: int = 1536
     batch_size: int = 100
     max_tokens: int = 8192
-    provider_params: dict[str, Any] = field(default_factory=lambda: {
-        "timeout": 30,
-        "retries": 3,
-        "backoff_factor": 2.0,
-    })
+    provider_params: dict[str, Any] = field(
+        default_factory=lambda: {
+            "timeout": 30,
+            "retries": 3,
+            "backoff_factor": 2.0,
+        }
+    )
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -45,7 +54,7 @@ class EmbeddingConfig:
             "text-embedding-ada-002": 1536,
             "text-embedding-3-large": 3072,
         }
-        
+
         # Check if known model has correct dimensions
         for model_name, expected_dims in model_dimension_map.items():
             if model_name in self.model and self.dimensions != expected_dims:
@@ -57,15 +66,24 @@ class EmbeddingConfig:
 
 
 @dataclass
+class SparseEmbeddingConfig:
+    enabled: bool = False
+    model: str = "splade-v3"
+    dimensions: int = 30522
+    batch_size: int = 50
+
+
+@dataclass
 class SearchConfig:
     """Configuration for vector search operations.
-    
+
     Attributes:
         default_top_k: Default number of results to return
         max_top_k: Maximum allowed top_k to prevent abuse
         default_min_similarity: Default minimum similarity threshold (0-1)
         query_timeout_ms: Query timeout in milliseconds
     """
+
     default_top_k: int = 10
     max_top_k: int = 100
     default_min_similarity: float = 0.7
@@ -75,16 +93,17 @@ class SearchConfig:
 @dataclass
 class HNSWIndexConfig:
     """Configuration for HNSW (Hierarchical Navigable Small World) index.
-    
+
     These parameters affect the quality, build time, and search performance
     of the approximate nearest neighbor index used by pgvector.
-    
+
     Attributes:
         hnsw_m: Number of bi-directional links per node (higher = better recall)
         hnsw_ef_construction: Dynamic candidate list size during build
         hnsw_ef_search: Dynamic candidate list size during search
         distance_metric: Distance metric for indexing (cosine, l2, inner_product)
     """
+
     hnsw_m: int = 16
     hnsw_ef_construction: int = 64
     hnsw_ef_search: int = 32
@@ -95,21 +114,21 @@ class HNSWIndexConfig:
         valid_metrics = ["cosine", "l2", "inner_product"]
         if self.distance_metric not in valid_metrics:
             raise ValueError(
-                f"Invalid distance_metric: {self.distance_metric}. "
-                f"Must be one of: {valid_metrics}"
+                f"Invalid distance_metric: {self.distance_metric}. Must be one of: {valid_metrics}"
             )
 
 
 @dataclass
 class HybridSearchConfig:
     """Configuration for hybrid (vector + text) search.
-    
+
     Attributes:
         default_vector_weight: Default weight for vector search scores (0-1)
         default_text_weight: Default weight for text search scores (0-1)
         rrf_k: RRF (Reciprocal Rank Fusion) constant
         fallback_strategy: Strategy when one search type fails
     """
+
     default_vector_weight: float = 0.7
     default_text_weight: float = 0.3
     rrf_k: int = 60
@@ -123,7 +142,7 @@ class HybridSearchConfig:
                 f"Invalid fallback_strategy: {self.fallback_strategy}. "
                 f"Must be one of: {valid_strategies}"
             )
-        
+
         # Validate weights sum to approximately 1.0
         total_weight = self.default_vector_weight + self.default_text_weight
         if not (0.99 <= total_weight <= 1.01):
@@ -136,13 +155,14 @@ class HybridSearchConfig:
 @dataclass
 class CacheConfig:
     """Configuration for embedding result caching.
-    
+
     Attributes:
         enabled: Whether caching is enabled
         provider: Cache provider (memory, redis)
         ttl_seconds: Time-to-live for cached entries
         max_size: Maximum cache size (for memory provider)
     """
+
     enabled: bool = True
     provider: str = "memory"
     ttl_seconds: int = 3600
@@ -153,15 +173,14 @@ class CacheConfig:
         valid_providers = ["memory", "redis"]
         if self.provider not in valid_providers:
             raise ValueError(
-                f"Invalid provider: {self.provider}. "
-                f"Must be one of: {valid_providers}"
+                f"Invalid provider: {self.provider}. Must be one of: {valid_providers}"
             )
 
 
 @dataclass
 class PipelineConfig:
     """Configuration for pipeline integration.
-    
+
     Attributes:
         auto_generate_embeddings: Auto-generate embeddings during pipeline
         chunking_strategy: Strategy for text chunking
@@ -170,6 +189,7 @@ class PipelineConfig:
         min_chunk_size: Minimum chunk size (smaller chunks filtered)
         store_chunks: Store chunks in database during processing
     """
+
     auto_generate_embeddings: bool = True
     chunking_strategy: str = "semantic"
     chunk_size: int = 1000
@@ -190,21 +210,24 @@ class PipelineConfig:
 @dataclass
 class VectorStoreConfig:
     """Complete vector store configuration.
-    
+
     This is the main configuration class that aggregates all vector store
     settings including embedding, search, index, and pipeline integration.
-    
+
     Attributes:
         enabled: Whether vector store functionality is enabled
         embedding: Embedding generation configuration
+        sparse_embedding: Sparse embedding generation configuration
         search: Search operation configuration
         index: HNSW index configuration
         hybrid: Hybrid search configuration
         cache: Embedding cache configuration
         pipeline: Pipeline integration configuration
     """
+
     enabled: bool = True
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
+    sparse_embedding: SparseEmbeddingConfig = field(default_factory=SparseEmbeddingConfig)
     search: SearchConfig = field(default_factory=SearchConfig)
     index: HNSWIndexConfig = field(default_factory=HNSWIndexConfig)
     hybrid: HybridSearchConfig = field(default_factory=HybridSearchConfig)
@@ -214,13 +237,13 @@ class VectorStoreConfig:
     @classmethod
     def from_yaml(cls, config_path: str | Path) -> "VectorStoreConfig":
         """Load configuration from YAML file.
-        
+
         Args:
             config_path: Path to YAML configuration file
-            
+
         Returns:
             Loaded VectorStoreConfig instance
-            
+
         Raises:
             FileNotFoundError: If config file doesn't exist
             ValueError: If config file is invalid
@@ -250,11 +273,22 @@ class VectorStoreConfig:
             dimensions=embedding_data.get("dimensions", 1536),
             batch_size=embedding_data.get("batch_size", 100),
             max_tokens=embedding_data.get("max_tokens", 8192),
-            provider_params=embedding_data.get("provider_params", {
-                "timeout": 30,
-                "retries": 3,
-                "backoff_factor": 2.0,
-            }),
+            provider_params=embedding_data.get(
+                "provider_params",
+                {
+                    "timeout": 30,
+                    "retries": 3,
+                    "backoff_factor": 2.0,
+                },
+            ),
+        )
+
+        sparse_embedding_data = vs_data.get("sparse_embedding", {})
+        sparse_embedding = SparseEmbeddingConfig(
+            enabled=sparse_embedding_data.get("enabled", False),
+            model=sparse_embedding_data.get("model", "splade-v3"),
+            dimensions=sparse_embedding_data.get("dimensions", 30522),
+            batch_size=sparse_embedding_data.get("batch_size", 50),
         )
 
         # Parse search config
@@ -307,6 +341,7 @@ class VectorStoreConfig:
         config = cls(
             enabled=vs_data.get("enabled", True),
             embedding=embedding,
+            sparse_embedding=sparse_embedding,
             search=search,
             index=index,
             hybrid=hybrid,
@@ -319,28 +354,28 @@ class VectorStoreConfig:
     @classmethod
     def _apply_env_overrides(cls, config: "VectorStoreConfig") -> "VectorStoreConfig":
         """Apply environment variable overrides to configuration.
-        
+
         Args:
             config: Configuration to modify
-            
+
         Returns:
             Modified configuration with env overrides applied
         """
         # Override enabled status
         if "VECTOR_STORE_ENABLED" in os.environ:
             config.enabled = os.environ["VECTOR_STORE_ENABLED"].lower() in ("true", "1", "yes")
-        
+
         # Override embedding model
         if "EMBEDDING_MODEL" in os.environ:
             config.embedding.model = os.environ["EMBEDDING_MODEL"]
-        
+
         # Override embedding dimensions
         if "EMBEDDING_DIMENSIONS" in os.environ:
             try:
                 config.embedding.dimensions = int(os.environ["EMBEDDING_DIMENSIONS"])
             except ValueError:
                 logger.warning("Invalid EMBEDDING_DIMENSIONS value, using default")
-        
+
         # Override API settings in provider_params
         # Priority: Azure OpenAI (primary) -> OpenRouter (fallback) -> OpenAI
         if "AZURE_OPENAI_API_KEY" in os.environ:
@@ -357,26 +392,28 @@ class VectorStoreConfig:
             config.embedding.provider_params["api_base"] = "https://openrouter.ai/api/v1"
             # Set OpenRouter model format if not already set
             if not config.embedding.model.startswith("openrouter/"):
-                config.embedding.model = f"openrouter/openai/{config.embedding.model.replace('azure/', '')}"
+                config.embedding.model = (
+                    f"openrouter/openai/{config.embedding.model.replace('azure/', '')}"
+                )
         elif "OPENAI_API_KEY" in os.environ:
             # Direct OpenAI as last resort
             config.embedding.provider_params["api_key"] = os.environ["OPENAI_API_KEY"]
         elif "EMBEDDING_API_KEY" in os.environ:
             # Generic fallback
             config.embedding.provider_params["api_key"] = os.environ["EMBEDDING_API_KEY"]
-        
+
         if "EMBEDDING_API_BASE" in os.environ:
             config.embedding.provider_params["api_base"] = os.environ["EMBEDDING_API_BASE"]
-        
+
         # Override embedding model if specified
         if "EMBEDDING_MODEL" in os.environ:
             config.embedding.model = os.environ["EMBEDDING_MODEL"]
-        
+
         return config
 
     def to_litellm_params(self) -> dict[str, Any]:
         """Convert embedding config to litellm-compatible parameters.
-        
+
         Returns:
             Dictionary of parameters for litellm embedding calls
         """
@@ -384,18 +421,18 @@ class VectorStoreConfig:
             "model": self.embedding.model,
             "dimensions": self.embedding.dimensions,
         }
-        
+
         # Add provider params
         params.update(self.embedding.provider_params)
-        
+
         return params
 
     def get_index_sql(self, table_name: str = "document_chunks") -> str:
         """Generate SQL for creating HNSW index based on configuration.
-        
+
         Args:
             table_name: Name of the table to index
-            
+
         Returns:
             SQL statement for creating HNSW index
         """
@@ -404,9 +441,9 @@ class VectorStoreConfig:
             "l2": "vector_l2_ops",
             "inner_product": "vector_ip_ops",
         }
-        
+
         op_class = metric_ops.get(self.index.distance_metric, "vector_cosine_ops")
-        
+
         return f"""
         CREATE INDEX IF NOT EXISTS idx_{table_name}_embedding_hnsw 
         ON {table_name} 
@@ -417,17 +454,17 @@ class VectorStoreConfig:
 
 def load_vector_store_config(config_path: str | Path | None = None) -> VectorStoreConfig:
     """Load vector store configuration from file or return defaults.
-    
+
     Args:
         config_path: Path to configuration file. If None, uses
                      default path "config/vector_store.yaml"
-    
+
     Returns:
         Loaded VectorStoreConfig
     """
     if config_path is None:
         config_path = "config/vector_store.yaml"
-    
+
     return VectorStoreConfig.from_yaml(config_path)
 
 
@@ -437,7 +474,7 @@ _vector_store_config: VectorStoreConfig | None = None
 
 def get_vector_store_config() -> VectorStoreConfig:
     """Get cached vector store configuration.
-    
+
     Returns:
         VectorStoreConfig instance (cached)
     """
@@ -449,10 +486,78 @@ def get_vector_store_config() -> VectorStoreConfig:
 
 def reload_vector_store_config() -> VectorStoreConfig:
     """Reload vector store configuration from file.
-    
+
     Returns:
         Fresh VectorStoreConfig instance
     """
     global _vector_store_config
     _vector_store_config = load_vector_store_config()
     return _vector_store_config
+
+
+async def validate_embedding_dimensions() -> None:
+    config = get_vector_store_config()
+    if not config.enabled:
+        logger.info("Vector store disabled, skipping embedding dimension validation")
+        return
+
+    configured_dims = config.embedding.dimensions
+    actual_db_dims = await _get_db_embedding_dimensions()
+
+    if configured_dims != actual_db_dims:
+        raise ConfigurationError(
+            "Embedding dimensions mismatch: "
+            f"config={configured_dims}, database={actual_db_dims}. "
+            "Update config or run migration."
+        )
+
+    logger.info(
+        "Embedding dimensions validated: config=%s, database=%s",
+        configured_dims,
+        actual_db_dims,
+    )
+
+
+async def _get_db_embedding_dimensions() -> int:
+    from src.db.models import get_async_engine
+
+    query = text(
+        """
+        SELECT format_type(a.atttypid, a.atttypmod) AS column_type
+        FROM pg_attribute a
+        JOIN pg_class c ON c.oid = a.attrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = current_schema()
+          AND c.relname = :table_name
+          AND a.attname = :column_name
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+        LIMIT 1
+        """
+    )
+
+    engine = get_async_engine()
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            query,
+            {
+                "table_name": "document_chunks",
+                "column_name": "embedding",
+            },
+        )
+        column_type = result.scalar_one_or_none()
+
+    if column_type is None:
+        raise ConfigurationError(
+            "Failed to resolve database embedding column type for "
+            "document_chunks.embedding. Ensure migrations are applied."
+        )
+
+    match = re.fullmatch(r"vector\((\d+)\)", str(column_type))
+    if not match:
+        raise ConfigurationError(
+            "Unexpected embedding column type for document_chunks.embedding: "
+            f"{column_type}. Expected VECTOR(n)."
+        )
+
+    return int(match.group(1))

@@ -22,10 +22,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from src.api.models.rag import (
+    ComponentStatus,
     RAGBenchmarkRequest,
     RAGBenchmarkResponse,
+    RAGComponentStatusResponse,
     RAGMetricsResponse,
-    RAGMetricsSummary,
     RAGQueryErrorResponse,
     RAGQueryRequest,
     RAGQueryResponse,
@@ -40,6 +41,7 @@ from src.observability.logging import get_logger
 from src.rag.classification import QueryClassifier
 from src.rag.evaluation.evaluator import RAGEvaluator
 from src.rag.evaluation.evaluator import RetrievalResult as EvaluatorRetrievalResult
+from src.rag.metrics_store import RAGMetricsStore
 from src.rag.models import QueryType, RAGResult, Source
 from src.rag.router import STRATEGY_PRESETS, AgenticRAG
 from src.rag.strategies.hyde import HyDERewriter
@@ -59,8 +61,14 @@ _query_classifier: QueryClassifier | None = None
 _hyde_rewriter: HyDERewriter | None = None
 _reranker: ReRanker | None = None
 _rag_evaluator: RAGEvaluator | None = None
+_rag_metrics_store: RAGMetricsStore | None = None
+_component_status: dict[str, dict[str, Any]] = {
+    "hyde": {"available": False, "error": None},
+    "reranker": {"available": False, "error": None},
+}
 _agentic_rag_lock = Lock()
 _rag_evaluator_lock = Lock()
+_rag_metrics_store_lock = Lock()
 
 
 def _get_agentic_rag() -> AgenticRAG:
@@ -89,22 +97,30 @@ def _get_agentic_rag() -> AgenticRAG:
             if _hyde_rewriter is None:
                 try:
                     _hyde_rewriter = HyDERewriter.from_settings()
+                    _component_status["hyde"] = {"available": True, "error": None}
                     logger.info("HyDERewriter initialized")
                 except Exception as e:
+                    _component_status["hyde"] = {"available": False, "error": str(e)}
                     logger.warning(
                         "HyDERewriter initialization failed; disabling HyDE", error=str(e)
                     )
                     _hyde_rewriter = None
+            else:
+                _component_status["hyde"] = {"available": True, "error": None}
 
             if _reranker is None:
                 try:
                     _reranker = ReRanker()
+                    _component_status["reranker"] = {"available": True, "error": None}
                     logger.info("ReRanker initialized")
                 except Exception as e:
+                    _component_status["reranker"] = {"available": False, "error": str(e)}
                     logger.warning(
                         "ReRanker initialization failed; disabling reranking", error=str(e)
                     )
                     _reranker = None
+            else:
+                _component_status["reranker"] = {"available": True, "error": None}
 
             # Initialize AgenticRAG
             _agentic_rag = AgenticRAG(
@@ -117,6 +133,59 @@ def _get_agentic_rag() -> AgenticRAG:
 
         assert _agentic_rag is not None
         return _agentic_rag
+
+
+def _extract_health_error(health: dict[str, Any]) -> str | None:
+    if isinstance(health.get("error"), str):
+        return cast(str, health["error"])
+
+    components = health.get("components")
+    if isinstance(components, dict):
+        for component_data in components.values():
+            if isinstance(component_data, dict) and isinstance(component_data.get("error"), str):
+                return cast(str, component_data["error"])
+
+    return None
+
+
+async def _build_component_status() -> RAGComponentStatusResponse:
+    try:
+        _get_agentic_rag()
+    except Exception as e:
+        logger.warning("rag_component_initialization_check_failed", error=str(e))
+
+    hyde_available = _hyde_rewriter is not None and bool(_component_status["hyde"]["available"])
+    hyde_error = cast(str | None, _component_status["hyde"]["error"])
+
+    reranker_available = _reranker is not None and bool(_component_status["reranker"]["available"])
+    reranker_error = cast(str | None, _component_status["reranker"]["error"])
+    reranker_healthy = reranker_available
+    reranker_details: dict[str, Any] | None = None
+
+    if _reranker is not None and reranker_available:
+        try:
+            reranker_details = await _reranker.health_check()
+            reranker_healthy = bool(reranker_details.get("healthy", False))
+            if not reranker_healthy and reranker_error is None:
+                reranker_error = _extract_health_error(reranker_details)
+        except Exception as e:
+            reranker_healthy = False
+            reranker_error = str(e)
+            reranker_details = {"healthy": False, "error": str(e)}
+
+    return RAGComponentStatusResponse(
+        hyde=ComponentStatus(
+            available=hyde_available,
+            healthy=hyde_available,
+            last_error=hyde_error,
+        ),
+        reranker=ComponentStatus(
+            available=reranker_available,
+            healthy=reranker_healthy,
+            last_error=reranker_error,
+            details=reranker_details,
+        ),
+    )
 
 
 def _get_evaluator() -> RAGEvaluator:
@@ -139,6 +208,21 @@ def _get_evaluator() -> RAGEvaluator:
 
         assert _rag_evaluator is not None
         return _rag_evaluator
+
+
+def _get_metrics_store() -> RAGMetricsStore:
+    global _rag_metrics_store
+
+    existing_store = _rag_metrics_store
+    if existing_store is not None:
+        return existing_store
+
+    with _rag_metrics_store_lock:
+        if _rag_metrics_store is None:
+            _rag_metrics_store = RAGMetricsStore()
+
+        assert _rag_metrics_store is not None
+        return _rag_metrics_store
 
 
 def _source_to_api(source: Source) -> RAGSource:
@@ -308,6 +392,7 @@ async def list_strategies(request: Request) -> RAGStrategiesResponse:
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
     logger.info("list_strategies_request", request_id=request_id)
+    component_status = await _build_component_status()
 
     # Define strategy information
     strategies = [
@@ -363,7 +448,33 @@ async def list_strategies(request: Request) -> RAGStrategiesResponse:
         strategies=strategies,
         default_strategy="balanced",
         total_count=len(strategies),
+        component_availability={
+            "hyde": component_status.hyde.available,
+            "reranker": component_status.reranker.available,
+        },
     )
+
+
+@router.get(
+    "/components/status",
+    response_model=RAGComponentStatusResponse,
+    summary="Get optional RAG component status",
+)
+async def get_component_status(request: Request) -> RAGComponentStatusResponse:
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    logger.info("get_rag_component_status_request", request_id=request_id)
+
+    component_status = await _build_component_status()
+
+    logger.info(
+        "get_rag_component_status_completed",
+        request_id=request_id,
+        hyde_available=component_status.hyde.available,
+        reranker_available=component_status.reranker.available,
+        reranker_healthy=component_status.reranker.healthy,
+    )
+
+    return component_status
 
 
 @router.post(
@@ -452,7 +563,7 @@ async def evaluate_strategy(
             if eval_request.ground_truth_relevant_ids:
                 # Create retrieval results from sources
                 retrieval_results: list[EvaluatorRetrievalResult] = [
-                    cast("EvaluatorRetrievalResult", SimpleNamespace(id=s.chunk_id))
+                    cast(EvaluatorRetrievalResult, cast(object, SimpleNamespace(id=s.chunk_id)))
                     for s in result.sources
                 ]
 
@@ -614,21 +725,8 @@ async def get_metrics(request: Request) -> RAGMetricsResponse:
             for alert in alerts[-10:]  # Last 10 alerts
         ]
 
-        # Create summary (in a real implementation, these would come from metrics storage)
-        summary = RAGMetricsSummary(
-            total_queries=0,  # Would be populated from metrics store
-            avg_latency_ms=0.0,
-            avg_retrieval_score=0.0,
-            avg_classification_confidence=0.0,
-            strategy_usage={"auto": 0, "fast": 0, "balanced": 0, "thorough": 0},
-            query_type_distribution={
-                "factual": 0,
-                "analytical": 0,
-                "comparative": 0,
-                "vague": 0,
-                "multi_hop": 0,
-            },
-        )
+        metrics_store = _get_metrics_store()
+        summary = await metrics_store.get_summary()
 
         logger.info(
             "get_rag_metrics_completed",

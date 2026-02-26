@@ -2,8 +2,10 @@
 
 from src.db.repositories.api_key import APIKeyRepository
 from src.db.repositories.audit import AuditLogRepository
+from src.db.repositories.chunk_embedding_repository import ChunkEmbeddingRepository
 from src.db.repositories.detection_result import DetectionResultRepository
 from src.db.repositories.document_chunk_repository import DocumentChunkRepository
+from src.db.repositories.document_entity_repository import DocumentEntityRepository
 from src.db.repositories.job import JobRepository
 from src.db.repositories.job_result import JobResultRepository
 from src.db.repositories.pipeline import PipelineRepository
@@ -12,8 +14,10 @@ from src.db.repositories.webhook import WebhookRepository
 __all__ = [
     "APIKeyRepository",
     "AuditLogRepository",
+    "ChunkEmbeddingRepository",
     "DetectionResultRepository",
     "DocumentChunkRepository",
+    "DocumentEntityRepository",
     "JobRepository",
     "JobResultRepository",
     "PipelineRepository",

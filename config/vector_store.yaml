@@ -29,6 +29,12 @@ vector_store:
     # text-embedding-3-large: 3072
     # text-embedding-ada-002: 1536
     dimensions: 1536
+
+    available_models:
+      - name: "text-embedding-3-small"
+        dimensions: 1536
+      - name: "text-embedding-3-large"
+        dimensions: 3072
     
     # Batch size for embedding generation (max texts per batch)
     batch_size: 100

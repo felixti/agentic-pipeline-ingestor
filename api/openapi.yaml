@@ -2725,6 +2725,35 @@ components:
           type: object
           title: Filters
           description: Optional filters (e.g., job_id)
+        deduplicate:
+          type: boolean
+          title: Deduplicate
+          description: Deduplicate results by content_hash, returning only highest-scoring instance
+          default: false
+        rerank:
+          type: boolean
+          title: Rerank
+          description: Apply cross-encoder reranking to results for improved relevance
+          default: false
+        include_context:
+          type: boolean
+          title: Include Context
+          description: Include neighboring chunks for context
+          default: false
+        entity_filter:
+          type: string
+          title: Entity Filter
+          description: Filter results by entity text (e.g., 'Microsoft')
+        entity_type_filter:
+          type: string
+          title: Entity Type Filter
+          description: 'Filter by entity type (PERSON, ORGANIZATION, LOCATION, DATE, MONEY, etc.)'
+        min_quality:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          title: Min Quality
+          description: Minimum quality score threshold (0-1) for OCR/processing quality
       type: object
       required:
       - query_embedding
@@ -2732,7 +2761,15 @@ components:
       description: 'Request body for semantic search.
 
 
-        Performs cosine similarity search using a pre-computed embedding vector.'
+        Performs cosine similarity search using a pre-computed embedding vector.
+
+
+        New features:
+        - deduplicate: Remove duplicate content across jobs
+        - rerank: Apply cross-encoder reranking
+        - include_context: Include neighboring chunks
+        - entity_filter/entity_type_filter: Filter by extracted entities
+        - min_quality: Filter by processing quality score'
       example:
         filters:
           job_id: 123e4567-e89b-12d3-a456-426614174000
@@ -2743,6 +2780,8 @@ components:
         - 0.3
         - 0.4
         top_k: 10
+        deduplicate: true
+        rerank: true
     SemanticTextSearchRequest:
       properties:
         query:

@@ -118,6 +118,7 @@ class TestListStrategiesEndpoint:
         data = response.json()
         assert "strategies" in data
         assert "default_strategy" in data
+        assert "component_availability" in data
         assert data["default_strategy"] == "balanced"
         assert len(data["strategies"]) >= 3
 
@@ -127,6 +128,24 @@ class TestListStrategiesEndpoint:
             assert "description" in strategy
             assert "config" in strategy
             assert "use_cases" in strategy
+
+
+class TestComponentStatusEndpoint:
+    def test_get_component_status(self, client):
+        response = client.get("/api/v1/rag/components/status")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "hyde" in data
+        assert "reranker" in data
+
+        for component_name in ["hyde", "reranker"]:
+            component = data[component_name]
+            assert "available" in component
+            assert "healthy" in component
+            assert "last_error" in component
+
+        assert "details" in data["reranker"]
 
     def test_strategies_include_auto(self, client):
         """Test that auto strategy is included."""
@@ -296,5 +315,26 @@ class TestRAGModels:
             strategies=strategies,
             default_strategy="test",
             total_count=1,
+            component_availability={"hyde": True, "reranker": False},
         )
         assert response.total_count == 1
+
+    def test_component_status_response_model(self):
+        from src.api.models.rag import ComponentStatus, RAGComponentStatusResponse
+
+        response = RAGComponentStatusResponse(
+            hyde=ComponentStatus(
+                available=False,
+                healthy=False,
+                last_error="HyDE init failed",
+            ),
+            reranker=ComponentStatus(
+                available=True,
+                healthy=True,
+                last_error=None,
+                details={"healthy": True},
+            ),
+        )
+
+        assert response.hyde.last_error == "HyDE init failed"
+        assert response.reranker.available is True

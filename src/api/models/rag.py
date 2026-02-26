@@ -293,6 +293,29 @@ class RAGStrategiesResponse(BaseModel):
     strategies: list[RAGStrategyInfo] = Field(..., description="List of available strategies")
     default_strategy: str = Field(default="balanced", description="Default strategy name")
     total_count: int = Field(..., description="Total number of strategies")
+    component_availability: dict[str, bool] = Field(
+        default_factory=dict,
+        description="Availability of optional strategy components",
+    )
+
+
+class ComponentStatus(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    available: bool = Field(..., description="Whether the component is available")
+    healthy: bool = Field(..., description="Whether the component is healthy")
+    last_error: str | None = Field(default=None, description="Last initialization or health error")
+    details: dict[str, Any] | None = Field(
+        default=None,
+        description="Component-specific health details",
+    )
+
+
+class RAGComponentStatusResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    hyde: ComponentStatus
+    reranker: ComponentStatus
 
 
 class RAGStrategyEvaluateResponse(BaseModel):

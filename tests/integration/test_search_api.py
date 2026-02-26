@@ -19,6 +19,9 @@ from fastapi.testclient import TestClient
 
 from src.db.models import DocumentChunkModel
 from src.main import app
+from src.services.hybrid_search_service import HybridSearchResult
+from src.services.text_search_service import TextSearchResult
+from src.services.vector_search_service import SearchResult
 
 # =============================================================================
 # Fixtures
@@ -284,6 +287,175 @@ class TestSemanticSearchEndpoint:
             assert data["results"] == []
             assert data["total"] == 0
 
+    def test_semantic_search_deduplicates_by_content_hash(self, client, sample_embedding):
+        shared_hash = "shared-hash"
+        with patch("src.api.routes.search.VectorSearchService") as mock_service:
+            mock_service_instance = MagicMock()
+            mock_service_instance.search_by_vector = AsyncMock(
+                return_value=[
+                    SearchResult(
+                        chunk=MagicMock(
+                            spec=DocumentChunkModel,
+                            id=uuid4(),
+                            job_id=uuid4(),
+                            chunk_index=0,
+                            content="Duplicate content",
+                            content_hash=shared_hash,
+                            chunk_metadata={"page": 1},
+                        ),
+                        similarity_score=0.95,
+                        rank=1,
+                    ),
+                    SearchResult(
+                        chunk=MagicMock(
+                            spec=DocumentChunkModel,
+                            id=uuid4(),
+                            job_id=uuid4(),
+                            chunk_index=1,
+                            content="Duplicate content",
+                            content_hash=shared_hash,
+                            chunk_metadata={"page": 2},
+                        ),
+                        similarity_score=0.89,
+                        rank=2,
+                    ),
+                ]
+            )
+            mock_service.return_value = mock_service_instance
+
+            response = client.post(
+                "/api/v1/search/semantic",
+                json={
+                    "query_embedding": sample_embedding,
+                    "top_k": 10,
+                    "deduplicate": True,
+                },
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["total"] == 1
+            assert data["deduplicated_count"] == 1
+
+    def test_semantic_search_with_rerank(self, client, sample_embedding):
+        chunk_1 = MagicMock(
+            spec=DocumentChunkModel,
+            id=uuid4(),
+            job_id=uuid4(),
+            chunk_index=0,
+            content="First chunk",
+            content_hash="hash-1",
+            chunk_metadata={"page": 1},
+        )
+        chunk_2 = MagicMock(
+            spec=DocumentChunkModel,
+            id=uuid4(),
+            job_id=uuid4(),
+            chunk_index=1,
+            content="Second chunk",
+            content_hash="hash-2",
+            chunk_metadata={"page": 2},
+        )
+
+        initial_results = [
+            MagicMock(chunk=chunk_1, similarity_score=0.96, rank=1),
+            MagicMock(chunk=chunk_2, similarity_score=0.92, rank=2),
+        ]
+        candidate_results = [
+            MagicMock(chunk=chunk_1, similarity_score=0.96, rank=1),
+            MagicMock(chunk=chunk_2, similarity_score=0.92, rank=2),
+        ]
+
+        with (
+            patch("src.api.routes.search.VectorSearchService") as mock_service,
+            patch("src.api.routes.search._get_reranker") as mock_get_reranker,
+        ):
+            mock_service_instance = MagicMock()
+            mock_service_instance.search_by_vector = AsyncMock(
+                side_effect=[initial_results, candidate_results]
+            )
+            mock_service.return_value = mock_service_instance
+
+            mock_reranker = MagicMock()
+            mock_reranker.rerank = AsyncMock(
+                return_value=[
+                    MagicMock(chunk_id=str(chunk_2.id), rank=1, score=0.99),
+                    MagicMock(chunk_id=str(chunk_1.id), rank=2, score=0.93),
+                ]
+            )
+            mock_get_reranker.return_value = mock_reranker
+
+            response = client.post(
+                "/api/v1/search/semantic",
+                json={
+                    "query_embedding": sample_embedding,
+                    "query_text": "second chunk",
+                    "top_k": 2,
+                    "rerank": True,
+                },
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["results"][0]["chunk_id"] == str(chunk_2.id)
+            assert data["results"][0]["rerank_score"] == 0.99
+
+    def test_semantic_search_rerank_failure_returns_original_results(
+        self, client, sample_embedding
+    ):
+        chunk_1 = MagicMock(
+            spec=DocumentChunkModel,
+            id=uuid4(),
+            job_id=uuid4(),
+            chunk_index=0,
+            content="First chunk",
+            content_hash="hash-1",
+            chunk_metadata={"page": 1},
+        )
+        chunk_2 = MagicMock(
+            spec=DocumentChunkModel,
+            id=uuid4(),
+            job_id=uuid4(),
+            chunk_index=1,
+            content="Second chunk",
+            content_hash="hash-2",
+            chunk_metadata={"page": 2},
+        )
+
+        initial_results = [
+            MagicMock(chunk=chunk_1, similarity_score=0.96, rank=1),
+            MagicMock(chunk=chunk_2, similarity_score=0.92, rank=2),
+        ]
+
+        with (
+            patch("src.api.routes.search.VectorSearchService") as mock_service,
+            patch("src.api.routes.search._get_reranker") as mock_get_reranker,
+        ):
+            mock_service_instance = MagicMock()
+            mock_service_instance.search_by_vector = AsyncMock(
+                side_effect=[initial_results, initial_results]
+            )
+            mock_service.return_value = mock_service_instance
+
+            mock_reranker = MagicMock()
+            mock_reranker.rerank = AsyncMock(side_effect=Exception("rerank failed"))
+            mock_get_reranker.return_value = mock_reranker
+
+            response = client.post(
+                "/api/v1/search/semantic",
+                json={
+                    "query_embedding": sample_embedding,
+                    "query_text": "first chunk",
+                    "top_k": 2,
+                    "rerank": True,
+                },
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["results"][0]["chunk_id"] == str(chunk_1.id)
+            assert data["results"][0]["rerank_score"] is None
+
     def test_semantic_text_search_success(self, client, sample_embedding, sample_chunk):
         with (
             patch("src.api.routes.search.EmbeddingService") as mock_embedding_service,
@@ -336,6 +508,65 @@ class TestSemanticSearchEndpoint:
             )
 
             assert response.status_code in [500, 503]
+
+    def test_semantic_text_search_deduplicates_by_content_hash(self, client, sample_embedding):
+        shared_hash = "semantic-text-hash"
+        with (
+            patch("src.api.routes.search.EmbeddingService") as mock_embedding_service,
+            patch("src.api.routes.search.VectorSearchService") as mock_vector_service,
+        ):
+            mock_embedding_instance = MagicMock()
+            mock_embedding_instance.embed_text = AsyncMock(
+                return_value=MagicMock(embedding=sample_embedding)
+            )
+            mock_embedding_service.return_value = mock_embedding_instance
+
+            mock_vector_instance = MagicMock()
+            mock_vector_instance.search_by_vector = AsyncMock(
+                return_value=[
+                    SearchResult(
+                        chunk=MagicMock(
+                            spec=DocumentChunkModel,
+                            id=uuid4(),
+                            job_id=uuid4(),
+                            chunk_index=0,
+                            content="Same content",
+                            content_hash=shared_hash,
+                            chunk_metadata={"page": 1},
+                        ),
+                        similarity_score=0.91,
+                        rank=1,
+                    ),
+                    SearchResult(
+                        chunk=MagicMock(
+                            spec=DocumentChunkModel,
+                            id=uuid4(),
+                            job_id=uuid4(),
+                            chunk_index=5,
+                            content="Same content",
+                            content_hash=shared_hash,
+                            chunk_metadata={"page": 5},
+                        ),
+                        similarity_score=0.83,
+                        rank=2,
+                    ),
+                ]
+            )
+            mock_vector_service.return_value = mock_vector_instance
+
+            response = client.post(
+                "/api/v1/search/semantic/text",
+                json={
+                    "query": "machine learning",
+                    "top_k": 10,
+                    "deduplicate": True,
+                },
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["total"] == 1
+            assert data["deduplicated_count"] == 1
 
 
 # =============================================================================
@@ -526,6 +757,62 @@ class TestTextSearchEndpoint:
                 assert "highlighted_content" in result
                 assert "matched_terms" in result
 
+    def test_text_search_deduplicates_by_content_hash(self, client):
+        with patch("src.api.routes.search.TextSearchService") as mock_service:
+            shared_hash = "text-hash"
+            mock_service_instance = MagicMock()
+            mock_service_instance.search_by_text = AsyncMock(
+                return_value=[
+                    TextSearchResult(
+                        chunk=MagicMock(
+                            spec=DocumentChunkModel,
+                            id=uuid4(),
+                            job_id=uuid4(),
+                            chunk_index=1,
+                            content="Repeated text chunk",
+                            content_hash=shared_hash,
+                            chunk_metadata={"page": 1},
+                            job=None,
+                        ),
+                        rank_score=0.88,
+                        rank=1,
+                        highlighted_content=None,
+                        matched_terms=None,
+                    ),
+                    TextSearchResult(
+                        chunk=MagicMock(
+                            spec=DocumentChunkModel,
+                            id=uuid4(),
+                            job_id=uuid4(),
+                            chunk_index=2,
+                            content="Repeated text chunk",
+                            content_hash=shared_hash,
+                            chunk_metadata={"page": 2},
+                            job=None,
+                        ),
+                        rank_score=0.77,
+                        rank=2,
+                        highlighted_content=None,
+                        matched_terms=None,
+                    ),
+                ]
+            )
+            mock_service.return_value = mock_service_instance
+
+            response = client.post(
+                "/api/v1/search/text",
+                json={
+                    "query": "machine learning",
+                    "top_k": 10,
+                    "deduplicate": True,
+                },
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["total"] == 1
+            assert data["deduplicated_count"] == 1
+
 
 # =============================================================================
 # Hybrid Search Endpoint Tests
@@ -702,6 +989,166 @@ class TestHybridSearchEndpoint:
             data = response.json()
             assert data["results"] == []
             assert data["total"] == 0
+
+    def test_hybrid_search_deduplicates_by_content_hash(self, client):
+        with (
+            patch("src.api.routes.search.TextSearchService") as mock_text_service,
+            patch("src.api.routes.search.VectorSearchService") as mock_vector_service,
+            patch("src.api.routes.search.HybridSearchService") as mock_hybrid_service,
+            patch("src.api.routes.search.EmbeddingService") as mock_embedding_service,
+        ):
+            shared_hash = "hybrid-hash"
+            mock_hybrid_instance = MagicMock()
+            mock_hybrid_instance.search_with_embedding = AsyncMock(
+                return_value=[
+                    HybridSearchResult(
+                        chunk=MagicMock(
+                            spec=DocumentChunkModel,
+                            id=uuid4(),
+                            job_id=uuid4(),
+                            chunk_index=0,
+                            content="Hybrid duplicate",
+                            content_hash=shared_hash,
+                            chunk_metadata={"page": 1},
+                            job=None,
+                        ),
+                        hybrid_score=0.92,
+                        vector_score=0.95,
+                        text_score=0.83,
+                        vector_rank=1,
+                        text_rank=2,
+                        rank=1,
+                        fusion_method="weighted_sum",
+                    ),
+                    HybridSearchResult(
+                        chunk=MagicMock(
+                            spec=DocumentChunkModel,
+                            id=uuid4(),
+                            job_id=uuid4(),
+                            chunk_index=1,
+                            content="Hybrid duplicate",
+                            content_hash=shared_hash,
+                            chunk_metadata={"page": 2},
+                            job=None,
+                        ),
+                        hybrid_score=0.89,
+                        vector_score=0.9,
+                        text_score=0.8,
+                        vector_rank=2,
+                        text_rank=3,
+                        rank=2,
+                        fusion_method="weighted_sum",
+                    ),
+                ]
+            )
+            mock_hybrid_service.return_value = mock_hybrid_instance
+
+            mock_embedding_instance = MagicMock()
+            mock_embedding_instance.embed_text = AsyncMock(
+                return_value=MagicMock(embedding=[0.1] * 1536)
+            )
+            mock_embedding_service.return_value = mock_embedding_instance
+
+            response = client.post(
+                "/api/v1/search/hybrid",
+                json={
+                    "query": "machine learning",
+                    "top_k": 10,
+                    "deduplicate": True,
+                },
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["total"] == 1
+            assert data["deduplicated_count"] == 1
+
+    def test_hybrid_search_with_rerank(self, client, sample_chunk):
+        chunk_1 = MagicMock(
+            spec=DocumentChunkModel,
+            id=uuid4(),
+            job_id=uuid4(),
+            chunk_index=0,
+            content="Hybrid first",
+            content_hash="hybrid-1",
+            chunk_metadata={"page": 1},
+            job=None,
+        )
+        chunk_2 = MagicMock(
+            spec=DocumentChunkModel,
+            id=uuid4(),
+            job_id=uuid4(),
+            chunk_index=1,
+            content="Hybrid second",
+            content_hash="hybrid-2",
+            chunk_metadata={"page": 2},
+            job=None,
+        )
+
+        initial_results = [
+            MagicMock(
+                chunk=chunk_1,
+                hybrid_score=0.92,
+                vector_score=0.95,
+                text_score=0.82,
+                vector_rank=1,
+                text_rank=2,
+                rank=1,
+                fusion_method="weighted_sum",
+            ),
+            MagicMock(
+                chunk=chunk_2,
+                hybrid_score=0.9,
+                vector_score=0.93,
+                text_score=0.81,
+                vector_rank=2,
+                text_rank=3,
+                rank=2,
+                fusion_method="weighted_sum",
+            ),
+        ]
+
+        with (
+            patch("src.api.routes.search.TextSearchService") as mock_text_service,
+            patch("src.api.routes.search.VectorSearchService") as mock_vector_service,
+            patch("src.api.routes.search.HybridSearchService") as mock_hybrid_service,
+            patch("src.api.routes.search.EmbeddingService") as mock_embedding_service,
+            patch("src.api.routes.search._get_reranker") as mock_get_reranker,
+        ):
+            mock_hybrid_instance = MagicMock()
+            mock_hybrid_instance.search_with_embedding = AsyncMock(
+                side_effect=[initial_results, initial_results]
+            )
+            mock_hybrid_service.return_value = mock_hybrid_instance
+
+            mock_embedding_instance = MagicMock()
+            mock_embedding_instance.embed_text = AsyncMock(
+                return_value=MagicMock(embedding=[0.1] * 1536)
+            )
+            mock_embedding_service.return_value = mock_embedding_instance
+
+            mock_reranker = MagicMock()
+            mock_reranker.rerank = AsyncMock(
+                return_value=[
+                    MagicMock(chunk_id=str(chunk_2.id), rank=1, score=0.98),
+                    MagicMock(chunk_id=str(chunk_1.id), rank=2, score=0.94),
+                ]
+            )
+            mock_get_reranker.return_value = mock_reranker
+
+            response = client.post(
+                "/api/v1/search/hybrid",
+                json={
+                    "query": "hybrid second",
+                    "top_k": 2,
+                    "rerank": True,
+                },
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["results"][0]["chunk_id"] == str(chunk_2.id)
+            assert data["results"][0]["rerank_score"] == 0.98
 
 
 # =============================================================================

@@ -10,13 +10,20 @@ This package provides comprehensive observability features including:
 
 from src.observability.genai_spans import GenAISpanAttributes
 from src.observability.logging import StructuredLogger, get_logger
-from src.observability.metrics import MetricsManager, get_metrics_manager
-from src.observability.middleware import ObservabilityMiddleware
+from src.observability.metrics import (
+    EmbeddingMetrics,
+    MetricsManager,
+    SearchMetrics,
+    get_metrics_manager,
+)
+from src.observability.middleware import ObservabilityMiddleware  # pyright: ignore[reportAttributeAccessIssue]
 from src.observability.tracing import TelemetryManager, get_telemetry_manager, get_tracer
 
 __all__ = [
     "GenAISpanAttributes",
     "MetricsManager",
+    "SearchMetrics",
+    "EmbeddingMetrics",
     "ObservabilityMiddleware",
     "StructuredLogger",
     "TelemetryManager",

@@ -95,6 +95,7 @@ class SecuritySettings(BaseSettings):
         """Validate that secret key is not the default in production."""
         if v == "change-me-in-production":
             import warnings
+
             warnings.warn(
                 "Using default secret key. Please set a secure SECRET_KEY in production!",
                 stacklevel=2,
@@ -217,7 +218,7 @@ class QueryRewritingSettings(BaseSettings):
 
 class HyDESettings(BaseSettings):
     """HyDE (Hypothetical Document Embeddings) settings for RAG optimization.
-    
+
     HyDE generates hypothetical documents that answer the user's query,
     then uses these documents for vector search instead of the raw query.
     This improves retrieval quality for vague or out-of-domain queries.
@@ -287,11 +288,11 @@ class HyDESettings(BaseSettings):
 
 class ReRankingSettings(BaseSettings):
     """Re-ranking settings for RAG optimization.
-    
+
     Re-ranking uses cross-encoder models to score and re-order retrieved chunks
     for significantly improved relevance. Cross-encoders encode query and document
     together, capturing finer relevance signals than bi-encoders.
-    
+
     Attributes:
         enabled: Whether re-ranking is enabled
         models: Available model presets (default, high_precision, fast, alternative)
@@ -349,10 +350,10 @@ class ReRankingSettings(BaseSettings):
 
 class ClassificationSettings(BaseSettings):
     """Query Classification settings for RAG strategy selection.
-    
+
     Classification determines the optimal RAG strategy based on query type
     (factual, analytical, comparative, vague, multi_hop).
-    
+
     Attributes:
         enabled: Whether classification is enabled
         model: Model group to use for classification
@@ -417,11 +418,11 @@ class ClassificationSettings(BaseSettings):
 
 class HybridSearchSettings(BaseSettings):
     """Hybrid Search settings for RAG retrieval.
-    
+
     This settings class configures the hybrid search service which combines
     vector similarity and full-text search using Reciprocal Rank Fusion (RRF)
     and weighted sum methods.
-    
+
     Attributes:
         enabled: Whether hybrid search is enabled
         default_vector_weight: Default weight for vector search scores
@@ -532,10 +533,10 @@ class HybridSearchSettings(BaseSettings):
 
 class AgenticRAGSettings(BaseSettings):
     """Agentic RAG Router settings for orchestrating RAG strategies.
-    
+
     This settings class configures the AgenticRAG router which orchestrates
     all RAG strategies based on query classification.
-    
+
     Attributes:
         enabled: Whether agentic RAG is enabled
         quality_threshold: Minimum retrieval quality score (0-1)
@@ -581,11 +582,11 @@ class AgenticRAGSettings(BaseSettings):
 
 class ContextualRetrievalSettings(BaseSettings):
     """Contextual Retrieval settings for enhancing chunks with context.
-    
+
     This settings class configures the ContextualRetrieval service which
     enhances document chunks with surrounding context before embedding.
     This improves semantic understanding and retrieval quality.
-    
+
     Attributes:
         enabled: Whether contextual retrieval is enabled
         default_strategy: Default context enhancement strategy
@@ -638,11 +639,11 @@ class ContextualRetrievalSettings(BaseSettings):
 
 class ChunkingSettings(BaseSettings):
     """Chunking strategy settings for document segmentation.
-    
+
     This settings class configures the various chunking strategies available
     for document segmentation including semantic, hierarchical, fixed-size,
     and agentic selection.
-    
+
     Attributes:
         default_strategy: Default chunking strategy to use
         semantic: Configuration for semantic chunking
@@ -656,7 +657,7 @@ class ChunkingSettings(BaseSettings):
         default="agentic",
         description="Default chunking strategy: semantic, hierarchical, fixed, or agentic",
     )
-    
+
     semantic: dict[str, Any] = Field(
         default={
             "similarity_threshold": 0.85,
@@ -666,7 +667,7 @@ class ChunkingSettings(BaseSettings):
         },
         description="Semantic chunking configuration",
     )
-    
+
     hierarchical: dict[str, Any] = Field(
         default={
             "max_depth": 4,
@@ -675,7 +676,7 @@ class ChunkingSettings(BaseSettings):
         },
         description="Hierarchical chunking configuration",
     )
-    
+
     fixed: dict[str, Any] = Field(
         default={
             "chunk_size": 512,
@@ -684,7 +685,7 @@ class ChunkingSettings(BaseSettings):
         },
         description="Fixed-size chunking configuration",
     )
-    
+
     agentic: dict[str, Any] = Field(
         default={
             "selection_model": "gpt-4o-mini",
@@ -697,7 +698,7 @@ class ChunkingSettings(BaseSettings):
         },
         description="Agentic strategy selection configuration",
     )
-    
+
     special_elements: dict[str, Any] = Field(
         default={
             "code_blocks": {
@@ -726,10 +727,10 @@ class ChunkingSettings(BaseSettings):
 
 class EmbeddingOptimizationSettings(BaseSettings):
     """Embedding optimization settings for RAG.
-    
+
     This settings class configures embedding model selection, dimensionality
     reduction, quantization, and caching for optimized embedding generation.
-    
+
     Attributes:
         default_model: Default embedding model to use
         models: Configuration for available models
@@ -741,7 +742,7 @@ class EmbeddingOptimizationSettings(BaseSettings):
         default="azure/text-embedding-3-small",
         description="Default embedding model identifier (Azure OpenAI primary, OpenRouter fallback)",
     )
-    
+
     models: dict[str, dict[str, Any]] = Field(
         default={
             "text-embedding-3-small": {
@@ -783,7 +784,7 @@ class EmbeddingOptimizationSettings(BaseSettings):
         },
         description="Configuration for available embedding models",
     )
-    
+
     optimization: dict[str, Any] = Field(
         default={
             "dimensionality_reduction": {
@@ -805,7 +806,7 @@ class EmbeddingOptimizationSettings(BaseSettings):
         },
         description="Optimization settings",
     )
-    
+
     auto_selection: dict[str, Any] = Field(
         default={
             "enabled": True,
@@ -829,7 +830,7 @@ class EmbeddingOptimizationSettings(BaseSettings):
         },
         description="Automatic model selection configuration",
     )
-    
+
     performance_targets: dict[str, float] = Field(
         default={
             "max_latency_ms": 100.0,
@@ -839,12 +840,12 @@ class EmbeddingOptimizationSettings(BaseSettings):
         },
         description="Performance targets for embedding optimization",
     )
-    
+
     @field_validator("default_model")
     @classmethod
     def validate_default_model(cls, v: str) -> str:
         """Validate default model.
-        
+
         Supports both short names and litellm provider-prefixed formats.
         """
         valid_models = {
@@ -860,11 +861,11 @@ class EmbeddingOptimizationSettings(BaseSettings):
             "enterprise",
             "auto",
         }
-        
+
         # Check if it's a valid short name
         if v in valid_models:
             return v
-        
+
         # Check if it's a litellm provider-prefixed format (e.g., azure/text-embedding-3-small)
         if "/" in v:
             # Extract model name after the last slash or after provider prefix
@@ -872,7 +873,13 @@ class EmbeddingOptimizationSettings(BaseSettings):
             if len(parts) >= 2:
                 # Check for formats like: azure/text-embedding-3-small
                 # or openrouter/openai/text-embedding-3-small
-                model_name = parts[-1] if parts[-1] not in ("openai", "azure") else parts[-2] if len(parts) >= 3 else parts[-1]
+                model_name = (
+                    parts[-1]
+                    if parts[-1] not in ("openai", "azure")
+                    else parts[-2]
+                    if len(parts) >= 3
+                    else parts[-1]
+                )
                 # Also check the full model name without provider prefix
                 short_name = parts[-1]
                 if short_name in valid_models or model_name in valid_models:
@@ -880,20 +887,20 @@ class EmbeddingOptimizationSettings(BaseSettings):
                 # Allow any text-embedding model from OpenAI
                 if "text-embedding" in v:
                     return v
-        
+
         raise ValueError(f"Invalid default model: {v}")
-    
+
     model_config = SettingsConfigDict(env_prefix="EMBEDDING_")
 
 
 class CachingSettings(BaseSettings):
     """Multi-layer caching settings for RAG operations.
-    
+
     Configures the three-layer caching system:
     - L1: Redis (in-memory, fast access)
     - L2: PostgreSQL (persistent, longer TTL)
     - L3: Semantic (vector similarity matching)
-    
+
     Attributes:
         enabled: Master switch for caching
         layers: Configuration for each cache layer
@@ -901,12 +908,12 @@ class CachingSettings(BaseSettings):
         invalidation: Cache invalidation strategies
         monitoring: Hit rate tracking and alerting
     """
-    
+
     enabled: bool = Field(
         default=True,
         description="Enable multi-layer caching",
     )
-    
+
     layers: dict[str, Any] = Field(
         default={
             "l1_redis": {
@@ -926,7 +933,7 @@ class CachingSettings(BaseSettings):
         },
         description="Configuration for each cache layer",
     )
-    
+
     cache_targets: dict[str, Any] = Field(
         default={
             "embeddings": {
@@ -950,7 +957,7 @@ class CachingSettings(BaseSettings):
         },
         description="What types of data to cache",
     )
-    
+
     invalidation: dict[str, Any] = Field(
         default={
             "strategies": ["ttl_based", "manual_flush", "document_update"],
@@ -958,7 +965,7 @@ class CachingSettings(BaseSettings):
         },
         description="Cache invalidation strategies",
     )
-    
+
     monitoring: dict[str, Any] = Field(
         default={
             "track_hit_rates": True,
@@ -969,16 +976,16 @@ class CachingSettings(BaseSettings):
         },
         description="Monitoring configuration",
     )
-    
+
     model_config = SettingsConfigDict(env_prefix="CACHING_")
 
 
 class EvaluationSettings(BaseSettings):
     """RAG Evaluation Framework settings.
-    
+
     This settings class configures the evaluation framework for measuring
     retrieval and generation quality in RAG systems.
-    
+
     Attributes:
         enabled: Master switch for evaluation
         auto_evaluate_enabled: Whether to automatically evaluate queries
@@ -989,24 +996,24 @@ class EvaluationSettings(BaseSettings):
         thresholds: Metric thresholds for alerting
         alert_channels: Channels for sending alerts
     """
-    
+
     enabled: bool = Field(
         default=True,
         description="Enable RAG evaluation framework",
     )
-    
+
     auto_evaluate_enabled: bool = Field(
         default=True,
         description="Automatically evaluate a sample of queries",
     )
-    
+
     sample_rate: float = Field(
         default=0.1,
         ge=0.0,
         le=1.0,
         description="Rate at which to sample queries for evaluation (0-1)",
     )
-    
+
     metrics: dict[str, list[str]] = Field(
         default={
             "retrieval": ["mrr", "ndcg@10", "recall@5", "precision@5", "hit_rate@10"],
@@ -1014,7 +1021,7 @@ class EvaluationSettings(BaseSettings):
         },
         description="Metrics to compute by category",
     )
-    
+
     benchmarks: list[dict[str, Any]] = Field(
         default=[
             {
@@ -1025,12 +1032,12 @@ class EvaluationSettings(BaseSettings):
         ],
         description="Benchmark dataset configurations",
     )
-    
+
     alerting_enabled: bool = Field(
         default=True,
         description="Enable alerting on threshold violations",
     )
-    
+
     thresholds: dict[str, float] = Field(
         default={
             "mrr_min": 0.70,
@@ -1045,12 +1052,12 @@ class EvaluationSettings(BaseSettings):
         },
         description="Metric thresholds for alerting",
     )
-    
+
     alert_channels: list[str] = Field(
         default=["log"],
         description="Channels for alerts (log, slack, email)",
     )
-    
+
     @field_validator("sample_rate")
     @classmethod
     def validate_sample_rate(cls, v: float) -> float:
@@ -1058,7 +1065,7 @@ class EvaluationSettings(BaseSettings):
         if not 0.0 <= v <= 1.0:
             raise ValueError("sample_rate must be between 0.0 and 1.0")
         return v
-    
+
     @field_validator("alert_channels")
     @classmethod
     def validate_alert_channels(cls, v: list[str]) -> list[str]:
@@ -1067,11 +1074,10 @@ class EvaluationSettings(BaseSettings):
         for channel in v:
             if channel not in valid_channels:
                 raise ValueError(
-                    f"Invalid alert channel: {channel}. "
-                    f"Must be one of: {valid_channels}"
+                    f"Invalid alert channel: {channel}. Must be one of: {valid_channels}"
                 )
         return v
-    
+
     model_config = SettingsConfigDict(env_prefix="EVALUATION_")
 
 
@@ -1083,7 +1089,7 @@ class LLMYamlConfig(BaseSettings):
 
     def load_yaml(self) -> dict[str, Any]:
         """Load LLM configuration from YAML file.
-        
+
         Returns:
             Dictionary containing LLM configuration
         """
@@ -1144,6 +1150,11 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8000, ge=1, le=65535)
     workers: int = Field(default=1, ge=1)
+    embedding_dimensions: int = Field(
+        default=1536,
+        ge=1,
+        description="Embedding dimensions - must match database column",
+    )
 
     # Sub-settings
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
@@ -1160,9 +1171,13 @@ class Settings(BaseSettings):
     classification: ClassificationSettings = Field(default_factory=ClassificationSettings)
     hybrid_search: HybridSearchSettings = Field(default_factory=HybridSearchSettings)
     agentic_rag: AgenticRAGSettings = Field(default_factory=AgenticRAGSettings)
-    contextual_retrieval: ContextualRetrievalSettings = Field(default_factory=ContextualRetrievalSettings)
+    contextual_retrieval: ContextualRetrievalSettings = Field(
+        default_factory=ContextualRetrievalSettings
+    )
     chunking: ChunkingSettings = Field(default_factory=ChunkingSettings)
-    embedding_optimization: EmbeddingOptimizationSettings = Field(default_factory=EmbeddingOptimizationSettings)
+    embedding_optimization: EmbeddingOptimizationSettings = Field(
+        default_factory=EmbeddingOptimizationSettings
+    )
     caching: CachingSettings = Field(default_factory=CachingSettings)
     evaluation: EvaluationSettings = Field(default_factory=EvaluationSettings)
 
@@ -1177,7 +1192,7 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Get cached application settings.
-    
+
     Returns:
         Settings instance with loaded configuration
     """
@@ -1186,7 +1201,7 @@ def get_settings() -> Settings:
 
 def reload_settings() -> Settings:
     """Reload settings from environment.
-    
+
     Returns:
         Fresh Settings instance
     """

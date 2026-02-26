@@ -6,19 +6,19 @@ and includes proper error handling and logging.
 """
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Float as SQLFloat
-from sqlalchemy import literal_column, select, text
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import literal_column, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
 
-from src.db.models import DocumentChunkModel, JobModel
+from src.db.models import ChunkEmbeddingModel, DocumentChunkModel
+from src.db.repositories.chunk_embedding_repository import ChunkEmbeddingRepository
 from src.db.repositories.document_chunk_repository import DocumentChunkRepository
 from src.observability.logging import get_logger
+from src.vector_store_config.vector_store import get_vector_store_config
 
 logger = get_logger(__name__)
 
@@ -33,11 +33,13 @@ class VectorSearchError(Exception):
 
 class ChunkNotFoundError(VectorSearchError):
     """Raised when a chunk is not found."""
+
     pass
 
 
 class InvalidEmbeddingError(VectorSearchError):
     """Raised when an embedding is invalid."""
+
     pass
 
 
@@ -56,6 +58,7 @@ class VectorSearchConfig:
     default_min_similarity: float = 0.7
     embedding_dimensions: int = 1536
     max_top_k: int = 100
+    active_model_name: str = "text-embedding-3-small"
 
 
 @dataclass
@@ -92,6 +95,7 @@ class VectorSearchService:
         self,
         repository: DocumentChunkRepository,
         config: VectorSearchConfig | None = None,
+        chunk_embedding_repository: ChunkEmbeddingRepository | None = None,
     ):
         """Initialize the vector search service.
 
@@ -100,7 +104,21 @@ class VectorSearchService:
             config: Optional configuration for search parameters
         """
         self.repository = repository
-        self.config = config or VectorSearchConfig()
+        if config is None:
+            vector_store_config = get_vector_store_config()
+            config = VectorSearchConfig(
+                default_top_k=vector_store_config.search.default_top_k,
+                default_min_similarity=vector_store_config.search.default_min_similarity,
+                embedding_dimensions=vector_store_config.embedding.dimensions,
+                max_top_k=vector_store_config.search.max_top_k,
+                active_model_name=vector_store_config.embedding.model,
+            )
+        self.config = config
+        self.chunk_embedding_repository = (
+            chunk_embedding_repository
+            if chunk_embedding_repository is not None
+            else ChunkEmbeddingRepository(repository.session)
+        )
         self.logger = logger
 
     async def search_by_vector(
@@ -109,6 +127,7 @@ class VectorSearchService:
         top_k: int = 10,
         min_similarity: float = 0.7,
         filters: dict[str, Any] | None = None,
+        model_name: str | None = None,
     ) -> list[SearchResult]:
         """Search for similar chunks using cosine similarity.
 
@@ -142,8 +161,11 @@ class VectorSearchService:
         start_time = time.monotonic()
 
         try:
+            selected_model_name = model_name or self.config.active_model_name
+            expected_dimensions = self._resolve_embedding_dimensions(selected_model_name)
+
             # Validate inputs
-            self._validate_embedding(query_embedding)
+            self._validate_embedding(query_embedding, expected_dimensions)
             top_k = min(top_k, self.config.max_top_k)
 
             self.logger.info(
@@ -151,6 +173,7 @@ class VectorSearchService:
                 top_k=top_k,
                 min_similarity=min_similarity,
                 filters=filters,
+                model_name=selected_model_name,
                 embedding_dimensions=len(query_embedding),
             )
 
@@ -160,6 +183,7 @@ class VectorSearchService:
                 top_k=top_k,
                 min_similarity=min_similarity,
                 filters=filters,
+                model_name=selected_model_name,
             )
 
             result = await self.repository.session.execute(query)
@@ -213,6 +237,7 @@ class VectorSearchService:
         chunk_id: UUID,
         top_k: int = 10,
         exclude_self: bool = True,
+        model_name: str | None = None,
     ) -> list[SearchResult]:
         """Find chunks similar to a reference chunk.
 
@@ -246,6 +271,7 @@ class VectorSearchService:
             reference_chunk_id=str(chunk_id),
             top_k=top_k,
             exclude_self=exclude_self,
+            model_name=model_name or self.config.active_model_name,
         )
 
         # Get the reference chunk
@@ -260,15 +286,24 @@ class VectorSearchService:
                 context={"chunk_id": str(chunk_id)},
             )
 
-        # Check if reference chunk has an embedding
-        if not reference_chunk.has_embedding:
+        selected_model_name = model_name or self.config.active_model_name
+        reference_embedding = await self.chunk_embedding_repository.get_embedding(
+            chunk_id=chunk_id,
+            model_name=selected_model_name,
+        )
+        if reference_embedding is None:
             self.logger.warning(
                 "reference_chunk_no_embedding",
                 chunk_id=str(chunk_id),
+                model_name=selected_model_name,
             )
             raise InvalidEmbeddingError(
-                f"Reference chunk {chunk_id} does not have an embedding vector",
-                context={"chunk_id": str(chunk_id)},
+                f"Reference chunk {chunk_id} does not have an embedding for model "
+                f"{selected_model_name}",
+                context={
+                    "chunk_id": str(chunk_id),
+                    "model_name": selected_model_name,
+                },
             )
 
         # Build filters
@@ -279,9 +314,7 @@ class VectorSearchService:
 
         try:
             # Perform similarity search using the reference chunk's embedding
-            query_embedding = reference_chunk.embedding
-            # Type assertion to satisfy mypy - we already checked has_embedding
-            assert query_embedding is not None
+            query_embedding = reference_embedding
 
             top_k_adjusted = top_k + (1 if exclude_self else 0)
 
@@ -290,13 +323,12 @@ class VectorSearchService:
                 top_k=top_k_adjusted,
                 min_similarity=0.0,  # No threshold for similar chunk search
                 filters=filters,
+                model_name=selected_model_name,
             )
 
             # Exclude self if requested
             if exclude_self:
-                results = [
-                    r for r in results if r.chunk.id != chunk_id
-                ][:top_k]
+                results = [r for r in results if r.chunk.id != chunk_id][:top_k]
 
             duration_ms = (time.monotonic() - start_time) * 1000
 
@@ -326,7 +358,11 @@ class VectorSearchService:
                 context={"chunk_id": str(chunk_id)},
             ) from e
 
-    def _validate_embedding(self, embedding: list[float]) -> None:
+    def _validate_embedding(
+        self,
+        embedding: list[float],
+        expected_dimensions: int | None = None,
+    ) -> None:
         """Validate embedding vector dimensions and values.
 
         Args:
@@ -338,12 +374,14 @@ class VectorSearchService:
         if not embedding:
             raise InvalidEmbeddingError("Query vector cannot be empty")
 
-        if len(embedding) != self.config.embedding_dimensions:
+        resolved_dimensions = expected_dimensions or self.config.embedding_dimensions
+
+        if len(embedding) != resolved_dimensions:
             raise InvalidEmbeddingError(
                 f"Query vector dimension {len(embedding)} does not match "
-                f"expected {self.config.embedding_dimensions}",
+                f"expected {resolved_dimensions}",
                 context={
-                    "expected_dimensions": self.config.embedding_dimensions,
+                    "expected_dimensions": resolved_dimensions,
                     "actual_dimensions": len(embedding),
                 },
             )
@@ -362,6 +400,22 @@ class VectorSearchService:
                     f"Invalid vector: contains NaN or infinite value at index {i}",
                     context={"index": i, "value": val},
                 )
+
+    def _resolve_embedding_dimensions(self, model_name: str) -> int:
+        known_dimensions = {
+            "text-embedding-3-small": 1536,
+            "text-embedding-ada-002": 1536,
+            "text-embedding-3-large": 3072,
+        }
+
+        for model_hint, dimensions in known_dimensions.items():
+            if model_hint in model_name:
+                return dimensions
+
+        if model_name == self.config.active_model_name:
+            return self.config.embedding_dimensions
+
+        return self.config.embedding_dimensions
 
     def _calculate_similarity(self, distance: float) -> float:
         """Convert cosine distance to similarity score.
@@ -392,6 +446,7 @@ class VectorSearchService:
         top_k: int,
         min_similarity: float,
         filters: dict[str, Any] | None,
+        model_name: str,
     ) -> Any:
         """Build SQLAlchemy query for cosine similarity search.
 
@@ -415,16 +470,14 @@ class VectorSearchService:
         # The <=> operator computes cosine distance
         # Use literal_column for SQLAlchemy 2.0 compatibility
         distance_expr = literal_column(
-            f"embedding <=> '{vector_str}'::vector"
+            f"chunk_embeddings.embedding::vector <=> '{vector_str}'::vector"
         ).label("distance")
 
         # Build base query
         stmt: Any = (
-            select(
-                DocumentChunkModel,
-                distance_expr,
-            )
-            .where(DocumentChunkModel.embedding.isnot(None))
+            select(DocumentChunkModel, distance_expr)
+            .join(ChunkEmbeddingModel, ChunkEmbeddingModel.chunk_id == DocumentChunkModel.id)
+            .where(ChunkEmbeddingModel.model_name == model_name)
             .where(distance_expr <= max_distance)  # type: ignore[arg-type,operator]
             .order_by(distance_expr.asc())  # type: ignore[attr-defined]
             .limit(top_k)
@@ -460,21 +513,25 @@ class VectorSearchService:
         # Filter by metadata JSONB
         if metadata_filters := filters.get("metadata"):
             if isinstance(metadata_filters, dict):
-                # Use JSONB containment operator @>
-                # This checks if the metadata contains all key-value pairs
-                from sqlalchemy.dialects.postgresql import JSONB
-
-                query = query.where(
-                    DocumentChunkModel.chunk_metadata.op("@>")(metadata_filters)
-                )
+                query = query.where(DocumentChunkModel.chunk_metadata.op("@>")(metadata_filters))
 
         # Filter by chunk_index
-        if chunk_index := filters.get("chunk_index"):
+        chunk_index = filters.get("chunk_index")
+        if chunk_index is not None:
             query = query.where(DocumentChunkModel.chunk_index == chunk_index)
 
         # Filter by content hash
-        if content_hash := filters.get("content_hash"):
+        content_hash = filters.get("content_hash")
+        if content_hash is not None:
             query = query.where(DocumentChunkModel.content_hash == content_hash)
+
+        # Filter by chunk quality score
+        min_quality = filters.get("min_quality")
+        if min_quality is not None:
+            quality_score_col = literal_column("document_chunks.quality_score")
+            query = query.where(quality_score_col.is_not(None)).where(
+                quality_score_col >= float(min_quality)
+            )
 
         return query
 

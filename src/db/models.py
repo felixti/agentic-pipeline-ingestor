@@ -6,8 +6,20 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.types import UserDefinedType
@@ -15,22 +27,22 @@ from sqlalchemy.types import UserDefinedType
 
 class Vector(UserDefinedType[Any]):
     """SQLAlchemy type for pgvector VECTOR.
-    
+
     This is a custom type that maps Python lists to PostgreSQL VECTOR columns.
     Supports configurable dimensions (default 1536 for OpenAI embeddings).
-    
+
     Example:
         embedding = Column(Vector(1536), nullable=True)
     """
-    
+
     cache_ok = True
-    
+
     def __init__(self, dimensions: int = 1536) -> None:
         self.dimensions = dimensions
-    
+
     def get_col_spec(self, **kw: Any) -> str:
         return f"VECTOR({self.dimensions})"
-    
+
     def bind_processor(self, dialect: Any) -> Any:
         def process(value: Any) -> Any:
             if value is None:
@@ -38,8 +50,9 @@ class Vector(UserDefinedType[Any]):
             if isinstance(value, list):
                 return f"[{','.join(str(x) for x in value)}]"
             return value
+
         return process
-    
+
     def result_processor(self, dialect: Any, coltype: Any) -> Any:
         def process(value: Any) -> Any:
             if value is None:
@@ -49,6 +62,55 @@ class Vector(UserDefinedType[Any]):
                 value = value.strip("[]")
                 return [float(x) for x in value.split(",")]
             return value
+
+        return process
+
+
+class SparseVector(UserDefinedType[Any]):
+    """SQLAlchemy type for pgvector SPARSEVEC.
+
+    Maps Python dict of {index: value} to PostgreSQL sparsevec type.
+    """
+
+    cache_ok = True
+
+    def __init__(self, dimensions: int = 30522) -> None:
+        self.dimensions = dimensions
+
+    def get_col_spec(self, **kw: Any) -> str:
+        return f"SPARSEVEC({self.dimensions})"
+
+    def bind_processor(self, dialect: Any) -> Any:
+        def process(value: Any) -> Any:
+            if value is None:
+                return None
+            if isinstance(value, dict):
+                pairs = [f"{k}:{v}" for k, v in sorted(value.items())]
+                return f"{{{','.join(pairs)}}}/{self.dimensions}"
+            return value
+
+        return process
+
+    def result_processor(self, dialect: Any, coltype: Any) -> Any:
+        def process(value: Any) -> Any:
+            if value is None:
+                return None
+
+            import re
+
+            match = re.match(r"\{([^}]*)\}/(\d+)", str(value))
+            if match:
+                pairs_str, _dims = match.groups()
+                result: dict[int, float] = {}
+                if not pairs_str:
+                    return result
+                for pair in pairs_str.split(","):
+                    if ":" in pair:
+                        k, v = pair.split(":", maxsplit=1)
+                        result[int(k)] = float(v)
+                return result
+            return value
+
         return process
 
 
@@ -66,24 +128,24 @@ def init_engine(
     max_overflow: int = 10,
 ) -> Any:
     """Initialize the async engine (for backward compatibility).
-    
+
     Args:
         database_url: Database URL
         echo: Whether to echo SQL statements
         pool_size: Connection pool size
         max_overflow: Max overflow connections
-        
+
     Returns:
         AsyncEngine instance
     """
     global _engine, _async_engine
     if database_url is None:
         import os
+
         database_url = os.getenv(
-            "DB_URL",
-            "postgresql+asyncpg://postgres:postgres@localhost:5432/pipeline"
+            "DB_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/pipeline"
         )
-    
+
     _engine = create_async_engine(
         database_url,
         echo=echo,
@@ -96,9 +158,9 @@ def init_engine(
 
 async def init_db(engine: Any = None) -> None:
     """Initialize the database (create tables).
-    
+
     This is a placeholder - actual migrations should be run via Alembic.
-    
+
     Args:
         engine: Optional engine instance (uses global engine if not provided)
     """
@@ -112,10 +174,10 @@ async def init_db(engine: Any = None) -> None:
 
 def get_async_engine(database_url: str | None = None) -> Any:
     """Get or create async engine.
-    
+
     Args:
         database_url: Database URL (uses env var or default if not provided)
-        
+
     Returns:
         AsyncEngine instance
     """
@@ -127,9 +189,9 @@ def get_async_engine(database_url: str | None = None) -> Any:
         else:
             if database_url is None:
                 import os
+
                 database_url = os.getenv(
-                    "DB_URL",
-                    "postgresql+asyncpg://postgres:postgres@localhost:5432/pipeline"
+                    "DB_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/pipeline"
                 )
             _async_engine = create_async_engine(database_url, echo=False)
     return _async_engine
@@ -137,7 +199,7 @@ def get_async_engine(database_url: str | None = None) -> Any:
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """Get database session.
-    
+
     Yields:
         AsyncSession for database operations
     """
@@ -155,9 +217,9 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 class ContentDetectionResultModel(Base):  # type: ignore[misc]
     """Database model for content detection results."""
-    
+
     __tablename__ = "content_detection_results"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     file_hash = Column(String(64), unique=True, nullable=False, index=True)
     file_size = Column(BigInteger, nullable=False)
@@ -173,19 +235,23 @@ class ContentDetectionResultModel(Base):  # type: ignore[misc]
     expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
     access_count = Column(Integer, default=1)
     last_accessed_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    
+
     # Relationships
     jobs = relationship("JobDetectionResultModel", back_populates="detection_result")
 
 
 class JobDetectionResultModel(Base):  # type: ignore[misc]
     """Link table between jobs and detection results."""
-    
+
     __tablename__ = "job_detection_results"
-    
+
     job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True)
-    detection_result_id = Column(UUID(as_uuid=True), ForeignKey("content_detection_results.id", ondelete="CASCADE"), primary_key=True)
-    
+    detection_result_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("content_detection_results.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
     # Relationships
     job = relationship("JobModel", back_populates="detection_results")
     detection_result = relationship("ContentDetectionResultModel", back_populates="jobs")
@@ -193,7 +259,7 @@ class JobDetectionResultModel(Base):  # type: ignore[misc]
 
 class JobStatus(str, Enum):
     """Job status enumeration."""
-    
+
     CREATED = "created"
     PENDING = "pending"
     PROCESSING = "processing"
@@ -205,9 +271,9 @@ class JobStatus(str, Enum):
 
 class JobModel(Base):  # type: ignore[misc]
     """Job model for pipeline processing jobs."""
-    
+
     __tablename__ = "jobs"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     status = Column(String(20), nullable=False, default=JobStatus.CREATED, index=True)
     source_type = Column(String(50), nullable=False, index=True)
@@ -224,22 +290,30 @@ class JobModel(Base):  # type: ignore[misc]
     retry_count = Column(Integer, nullable=False, default=0)
     max_retries = Column(Integer, nullable=False, default=3)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
-    
+
     # Job locking for concurrent workers
     locked_by = Column(String(255), nullable=True, index=True)
     locked_at = Column(DateTime(timezone=True), nullable=True)
     heartbeat_at = Column(DateTime(timezone=True), nullable=True)
-    
+
     # Pipeline reference
-    pipeline_id = Column(UUID(as_uuid=True), ForeignKey("pipelines.id", ondelete="SET NULL"), nullable=True)
+    pipeline_id = Column(
+        UUID(as_uuid=True), ForeignKey("pipelines.id", ondelete="SET NULL"), nullable=True
+    )
     pipeline_config = Column(JSONB, nullable=True)
-    
+
     # Relationships
-    detection_results = relationship("JobDetectionResultModel", back_populates="job", cascade="all, delete-orphan")
-    result = relationship("JobResultModel", back_populates="job", uselist=False, cascade="all, delete-orphan")
+    detection_results = relationship(
+        "JobDetectionResultModel", back_populates="job", cascade="all, delete-orphan"
+    )
+    result = relationship(
+        "JobResultModel", back_populates="job", uselist=False, cascade="all, delete-orphan"
+    )
     pipeline = relationship("PipelineModel", back_populates="jobs")
     chunks = relationship(
         "DocumentChunkModel",
@@ -247,7 +321,12 @@ class JobModel(Base):  # type: ignore[misc]
         cascade="all, delete-orphan",
         order_by="DocumentChunkModel.chunk_index",
     )
-    
+    entities = relationship(
+        "DocumentEntityModel",
+        back_populates="job",
+        cascade="all, delete-orphan",
+    )
+
     def to_dict(self) -> dict[str, Any]:
         """Convert job to dictionary."""
         return {
@@ -271,15 +350,17 @@ class JobModel(Base):  # type: ignore[misc]
             "error": {
                 "message": self.error_message,
                 "code": self.error_code,
-            } if self.error_message or self.error_code else None,
+            }
+            if self.error_message or self.error_code
+            else None,
         }
 
 
 class PipelineModel(Base):  # type: ignore[misc]
     """Pipeline configuration model."""
-    
+
     __tablename__ = "pipelines"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
@@ -288,19 +369,27 @@ class PipelineModel(Base):  # type: ignore[misc]
     is_active = Column(Integer, nullable=False, default=1)  # 1 = active, 0 = deleted
     created_by = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
     # Relationships
     jobs = relationship("JobModel", back_populates="pipeline", foreign_keys="JobModel.pipeline_id")
 
 
 class JobResultModel(Base):  # type: ignore[misc]
     """Job processing result model."""
-    
+
     __tablename__ = "job_results"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True, unique=True)
+    job_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        unique=True,
+    )
     extracted_text = Column(Text, nullable=True)
     output_data = Column(JSONB, nullable=True)
     result_metadata = Column("metadata", JSONB, nullable=False, default={})
@@ -309,18 +398,18 @@ class JobResultModel(Base):  # type: ignore[misc]
     output_uri = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
-    
+
     # Relationships
     job = relationship("JobModel", back_populates="result")
 
 
 class DocumentChunkModel(Base):  # type: ignore[misc]
     """Document chunk model with vector embedding for semantic search.
-    
+
     Stores chunks of text extracted from documents with their vector embeddings
     for similarity search. Each chunk belongs to a specific job and is ordered
     by chunk_index within that job.
-    
+
     Attributes:
         id: Unique identifier (UUID)
         job_id: Reference to parent job (cascade delete)
@@ -331,9 +420,9 @@ class DocumentChunkModel(Base):  # type: ignore[misc]
         chunk_metadata: JSONB metadata (source, page numbers, etc.)
         created_at: Timestamp of record creation
     """
-    
+
     __tablename__ = "document_chunks"
-    
+
     # Table constraints and indexes
     __table_args__ = (
         # Unique constraint: one chunk_index per job
@@ -341,10 +430,10 @@ class DocumentChunkModel(Base):  # type: ignore[misc]
         # Composite index for efficient job + chunk_index queries
         Index("idx_document_chunks_job_chunk", "job_id", "chunk_index"),
     )
-    
+
     # Primary key
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    
+
     # Foreign key to jobs table with CASCADE delete
     job_id = Column(
         UUID(as_uuid=True),
@@ -352,28 +441,47 @@ class DocumentChunkModel(Base):  # type: ignore[misc]
         nullable=False,
         index=True,
     )
-    
+
     # Chunk ordering within document (must be non-negative)
     chunk_index = Column(Integer, nullable=False)
-    
+
     # Content storage
     content = Column(Text, nullable=False)
-    
+
+    search_vector: Any = Column(TSVECTOR, nullable=True)
+
     # SHA-256 hash for deduplication
     content_hash = Column(String(64), nullable=True, index=True)
-    
+
     # Vector embedding for semantic search (nullable during initial creation)
     embedding: Any = Column(Vector(dimensions=1536), nullable=True)
-    
+
+    # Sparse embedding for BM25-compatible semantic search
+    sparse_embedding: Any = Column(SparseVector(dimensions=30522), nullable=True)
+    sparse_model: str | None = Column(String(50), nullable=True)
+
     # Flexible metadata storage
     chunk_metadata = Column(JSONB, nullable=False, default={})
-    
+
+    # Quality score from assessment (0.0-1.0)
+    quality_score: float | None = Column(Float, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    
+
     # Relationships
     job = relationship("JobModel", back_populates="chunks")
-    
+    entities = relationship(
+        "DocumentEntityModel",
+        back_populates="chunk",
+        cascade="all, delete-orphan",
+    )
+    embeddings = relationship(
+        "ChunkEmbeddingModel",
+        back_populates="chunk",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self) -> str:
         return (
             f"<DocumentChunkModel(id={self.id}, "
@@ -381,35 +489,81 @@ class DocumentChunkModel(Base):  # type: ignore[misc]
             f"chunk_index={self.chunk_index}, "
             f"has_embedding={self.embedding is not None})>"
         )
-    
+
     @property
     def has_embedding(self) -> bool:
         """Check if chunk has an embedding vector."""
         return self.embedding is not None
-    
+
     def set_embedding(self, embedding: list[float]) -> None:
         """Set the embedding vector with dimension validation.
-        
+
         Args:
             embedding: List of float values
-            
+
         Raises:
             ValueError: If embedding dimensions don't match expected size
         """
         expected_dims = 1536  # From Vector type definition
         if len(embedding) != expected_dims:
             raise ValueError(
-                f"Embedding must have {expected_dims} dimensions, "
-                f"got {len(embedding)}"
+                f"Embedding must have {expected_dims} dimensions, got {len(embedding)}"
             )
         self.embedding = embedding
 
 
+class ChunkEmbeddingModel(Base):  # type: ignore[misc]
+    __tablename__ = "chunk_embeddings"
+    __table_args__ = (UniqueConstraint("chunk_id", "model_name", name="uq_chunk_model"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    chunk_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("document_chunks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    model_name = Column(String(100), nullable=False)
+    dimensions = Column(Integer, nullable=False)
+    embedding: Any = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    chunk = relationship("DocumentChunkModel", back_populates="embeddings")
+
+
+class DocumentEntityModel(Base):  # type: ignore[misc]
+    __tablename__ = "document_entities"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    job_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chunk_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("document_chunks.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    entity_text = Column(Text, nullable=False)
+    entity_type = Column(String(50), nullable=False, index=True)
+    confidence = Column(Float, nullable=True)
+    start_pos = Column(Integer, nullable=True)
+    end_pos = Column(Integer, nullable=True)
+    entity_metadata = Column("metadata", JSONB, nullable=False, default={})
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    job = relationship("JobModel", back_populates="entities")
+    chunk = relationship("DocumentChunkModel", back_populates="entities")
+
+
 class AuditLogModel(Base):  # type: ignore[misc]
     """Audit log entry model."""
-    
+
     __tablename__ = "audit_logs"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False, index=True)
     user_id = Column(String(255), nullable=True, index=True)
@@ -429,9 +583,9 @@ class AuditLogModel(Base):  # type: ignore[misc]
 
 class ApiKeyModel(Base):  # type: ignore[misc]
     """API key model for service-to-service authentication."""
-    
+
     __tablename__ = "api_keys"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     key_hash = Column(String(64), nullable=False, index=True, unique=True)
     name = Column(String(255), nullable=False)
@@ -445,9 +599,9 @@ class ApiKeyModel(Base):  # type: ignore[misc]
 
 class WebhookSubscriptionModel(Base):  # type: ignore[misc]
     """Webhook subscription model."""
-    
+
     __tablename__ = "webhook_subscriptions"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     user_id = Column(String(255), nullable=False, index=True)
     url = Column(String(500), nullable=False)
@@ -455,16 +609,23 @@ class WebhookSubscriptionModel(Base):  # type: ignore[misc]
     secret = Column(String(255), nullable=True)
     is_active = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
 
 
 class WebhookDeliveryModel(Base):  # type: ignore[misc]
     """Webhook delivery attempt model."""
-    
+
     __tablename__ = "webhook_deliveries"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    subscription_id = Column(UUID(as_uuid=True), ForeignKey("webhook_subscriptions.id", ondelete="CASCADE"), nullable=False, index=True)
+    subscription_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("webhook_subscriptions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     event_type = Column(String(50), nullable=False, index=True)
     payload = Column(JSONB, nullable=False, default={})
     status = Column(String(20), nullable=False, default="pending")  # pending, delivered, failed

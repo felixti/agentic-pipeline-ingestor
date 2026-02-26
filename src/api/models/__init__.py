@@ -63,11 +63,13 @@ from .rag import (
     RAGValidationErrorResponse,
     StrategyPreset,
 )
+from .search import ChunkContext
 
 __all__ = [
     "ApiLinks",
     "ApiResponse",
     "ComponentHealth",
+    "ChunkContext",
     "ContentDetectionResult",
     "ContentType",
     "DestinationConfig",

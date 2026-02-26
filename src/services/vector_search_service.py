@@ -468,16 +468,17 @@ class VectorSearchService:
 
         # Build the query using pgvector's <=> operator
         # The <=> operator computes cosine distance
-        # Use literal_column for SQLAlchemy 2.0 compatibility
+        # Use the embedding column directly from document_chunks table
+        # (not from chunk_embeddings table which may be empty)
         distance_expr = literal_column(
-            f"chunk_embeddings.embedding::vector <=> '{vector_str}'::vector"
+            f"document_chunks.embedding::vector <=> '{vector_str}'::vector"
         ).label("distance")
 
-        # Build base query
+        # Build base query - query directly on document_chunks
+        # No join needed since embeddings are stored in document_chunks.embedding
         stmt: Any = (
             select(DocumentChunkModel, distance_expr)
-            .join(ChunkEmbeddingModel, ChunkEmbeddingModel.chunk_id == DocumentChunkModel.id)
-            .where(ChunkEmbeddingModel.model_name == model_name)
+            .where(DocumentChunkModel.embedding.is_not(None))
             .where(distance_expr <= max_distance)  # type: ignore[arg-type,operator]
             .order_by(distance_expr.asc())  # type: ignore[attr-defined]
             .limit(top_k)

@@ -17,7 +17,7 @@ llm:
     # Primary model group for agentic decisions (complex reasoning)
     - model_name: "agentic-decisions"
       litellm_params:
-        model: "azure/gpt-4"
+        model: "azure/gpt-5-mini"
         api_base: "${AZURE_OPENAI_API_BASE}"
         api_key: "${AZURE_OPENAI_API_KEY}"
         api_version: "2024-02-01"
@@ -25,16 +25,9 @@ llm:
         rpm: 60     # Requests per minute limit
         timeout: 30
       
-      # Fallback chain: Azure GPT-4 → OpenRouter Claude-3 Opus → Azure GPT-3.5
+      # Fallback chain: Azure GPT-5-mini → Azure GPT-4.1
       fallback_models:
-        - model: "openrouter/anthropic/claude-3-opus"
-          api_key: "${OPENROUTER_API_KEY}"
-          api_base: "https://openrouter.ai/api/v1"
-          tpm: 5000
-          rpm: 30
-          timeout: 30
-          
-        - model: "azure/gpt-35-turbo"
+        - model: "azure/gpt-4.1"
           api_base: "${AZURE_OPENAI_API_BASE}"
           api_key: "${AZURE_OPENAI_API_KEY}"
           api_version: "2024-02-01"
@@ -45,7 +38,7 @@ llm:
     # Secondary model group for enrichment (faster/cheaper)
     - model_name: "enrichment"
       litellm_params:
-        model: "azure/gpt-35-turbo"
+        model: "azure/gpt-4.1"
         api_base: "${AZURE_OPENAI_API_BASE}"
         api_key: "${AZURE_OPENAI_API_KEY}"
         api_version: "2024-02-01"
@@ -54,9 +47,10 @@ llm:
         timeout: 20
       
       fallback_models:
-        - model: "openrouter/anthropic/claude-3-haiku"
-          api_key: "${OPENROUTER_API_KEY}"
-          api_base: "https://openrouter.ai/api/v1"
+        - model: "azure/gpt-5-mini"
+          api_base: "${AZURE_OPENAI_API_BASE}"
+          api_key: "${AZURE_OPENAI_API_KEY}"
+          api_version: "2024-02-01"
           tpm: 10000
           rpm: 60
           timeout: 20
@@ -64,7 +58,7 @@ llm:
     # Model group for content detection (fast classification)
     - model_name: "classification"
       litellm_params:
-        model: "azure/gpt-35-turbo"
+        model: "azure/gpt-4.1"
         api_base: "${AZURE_OPENAI_API_BASE}"
         api_key: "${AZURE_OPENAI_API_KEY}"
         api_version: "2024-02-01"
@@ -73,9 +67,10 @@ llm:
         timeout: 10
       
       fallback_models:
-        - model: "openrouter/anthropic/claude-3-haiku"
-          api_key: "${OPENROUTER_API_KEY}"
-          api_base: "https://openrouter.ai/api/v1"
+        - model: "azure/gpt-5-mini"
+          api_base: "${AZURE_OPENAI_API_BASE}"
+          api_key: "${AZURE_OPENAI_API_KEY}"
+          api_version: "2024-02-01"
           tpm: 10000
           rpm: 60
           timeout: 10

@@ -20,7 +20,7 @@ class ModelConfig:
     """Configuration for a single LLM model.
     
     Attributes:
-        model: Model identifier (e.g., "azure/gpt-4", "openrouter/anthropic/claude-3-opus")
+        model: Model identifier (e.g., "azure/gpt-5-mini", "azure/gpt-4.1")
         api_key: API key for the provider
         api_base: Base URL for the API
         api_version: API version (for Azure)
@@ -260,7 +260,7 @@ class LLMConfig:
                 RouterConfig(
                     model_name="agentic-decisions",
                     litellm_params=ModelConfig(
-                        model="azure/gpt-4",
+                        model="azure/gpt-5-mini",
                         api_key="${AZURE_OPENAI_API_KEY}",
                         api_base="${AZURE_OPENAI_API_BASE}",
                         api_version="2024-02-01",
@@ -269,9 +269,9 @@ class LLMConfig:
                     ),
                     fallback_models=[
                         ModelConfig(
-                            model="openrouter/anthropic/claude-3-opus",
+                            model="azure/gpt-4.1",
                             api_key="${OPENROUTER_API_KEY}",
-                            api_base="https://openrouter.ai/api/v1",
+                            api_base="https://${AZURE_OPENAI_API_BASE}",
                             tpm=5000,
                         ),
                     ],
@@ -279,7 +279,7 @@ class LLMConfig:
                 RouterConfig(
                     model_name="enrichment",
                     litellm_params=ModelConfig(
-                        model="azure/gpt-35-turbo",
+                        model="azure/gpt-4.1",
                         api_key="${AZURE_OPENAI_API_KEY}",
                         api_base="${AZURE_OPENAI_API_BASE}",
                         api_version="2024-02-01",
@@ -287,9 +287,9 @@ class LLMConfig:
                     ),
                     fallback_models=[
                         ModelConfig(
-                            model="openrouter/anthropic/claude-3-haiku",
+                            model="azure/gpt-5-mini",
                             api_key="${OPENROUTER_API_KEY}",
-                            api_base="https://openrouter.ai/api/v1",
+                            api_base="https://${AZURE_OPENAI_API_BASE}",
                         ),
                     ],
                 ),

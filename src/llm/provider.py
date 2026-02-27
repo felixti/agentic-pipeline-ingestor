@@ -107,6 +107,23 @@ class ChatMessage:
         """
         return cls(role="assistant", content=content)
 
+    @staticmethod
+    def _is_gpt5_model(model: str) -> bool:
+        """Check if the model is a GPT-5 variant.
+        
+        GPT-5 models have special parameter restrictions:
+        - Only temperature=1 is supported (or omit temperature)
+        - Supports reasoning_effort parameter
+        
+        Args:
+            model: Model name or model group name
+            
+        Returns:
+            True if model is a GPT-5 variant
+        """
+        model_lower = model.lower()
+        return "gpt-5" in model_lower or "gpt5" in model_lower
+
 
 @dataclass
 class ChatCompletionResponse:
@@ -285,14 +302,29 @@ class LLMProvider:
         # Convert messages to litellm format
         litellm_messages = [m.to_dict() for m in messages]
 
+        # Check if using GPT-5 model - these have special parameter restrictions
+        is_gpt5 = ChatMessage._is_gpt5_model(model)
+        
+        # GPT-5 models only support temperature=1, add reasoning_effort
+        if is_gpt5:
+            # Override temperature for GPT-5 models
+            effective_temperature = 1.0
+            # Add reasoning_effort for better reasoning quality
+            reasoning_effort = kwargs.pop("reasoning_effort", "high")
+        else:
+            effective_temperature = temperature
+            reasoning_effort = None
         # Build request parameters
         request_params: dict[str, Any] = {
             "model": model,
             "messages": litellm_messages,
-            "temperature": temperature,
+            "temperature": effective_temperature,
             "max_tokens": max_tokens,
         }
-
+        
+        # Add reasoning_effort for GPT-5 models
+        if reasoning_effort is not None:
+            request_params["reasoning_effort"] = reasoning_effort
         if top_p is not None:
             request_params["top_p"] = top_p
         if frequency_penalty is not None:
@@ -305,8 +337,6 @@ class LLMProvider:
             request_params["tools"] = tools
         if tool_choice is not None:
             request_params["tool_choice"] = tool_choice
-
-        request_params.update(kwargs)
 
         # Determine system type for span attributes
         system = self._get_system_from_model(model)

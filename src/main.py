@@ -1226,7 +1226,7 @@ def _add_routes(app: FastAPI) -> None:
             repo = JobRepository(db)
             job = await repo.create(
                 source_type="url",
-                source_uri=url,
+                source_uri=str(file_path),  # Store local file path, not URL
                 file_name=filename,
                 file_size=file_size,
                 mime_type=content_type,

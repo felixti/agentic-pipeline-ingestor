@@ -1164,6 +1164,48 @@ def _add_routes(app: FastAPI) -> None:
             request_id=UUID(str(request_id)),
         ).model_dump()
 
+    def _convert_to_direct_download_url(self, url: str) -> tuple[str, str | None]:
+        """Convert sharing URLs to direct download URLs.
+        
+        Supports:
+        - Google Drive: /file/d/{id}/view -> /uc?export=download&id={id}
+        
+        Returns:
+            Tuple of (download_url, suggested_filename)
+        """
+        from urllib.parse import parse_qs, urlparse
+        
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+        suggested_filename = None
+        
+        # Google Drive URL conversion
+        if "drive.google.com" in hostname or "docs.google.com" in hostname:
+            # Extract file ID from various Google Drive URL formats
+            file_id = None
+            
+            # Format 1: /file/d/{file_id}/view
+            if "/file/d/" in parsed.path:
+                parts = parsed.path.split("/file/d/")
+                if len(parts) > 1:
+                    file_id = parts[1].split("/")[0]
+            # Format 2: /open?id={file_id}
+            elif "id=" in parsed.query:
+                qs = parse_qs(parsed.query)
+                file_id = qs.get("id", [None])[0]
+            # Format 3: /uc?export=download&id={file_id} (already direct)
+            elif "/uc" in parsed.path and "export=download" in parsed.query:
+                return url, suggested_filename
+            
+            if file_id:
+                # Use direct download URL
+                download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+                # Note: Large files on Google Drive may require confirmation cookie handling
+                # This is handled below in the download logic
+                return download_url, suggested_filename
+        
+        return url, suggested_filename
+
     @app.post(f"{api_prefix}/upload/url", status_code=status.HTTP_202_ACCEPTED, tags=["Upload"])
     async def ingest_from_url(
         request: Request,
@@ -1180,12 +1222,15 @@ def _add_routes(app: FastAPI) -> None:
 
         request_id = getattr(request.state, "request_id", str(uuid4()))
 
-        url = url_data.get("url")
-        if not url:
+        original_url = url_data.get("url")
+        if not original_url:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"error": {"code": "MISSING_URL", "message": "URL is required"}},
             )
+        
+        # Convert sharing URLs to direct download URLs
+        url, suggested_filename = app._convert_to_direct_download_url(original_url)
 
         # Create staging directory
         staging_dir = Path("/tmp/pipeline/staging")
@@ -1193,8 +1238,25 @@ def _add_routes(app: FastAPI) -> None:
 
         try:
             # Download file from URL
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=30.0, follow_redirects=True)
+            async with httpx.AsyncClient(follow_redirects=True) as client:
+                # For Google Drive, we may need to handle confirmation cookies
+                # First request to get any confirmation token
+                response = await client.get(url, timeout=30.0)
+                
+                # Check if we got a confirmation page (for large files or virus scan warnings)
+                if "drive.google.com" in str(response.url) and response.status_code == 200:
+                    content_text = response.text[:5000]  # Check first 5KB
+                    if "confirm=" in content_text or "download_warning" in content_text:
+                        # Extract confirmation token and retry
+                        import re
+                        confirm_match = re.search(r'confirm=([a-zA-Z0-9_-]+)', content_text)
+                        if confirm_match:
+                            confirm_token = confirm_match.group(1)
+                            file_id = re.search(r'id=([a-zA-Z0-9_-]+)', url)
+                            if file_id:
+                                confirm_url = f"https://drive.google.com/uc?export=download&confirm={confirm_token}&id={file_id.group(1)}"
+                                response = await client.get(confirm_url, timeout=30.0)
+                
                 response.raise_for_status()
 
                 # Determine filename

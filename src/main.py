@@ -1164,48 +1164,6 @@ def _add_routes(app: FastAPI) -> None:
             request_id=UUID(str(request_id)),
         ).model_dump()
 
-    def _convert_to_direct_download_url(self, url: str) -> tuple[str, str | None]:
-        """Convert sharing URLs to direct download URLs.
-        
-        Supports:
-        - Google Drive: /file/d/{id}/view -> /uc?export=download&id={id}
-        
-        Returns:
-            Tuple of (download_url, suggested_filename)
-        """
-        from urllib.parse import parse_qs, urlparse
-        
-        parsed = urlparse(url)
-        hostname = parsed.hostname or ""
-        suggested_filename = None
-        
-        # Google Drive URL conversion
-        if "drive.google.com" in hostname or "docs.google.com" in hostname:
-            # Extract file ID from various Google Drive URL formats
-            file_id = None
-            
-            # Format 1: /file/d/{file_id}/view
-            if "/file/d/" in parsed.path:
-                parts = parsed.path.split("/file/d/")
-                if len(parts) > 1:
-                    file_id = parts[1].split("/")[0]
-            # Format 2: /open?id={file_id}
-            elif "id=" in parsed.query:
-                qs = parse_qs(parsed.query)
-                file_id = qs.get("id", [None])[0]
-            # Format 3: /uc?export=download&id={file_id} (already direct)
-            elif "/uc" in parsed.path and "export=download" in parsed.query:
-                return url, suggested_filename
-            
-            if file_id:
-                # Use direct download URL
-                download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-                # Note: Large files on Google Drive may require confirmation cookie handling
-                # This is handled below in the download logic
-                return download_url, suggested_filename
-        
-        return url, suggested_filename
-
     @app.post(f"{api_prefix}/upload/url", status_code=status.HTTP_202_ACCEPTED, tags=["Upload"])
     async def ingest_from_url(
         request: Request,
@@ -1214,11 +1172,52 @@ def _add_routes(app: FastAPI) -> None:
     ) -> dict[str, Any]:
         """Ingest from URL."""
         from pathlib import Path
+        from urllib.parse import parse_qs, urlparse
 
         import httpx
 
         from src.api.models import ApiResponse, UploadResponse
         from src.db.repositories.job import JobRepository
+
+        def convert_to_direct_download_url(url: str) -> tuple[str, str | None]:
+            """Convert sharing URLs to direct download URLs.
+            
+            Supports:
+            - Google Drive: /file/d/{id}/view -> /uc?export=download&id={id}
+            
+            Returns:
+                Tuple of (download_url, suggested_filename)
+            """
+            parsed = urlparse(url)
+            hostname = parsed.hostname or ""
+            suggested_filename = None
+            
+            # Google Drive URL conversion
+            if "drive.google.com" in hostname or "docs.google.com" in hostname:
+                # Extract file ID from various Google Drive URL formats
+                file_id = None
+                
+                # Format 1: /file/d/{file_id}/view
+                if "/file/d/" in parsed.path:
+                    parts = parsed.path.split("/file/d/")
+                    if len(parts) > 1:
+                        file_id = parts[1].split("/")[0]
+                # Format 2: /open?id={file_id}
+                elif "id=" in parsed.query:
+                    qs = parse_qs(parsed.query)
+                    file_id = qs.get("id", [None])[0]
+                # Format 3: /uc?export=download&id={file_id} (already direct)
+                elif "/uc" in parsed.path and "export=download" in parsed.query:
+                    return url, suggested_filename
+                
+                if file_id:
+                    # Use direct download URL
+                    download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+                    # Note: Large files on Google Drive may require confirmation cookie handling
+                    # This is handled below in the download logic
+                    return download_url, suggested_filename
+            
+            return url, suggested_filename
 
         request_id = getattr(request.state, "request_id", str(uuid4()))
 
@@ -1230,7 +1229,7 @@ def _add_routes(app: FastAPI) -> None:
             )
         
         # Convert sharing URLs to direct download URLs
-        url, suggested_filename = app._convert_to_direct_download_url(original_url)
+        url, suggested_filename = convert_to_direct_download_url(original_url)
 
         # Create staging directory
         staging_dir = Path("/tmp/pipeline/staging")

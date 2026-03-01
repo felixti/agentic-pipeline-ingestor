@@ -690,6 +690,21 @@ class CogneeLocalDestination(DestinationPlugin):
         for i, item in enumerate(cognee_results[:top_k]):
             # Cognee results can be strings, dicts, or custom objects
             # Handle different result types
+            
+            # Debug: Log the result type and available fields
+            if isinstance(item, dict):
+                logger.debug(
+                    "cognee_search_result_dict",
+                    keys=list(item.keys()),
+                    has_metadata="metadata" in item,
+                    metadata_keys=list(item.get("metadata", {}).keys()) if "metadata" in item else [],
+                )
+            elif not isinstance(item, str):
+                logger.debug(
+                    "cognee_search_result_object",
+                    type=type(item).__name__,
+                    attrs=[attr for attr in dir(item) if not attr.startswith("_")],
+                )
             if isinstance(item, str):
                 # Simple text result
                 result = SearchResult(

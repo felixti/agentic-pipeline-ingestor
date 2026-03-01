@@ -64,7 +64,6 @@ docs/_build/
 site/
 
 # Docker
-.dockerignore
 
 # Generated SDKs (keep structure, ignore generated files)
 sdks/python/pipeline_ingestor_client/

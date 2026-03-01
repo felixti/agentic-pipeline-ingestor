@@ -1,14 +1,26 @@
 # Docker Compose para Produção (Dokploy)
 # Usa variáveis de ambiente para todas as configurações sensíveis
+#
+# OPTIMIZATION: For faster builds, use a pre-built base image:
+# 1. Build base image: docker build -f Dockerfile.base -t agentic-pipeline-base:latest .
+# 2. Push to registry: docker tag agentic-pipeline-base:latest your-registry/agentic-pipeline-base:latest
+# 3. Update Dockerfile to use: FROM your-registry/agentic-pipeline-base:latest
+#
+# The .dockerignore file reduces build context by excluding unnecessary files.
 
 services:
   # ============================================================================
   # API Service
   # ============================================================================
   api:
+    # For Dokploy: builds from Dockerfile using cache
+    # For faster deploys, switch to: image: your-registry/agentic-pipeline:latest
     build:
       context: .
       dockerfile: Dockerfile
+      # Use BuildKit for better caching
+      additional_contexts:
+        - base=agentic-pipeline-base:latest
     container_name: pipeline-api
     ports:
       - "8000:8000"

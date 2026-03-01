@@ -1,33 +1,24 @@
 # Agentic Data Pipeline Ingestor - Production Docker Image
-# Multi-stage build for optimized image size
+# Uses pre-built base image for faster builds
 
 # ============================================================================
-# Stage 1: Builder
+# Stage 1: Dependencies (using base image)
 # ============================================================================
-FROM python:3.11-slim AS builder
+FROM agentic-pipeline-base:latest AS builder
 
 # Set build environment
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PATH="/opt/venv/bin:$PATH"
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create virtual environment
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Install Python dependencies
+# Copy pyproject.toml to check for new dependencies
 COPY pyproject.toml /app/
 WORKDIR /app
 
-# Install dependencies from pyproject.toml
+# Install only the application-specific dependencies (lightweight)
+# Heavy deps (torch, cognee, hipporag, docling) are already in base image
 RUN pip install --upgrade pip && \
     pip install \
     fastapi uvicorn python-multipart starlette pydantic pydantic-settings email-validator \
@@ -38,16 +29,13 @@ RUN pip install --upgrade pip && \
     opentelemetry-instrumentation-fastapi opentelemetry-instrumentation-sqlalchemy \
     pymupdf pillow pdf2image pytesseract python-magic \
     python-docx openpyxl python-pptx pdfplumber pytest pytest-asyncio \
-    docling azure-ai-vision-imageanalysis \
     orjson pyyaml click tenacity typing-extensions psutil greenlet \
-    numpy scipy scikit-learn sentence-transformers \
-    neo4j>=5.15.0 "cognee[postgres,neo4j]" \
-    hipporag>=0.1.0
+    gunicorn uvloop
 
 # ============================================================================
 # Stage 2: Runtime
 # ============================================================================
-FROM python:3.11-slim AS runtime
+FROM agentic-pipeline-base:latest AS runtime
 
 # Set runtime environment
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -57,25 +45,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     APP_HOME=/app \
     PATH="/opt/venv/bin:$PATH"
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    libmagic1 \
-    poppler-utils \
-    tesseract-ocr \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
 # Create non-root user
 RUN groupadd -r pipeline && useradd -r -g pipeline pipeline
 
-# Copy virtual environment from builder
+# Copy virtual environment with app-specific deps from builder
 COPY --from=builder /opt/venv /opt/venv
 
 # Set working directory
 WORKDIR $APP_HOME
 
-# Copy application code
+# Copy application code (this layer changes most frequently)
 COPY --chown=pipeline:pipeline src/ ./src/
 COPY --chown=pipeline:pipeline api/ ./api/
 COPY --chown=pipeline:pipeline config/ ./config/

@@ -34,7 +34,7 @@ WORKDIR /app
 # Install heavy ML packages separately to leverage caching
 # NOTE: vllm is excluded as it requires GPU and takes 30+ min to build from source
 RUN pip install \
-    torch --index-url https://download.pytorch.org/whl/cpu \
+    torch \
     numpy scipy scikit-learn \
     sentence-transformers \
     --no-cache-dir

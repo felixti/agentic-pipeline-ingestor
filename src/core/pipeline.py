@@ -966,6 +966,8 @@ class PipelineExecutor:
                 job_config.update(job.pipeline_config.model_dump())
             elif hasattr(job.pipeline_config, "dict"):
                 job_config.update(job.pipeline_config.dict())
+            elif isinstance(job.pipeline_config, dict):
+                job_config.update(job.pipeline_config)
 
         context = await self.pipeline.execute(
             file_path=file_path,

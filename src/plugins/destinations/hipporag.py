@@ -629,6 +629,9 @@ class HippoRAGDestination(DestinationPlugin):
                 scores = []
                 source_docs = []
                 
+                # Collect entities related to retrieved passages
+                related_entities = set(query_entities)  # Start with query entities
+                
                 for passage_id, score in passage_scores:
                     if passage_id in self._graph.passages:
                         passages.append(self._graph.passages[passage_id])
@@ -639,13 +642,18 @@ class HippoRAGDestination(DestinationPlugin):
                             source_docs.append(parts[1])
                         else:
                             source_docs.append("unknown")
+                        
+                        # Find entities related to this passage
+                        for entity_name, entity_data in self._graph.entities.items():
+                            if passage_id in self._graph.entity_passages.get(entity_name, []):
+                                related_entities.add(entity_name)
                 
                 result = RetrievalResult(
                     query=query,
                     passages=passages,
                     scores=scores,
                     source_documents=source_docs,
-                    entities=query_entities,
+                    entities=list(related_entities)[:20],  # Limit to top 20 entities
                 )
                 results.append(result)
                 

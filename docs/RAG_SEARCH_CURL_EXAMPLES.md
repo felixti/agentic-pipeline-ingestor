@@ -13,7 +13,8 @@ Complete cURL examples for all available RAG (Retrieval-Augmented Generation) se
 2. [Text Search (Lexical/BM25)](#2-text-search-lexicalbm25)
 3. [Hybrid Search](#3-hybrid-search)
 4. [Find Similar Chunks](#4-find-similar-chunks)
-5. [Advanced Usage Examples](#5-advanced-usage-examples)
+5. [Cognee GraphRAG Search](#5-cognee-graphrag-search)
+6. [Advanced Usage Examples](#6-advanced-usage-examples)
 
 ---
 
@@ -248,7 +249,175 @@ curl "http://localhost:8000/api/v1/search/similar/550e8400-e29b-41d4-a716-446655
 
 ---
 
-## 5. Advanced Usage Examples
+## 5. Cognee GraphRAG Search
+
+Knowledge graph search using Cognee with Neo4j backend. Provides entity-aware search with relationship traversal.
+
+**Best for**: Finding relationships between entities, exploring knowledge graphs, complex multi-hop queries, entity-based exploration.
+
+### Prerequisites
+
+Documents must be processed with Cognee destination:
+```json
+{"destinations": [{"type": "cognee_local", "auto_cognify": true}]}
+```
+
+### Basic Cognee Hybrid Search
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/cognee/search" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What'\''s the relationship between Caio and Felipe?",
+    "dataset_id": "tee34",
+    "search_type": "hybrid",
+    "top_k": 5
+  }'
+```
+
+### Cognee Graph Search (Relationship Focus)
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/cognee/search" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Tell me about software architecture patterns",
+    "dataset_id": "my-dataset",
+    "search_type": "graph",
+    "top_k": 3
+  }'
+```
+
+### Cognee Vector Search
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/cognee/search" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "neural networks deep learning",
+    "dataset_id": "research-papers",
+    "search_type": "vector",
+    "top_k": 10
+  }'
+```
+
+### Extract Entities from Text
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/cognee/extract-entities" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Microsoft was founded by Bill Gates and Paul Allen in 1975. It is headquartered in Redmond, Washington.",
+    "dataset_id": "test-dataset"
+  }'
+```
+
+### Get Cognee Graph Statistics
+
+```bash
+curl "http://localhost:8000/api/v1/cognee/stats?dataset_id=tee34" \
+  -H "X-API-Key: your-api-key"
+```
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | string | Yes | - | Natural language query |
+| `dataset_id` | string | Yes | - | Dataset identifier (namespace) |
+| `search_type` | string | No | "hybrid" | Search type: "hybrid", "graph", "vector" |
+| `top_k` | integer | No | 5 | Maximum results (1-20) |
+
+### Search Type Guide
+
+| Type | Best For | Latency |
+|------|----------|---------|
+| `hybrid` | General queries, best overall results | ~10s |
+| `graph` | Relationship questions, entity exploration | ~15s |
+| `vector` | Semantic similarity, fast retrieval | ~5s |
+
+### Cognee Search Response
+
+```json
+{
+  "results": [
+    {
+      "chunk_id": "result_0",
+      "content": "Felipe is the person who wrote a reference or recommendation letter for Caio...",
+      "score": 1.0,
+      "source_document": "text_b5c97ef719658e4460c8e6dd9f097b83",
+      "entities": [
+        "caio",
+        "caio amaral correa",
+        "felipe augusto felix"
+      ],
+      "metadata": {}
+    }
+  ],
+  "search_type": "hybrid",
+  "dataset_id": "tee34",
+  "query_time_ms": 10279.51,
+  "message": null
+}
+```
+
+### Entity Extraction Response
+
+```json
+{
+  "entities": [
+    {
+      "name": "Microsoft",
+      "type": "Organization",
+      "description": "Technology company founded in 1975"
+    },
+    {
+      "name": "Bill Gates",
+      "type": "Person",
+      "description": "Co-founder of Microsoft"
+    },
+    {
+      "name": "Paul Allen",
+      "type": "Person",
+      "description": "Co-founder of Microsoft"
+    },
+    {
+      "name": "Redmond",
+      "type": "Location",
+      "description": "City in Washington state"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Bill Gates",
+      "target": "Microsoft",
+      "type": "FOUNDED"
+    }
+  ],
+  "query_time_ms": 1250
+}
+```
+
+### Stats Response
+
+```json
+{
+  "dataset_id": "tee34",
+  "total_nodes": 111,
+  "total_relationships": 263,
+  "entity_count": 45,
+  "document_count": 3,
+  "last_updated": "2026-03-01T17:00:00Z"
+}
+```
+
+---
+
+## 6. Advanced Usage Examples
 
 ### Complete Search Workflow
 

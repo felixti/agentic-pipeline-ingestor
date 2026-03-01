@@ -53,6 +53,93 @@ All P0, P1, and P2 issues from this report have been addressed. Below is a summa
 | `012_add_search_analytics.py` | Search query logging and analytics |
 | `013_add_sparse_vectors.py` | Sparse vector support for hybrid search |
 | `014_add_chunk_embeddings.py` | Multi-embedding support per chunk |
+| `015_add_cognee_pgvector_schema.py` | Cognee vectors, documents, and entities tables for GraphRAG |
+
+---
+
+## 0.1 COGNEE GraphRAG INTEGRATION (2026-03-01)
+
+### Overview
+Cognee 0.5.3 has been integrated as a **local GraphRAG destination** using Neo4j as the graph store and PostgreSQL/pgvector for vector storage. This provides knowledge graph-based search with entity extraction and relationship traversal.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    COGNEE GraphRAG                           │
+├─────────────────────────────────────────────────────────────┤
+│  Graph Store: Neo4j 5.15-community                           │
+│  Vector Store: PostgreSQL + pgvector                        │
+│  Relational Store: PostgreSQL                               │
+│  LLM: Azure OpenAI (gpt-4.1) via LiteLLM                    │
+│  Embeddings: text-embedding-3-small (1536-dim)              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Cognee Configuration
+
+| Variable | Value | Description |
+|----------|-------|-------------|
+| `DB_PROVIDER` | `postgres` | Relational metadata storage |
+| `VECTOR_DB_PROVIDER` | `pgvector` | Vector embeddings storage |
+| `GRAPH_DATABASE_PROVIDER` | `neo4j` | Knowledge graph storage |
+| `ENABLE_BACKEND_ACCESS_CONTROL` | `false` | Disabled to avoid handler conflicts |
+| `EMBEDDING_DIMENSIONS` | `1536` | For text-embedding-3-small |
+
+### Cognee API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/cognee/search` | POST | Search knowledge graph (hybrid/graph/vector) |
+| `/cognee/extract-entities` | POST | Extract entities from text |
+| `/cognee/stats` | GET | Graph statistics (nodes, relationships, datasets) |
+
+### Search Types
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| `hybrid` | Combined vector + graph search | Best overall results |
+| `graph` | Graph traversal + LLM completion | Relationship queries |
+| `vector` | Pure vector similarity | Semantic similarity |
+
+### Key Features
+
+1. **Entity Extraction**: Automatically extracts entities (Person, Organization, Location, etc.) during document processing
+2. **Relationship Mapping**: Creates knowledge graph with entities and their relationships
+3. **Source Document Tracking**: Links results back to source documents
+4. **Neo4j Direct Queries**: API enriches Cognee results with direct Neo4j queries for entities and source documents
+
+### Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `src/plugins/destinations/cognee_local.py` | Cognee destination plugin |
+| `src/api/routes/cognee.py` | Cognee API endpoints |
+| `src/infrastructure/neo4j/client.py` | Neo4j async client |
+| `docker-compose.production.yml` | Neo4j + Cognee services configuration |
+
+### Graph Schema (Neo4j)
+
+| Node Label | Properties | Purpose |
+|------------|------------|---------|
+| `TextDocument` | `name`, `mime_type`, `raw_data_location` | Source documents |
+| `DocumentChunk` | `text`, `chunk_index`, `chunk_size` | Document chunks |
+| `Entity` | `name`, `description`, `type` | Extracted entities |
+| `EntityType` | `name`, `description` | Entity categories |
+
+### Recent Fixes
+
+| Commit | Description |
+|--------|-------------|
+| `7f2d5b3` | Add cognee[postgres,neo4j] extras |
+| `e1c5897` | Add LiteLLM Azure env vars for Cognee |
+| `edb4d06` | Fix EMBEDDING_DIMENSIONS for text-embedding-3-small |
+| `9fc4c17` | Add APOC plugin for Neo4j |
+| `a610284` | Add entity extraction from Neo4j |
+| `aa1cf69` | Fix Neo4j client method (execute_query) |
+| `77150f8` | Fix source document query (TextDocument label) |
+| `e23d91e` | Add worker health checks |
+| `1623f2c` | Fix worker health check (pidof python) |
 
 ### Next Steps
 

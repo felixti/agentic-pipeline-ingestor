@@ -156,6 +156,21 @@ class JobProcessor:
         except Exception as e:
             logger.warning("failed_to_initialize_llm_provider", worker_id=self.worker_id, error=str(e))
 
+    async def process_job_with_retry(self, job_id: UUID) -> dict[str, Any]:
+        """Process a single job with retry logic.
+        
+        This method provides backward compatibility with the worker main.py
+        which calls process_job_with_retry. The retry logic is handled at
+        the orchestration level.
+        
+        Args:
+            job_id: ID of the job to process
+            
+        Returns:
+            Processing result
+        """
+        return await self.process_job(job_id)
+
     async def process_job(self, job_id: UUID) -> dict[str, Any]:
         """Process a single job.
         

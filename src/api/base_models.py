@@ -242,7 +242,7 @@ class PipelineConfig(BaseModel):
             "ingest", "detect", "parse", "enrich", "quality", "transform", "output"
         ]
     )
-    destinations: list[DestinationConfig] = Field(
+    destinations: list["DestinationConfig"] = Field(
         default_factory=list,
         description="Destinations for processed data routing"
     )

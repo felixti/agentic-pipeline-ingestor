@@ -71,6 +71,7 @@ RUN pip install \
     docling azure-ai-vision-imageanalysis \
     orjson pyyaml click tenacity typing-extensions psutil greenlet \
     pytest pytest-asyncio \
+    pgvector \
     --no-cache-dir
 
 # ============================================================================

@@ -14,6 +14,7 @@ from src.core.content_detection.service import ContentDetectionService
 from src.core.job_context import JobContext
 from src.core.parser_selection import ParserConfig, ParserSelector
 from src.core.quality import QualityAssessor
+from src.core.routing import DestinationRouter
 from src.vector_store_config import get_vector_store_config
 
 logger = structlog.get_logger(__name__)
@@ -708,6 +709,107 @@ class EmbedStage(PipelineStage):
         return context
 
 
+class OutputStage(PipelineStage):
+    """Stage: Route processed data to configured destinations."""
+
+    name = "output"
+
+    def __init__(self, router: DestinationRouter | None = None):
+        """Initialize output stage.
+        
+        Args:
+            router: Destination router for routing data
+        """
+        self.router = router
+
+    async def execute(self, context: JobContext) -> JobContext:
+        """Execute output stage - route data to destinations.
+        
+        Args:
+            context: Job context with processed chunks
+            
+        Returns:
+            Updated context with routing results
+        """
+        log = logger.bind(stage=self.name, job_id=str(context.job_id))
+        log.info("pipeline.stage_started")
+
+        # Check if destinations are configured
+        destinations = context.config.get("destinations", [])
+        if not destinations:
+            log.info("pipeline.output_no_destinations")
+            context.set_stage_result(
+                self.name,
+                {"status": "skipped", "reason": "no_destinations_configured"},
+            )
+            return context
+
+        # Check if we have data to route
+        if not context.chunks:
+            log.warning("pipeline.output_no_chunks")
+            context.set_stage_result(
+                self.name,
+                {"status": "skipped", "reason": "no_chunks_to_route"},
+            )
+            return context
+
+        try:
+            # Import here to avoid circular dependencies
+            from src.api.models import DestinationConfig
+            from src.plugins.base import TransformedData
+
+            # Create TransformedData from chunks
+            data = TransformedData(
+                job_id=context.job_id,
+                chunks=context.chunks,
+                metadata={
+                    "file_type": context.file_type,
+                    "file_path": context.file_path,
+                    "stage_results": context.stage_results,
+                },
+            )
+
+            # Parse destination configs
+            dest_configs = []
+            for dest in destinations:
+                if isinstance(dest, dict):
+                    dest_configs.append(DestinationConfig(**dest))
+                else:
+                    dest_configs.append(dest)
+
+            # Route to destinations using router or create one
+            if self.router is None:
+                self.router = DestinationRouter()
+
+            result = await self.router.route_to_multiple(
+                data=data,
+                destinations=dest_configs,
+            )
+
+            # Store result in context
+            context.set_stage_result(self.name, result.to_dict())
+
+            log.info(
+                "pipeline.stage_completed",
+                success_count=result.success_count,
+                failure_count=result.failure_count,
+                overall_status=result.overall_status.value,
+            )
+
+        except Exception as e:
+            log.error("pipeline.stage_failed", error=str(e), exc_info=True)
+            context.set_stage_result(
+                self.name,
+                {
+                    "status": "failed",
+                    "error": str(e),
+                },
+            )
+            # Don't raise - output routing failure shouldn't stop the pipeline
+
+        return context
+
+
 class Pipeline:
     """Pipeline executor."""
 
@@ -716,13 +818,9 @@ class Pipeline:
         DetectStage,  # Content detection
         SelectParserStage,  # Parser selection based on detection
         ParseStage,  # Document parsing
-        ChunkStage,  # NEW: Text chunking
-        EmbedStage,  # NEW: Embedding generation
-        # Additional stages would be added here:
-        # EnrichStage,
-        # QualityStage,
-        # TransformStage,
-        # OutputStage,
+        ChunkStage,  # Text chunking
+        EmbedStage,  # Embedding generation
+        OutputStage,  # Route to destinations (Cognee, HippoRAG, etc.)
     ]
 
     def __init__(
@@ -730,6 +828,7 @@ class Pipeline:
         detection_service: ContentDetectionService | None = None,
         embedding_service: Any = None,
         plugin_registry: Any = None,
+        destination_router: DestinationRouter | None = None,
     ):
         """Initialize pipeline.
 
@@ -737,6 +836,7 @@ class Pipeline:
             detection_service: Optional detection service
             embedding_service: Optional embedding service
             plugin_registry: Optional plugin registry for parsers
+            destination_router: Optional destination router for output stage
         """
         self.stages = []
         for stage_class in self.STAGES:
@@ -746,6 +846,8 @@ class Pipeline:
                 self.stages.append(EmbedStage(embedding_service))
             elif stage_class == ParseStage:
                 self.stages.append(ParseStage(plugin_registry))
+            elif stage_class == OutputStage:
+                self.stages.append(OutputStage(destination_router))
             else:
                 self.stages.append(stage_class())
 

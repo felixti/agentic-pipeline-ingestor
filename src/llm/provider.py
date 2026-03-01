@@ -13,6 +13,10 @@ from typing import Any
 try:
     import litellm
     from litellm import acompletion
+    
+    # Drop unsupported params to avoid errors with different model providers
+    litellm.drop_params = True
+    
     LITELLM_AVAILABLE = True
 except ImportError:
     LITELLM_AVAILABLE = False

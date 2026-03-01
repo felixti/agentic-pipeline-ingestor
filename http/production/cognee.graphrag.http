@@ -10,9 +10,10 @@
 # - Documents must be processed with destination_type: "cognee_local"
 # - Neo4j must be running and accessible
 # - Environment variables: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
+#
+# NOTE: These endpoints do NOT require authentication (consistent with /search/* routes)
 
 @baseUrl = https://ag-dt-ppl-api.felixtek.cloud/api/v1
-@apiKey = your-production-api-key
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -23,7 +24,6 @@
 # Combines vector similarity with graph traversal for comprehensive results
 POST {{baseUrl}}/cognee/search
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -40,7 +40,6 @@ Accept: application/json
 # Pure vector similarity search using pgvector embeddings
 POST {{baseUrl}}/cognee/search
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -54,7 +53,6 @@ Accept: application/json
 # Graph traversal search following entity relationships
 POST {{baseUrl}}/cognee/search
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -68,7 +66,6 @@ Accept: application/json
 # Get a synthesized summary answer from the knowledge graph
 POST {{baseUrl}}/cognee/search
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -82,7 +79,6 @@ Accept: application/json
 # Retrieve raw text chunks without LLM processing
 POST {{baseUrl}}/cognee/search
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -101,7 +97,6 @@ Accept: application/json
 # Extract named entities and their relationships from provided text
 POST {{baseUrl}}/cognee/extract-entities
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -112,7 +107,6 @@ Accept: application/json
 ### Extract Entities - Technical Documentation
 POST {{baseUrl}}/cognee/extract-entities
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -128,12 +122,10 @@ Accept: application/json
 ### Get Knowledge Graph Statistics
 # Retrieve statistics about the knowledge graph structure
 GET {{baseUrl}}/cognee/stats?dataset_id=default
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 ### Get Statistics for Specific Dataset
 GET {{baseUrl}}/cognee/stats?dataset_id=research-papers
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 
@@ -144,7 +136,6 @@ Accept: application/json
 ### Multi-hop Query - Finding Related Concepts
 POST {{baseUrl}}/cognee/search
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -157,7 +148,6 @@ Accept: application/json
 ### Filtered Search by Job ID
 POST {{baseUrl}}/cognee/search
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -173,7 +163,6 @@ Accept: application/json
 ### Complex Business Query
 POST {{baseUrl}}/cognee/search
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {

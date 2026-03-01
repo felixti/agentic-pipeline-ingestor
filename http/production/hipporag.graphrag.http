@@ -11,9 +11,10 @@
 # - Documents must be indexed with destination_type: "hipporag"
 # - Sufficient storage at HIPPO_SAVE_DIR (/data/hipporag)
 # - LLM configured for triple extraction and QA
+#
+# NOTE: These endpoints do NOT require authentication (consistent with /search/* routes)
 
 @baseUrl = https://ag-dt-ppl-api.felixtek.cloud/api/v1
-@apiKey = your-production-api-key
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -24,7 +25,6 @@
 # Multi-hop retrieval using Personalized PageRank for complex queries
 POST {{baseUrl}}/hipporag/retrieve
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -38,7 +38,6 @@ Accept: application/json
 # Submit multiple queries for complex multi-hop reasoning
 POST {{baseUrl}}/hipporag/retrieve
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -55,7 +54,6 @@ Accept: application/json
 ### HippoRAG Retrieve - Research Question
 POST {{baseUrl}}/hipporag/retrieve
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -76,7 +74,6 @@ Accept: application/json
 # Full RAG pipeline: retrieval + answer generation
 POST {{baseUrl}}/hipporag/qa
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -89,7 +86,6 @@ Accept: application/json
 ### HippoRAG QA - Complex Multi-hop Question
 POST {{baseUrl}}/hipporag/qa
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -104,7 +100,6 @@ Accept: application/json
 ### HippoRAG QA - Comparative Analysis
 POST {{baseUrl}}/hipporag/qa
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -119,7 +114,6 @@ Accept: application/json
 ### HippoRAG QA - Reasoning Chain
 POST {{baseUrl}}/hipporag/qa
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -140,7 +134,6 @@ Accept: application/json
 # Extract subject-predicate-object triples using Open Information Extraction
 POST {{baseUrl}}/hipporag/extract-triples
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -151,7 +144,6 @@ Accept: application/json
 ### Extract Triples - Technical Content
 POST {{baseUrl}}/hipporag/extract-triples
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -162,7 +154,6 @@ Accept: application/json
 ### Extract Triples - Research Paper Snippet
 POST {{baseUrl}}/hipporag/extract-triples
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -178,7 +169,6 @@ Accept: application/json
 ### Multi-hop Query - Causal Reasoning
 POST {{baseUrl}}/hipporag/qa
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -193,7 +183,6 @@ Accept: application/json
 ### Multi-hop Query - Temporal Reasoning
 POST {{baseUrl}}/hipporag/qa
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -208,7 +197,6 @@ Accept: application/json
 ### Complex Retrieval - Multiple Hops Required
 POST {{baseUrl}}/hipporag/retrieve
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -224,7 +212,6 @@ Accept: application/json
 ### Business Intelligence Query
 POST {{baseUrl}}/hipporag/qa
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -244,7 +231,6 @@ Accept: application/json
 ### HippoRAG Multi-hop (for complex reasoning)
 POST {{baseUrl}}/hipporag/qa
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -259,7 +245,6 @@ Accept: application/json
 ### Standard Hybrid Search (for direct matches)
 POST {{baseUrl}}/search/hybrid
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {

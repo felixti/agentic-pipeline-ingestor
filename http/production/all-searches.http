@@ -177,9 +177,9 @@ X-API-Key: {{apiKey}}
 
 ### Cognee: Hybrid Search (Recommended)
 # Combines vector similarity with graph traversal
+# NOTE: No authentication required
 POST {{baseUrl}}/cognee/search
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -191,9 +191,9 @@ Accept: application/json
 
 ### Cognee: Graph Traversal Search
 # Follow entity relationships in the knowledge graph
+# NOTE: No authentication required
 POST {{baseUrl}}/cognee/search
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -205,9 +205,9 @@ Accept: application/json
 
 ### Cognee: Summary Search
 # Get synthesized summary from knowledge graph
+# NOTE: No authentication required
 POST {{baseUrl}}/cognee/search
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -219,9 +219,9 @@ Accept: application/json
 
 ### Cognee: Extract Entities
 # Extract named entities from text
+# NOTE: No authentication required
 POST {{baseUrl}}/cognee/extract-entities
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -231,8 +231,8 @@ Accept: application/json
 
 ### Cognee: Knowledge Graph Stats
 # Get statistics about the knowledge graph
+# NOTE: No authentication required
 GET {{baseUrl}}/cognee/stats?dataset_id=default
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 
@@ -245,9 +245,9 @@ Accept: application/json
 
 ### HippoRAG: Multi-hop Retrieval
 # Retrieve documents using PPR-based multi-hop algorithm
+# NOTE: No authentication required
 POST {{baseUrl}}/hipporag/retrieve
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -259,9 +259,9 @@ Accept: application/json
 
 ### HippoRAG: Full RAG QA
 # Multi-hop retrieval + answer generation
+# NOTE: No authentication required
 POST {{baseUrl}}/hipporag/qa
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {
@@ -273,9 +273,9 @@ Accept: application/json
 
 ### HippoRAG: Extract Triples
 # Extract subject-predicate-object triples using OpenIE
+# NOTE: No authentication required
 POST {{baseUrl}}/hipporag/extract-triples
 Content-Type: application/json
-X-API-Key: {{apiKey}}
 Accept: application/json
 
 {

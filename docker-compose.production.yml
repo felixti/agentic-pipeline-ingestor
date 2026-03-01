@@ -67,6 +67,7 @@ services:
       - LLM_API_KEY=${AZURE_OPENAI_API_KEY:-}
       - LLM_MODEL=${COGNEE_LLM_MODEL:-azure/gpt-4.1}
       - EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-azure/text-embedding-3-small}
+      - EMBEDDING_DIMENSIONS=${EMBEDDING_DIMENSIONS:-1536}
       
       # Cognee Storage Directories
       - DATA_ROOT_DIRECTORY=/data/cognee/data
@@ -169,6 +170,7 @@ services:
       - LLM_API_KEY=${AZURE_OPENAI_API_KEY:-}
       - LLM_MODEL=${COGNEE_LLM_MODEL:-azure/gpt-4.1}
       - EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-azure/text-embedding-3-small}
+      - EMBEDDING_DIMENSIONS=${EMBEDDING_DIMENSIONS:-1536}
       
       # Cognee Storage Directories
       - DATA_ROOT_DIRECTORY=/data/cognee/data

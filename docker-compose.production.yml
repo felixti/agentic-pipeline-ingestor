@@ -219,7 +219,7 @@ services:
     deploy:
       replicas: ${WORKER_REPLICAS:-2}
     healthcheck:
-      test: ["CMD-SHELL", "pidof python3 > /dev/null || exit 1"]
+      test: ["CMD-SHELL", "pidof python > /dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

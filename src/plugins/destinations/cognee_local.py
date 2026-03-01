@@ -691,9 +691,9 @@ class CogneeLocalDestination(DestinationPlugin):
             # Cognee results can be strings, dicts, or custom objects
             # Handle different result types
             
-            # Debug: Log the result type and available fields
+            # Log the result type and available fields for debugging
             if isinstance(item, dict):
-                logger.debug(
+                logger.info(
                     "cognee_search_result_dict",
                     keys=list(item.keys()),
                     has_metadata="metadata" in item,
@@ -702,10 +702,10 @@ class CogneeLocalDestination(DestinationPlugin):
                     has_source=any(k in item for k in ["source_document", "document_id", "file_name", "source"]),
                 )
             elif not isinstance(item, str):
-                logger.debug(
+                logger.info(
                     "cognee_search_result_object",
                     type=type(item).__name__,
-                    attrs=[attr for attr in dir(item) if not attr.startswith("_")],
+                    attrs=[attr for attr in dir(item) if not attr.startswith("_") and not callable(getattr(item, attr, None))],
                 )
             if isinstance(item, str):
                 # Simple text result

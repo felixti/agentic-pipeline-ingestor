@@ -92,6 +92,8 @@ class SourceType(str, Enum):
 class DestinationType(str, Enum):
     """Output destination type."""
     COGNEE = "cognee"
+    COGNEE_LOCAL = "cognee_local"
+    HIPPO_RAG = "hipporag"
     WEBHOOK = "webhook"
     S3 = "s3"
     AZURE_BLOB = "azure_blob"

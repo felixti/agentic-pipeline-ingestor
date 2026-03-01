@@ -107,20 +107,38 @@ class JobProcessor:
             logger.warning("failed_to_register_parser_plugins", worker_id=self.worker_id, error=str(e))
 
         # Register built-in destinations
+        # Register Cognee Local (Neo4j + pgvector) - preferred for local deployments
         try:
-            from src.plugins.destinations.cognee import CogneeDestination
+            from src.plugins.destinations.cognee_local import CogneeLocalDestination
 
-            cognee = CogneeDestination()
-            await cognee.initialize({
-                "api_url": getattr(settings, "COGNEE_API_URL", None),
-                "api_key": getattr(settings, "COGNEE_API_KEY", None),
+            cognee_local = CogneeLocalDestination()
+            await cognee_local.initialize({
+                "dataset_id": "default",
+                "graph_name": "default",
+                "extract_entities": True,
+                "extract_relationships": True,
             })
-            self.registry.register_destination(cognee)
+            self.registry.register_destination(cognee_local)
 
-            logger.info("registered_destination_plugins", worker_id=self.worker_id)
+            logger.info("registered_cognee_local_destination", worker_id=self.worker_id)
 
         except Exception as e:
-            logger.warning("failed_to_register_destination_plugins", worker_id=self.worker_id, error=str(e))
+            logger.warning("failed_to_register_cognee_local_destination", worker_id=self.worker_id, error=str(e))
+
+        # Register HippoRAG destination
+        try:
+            from src.plugins.destinations.hipporag import HippoRAGDestination
+
+            hipporag = HippoRAGDestination()
+            await hipporag.initialize({
+                "save_dir": getattr(settings, "HIPPO_SAVE_DIR", "/data/hipporag"),
+            })
+            self.registry.register_destination(hipporag)
+
+            logger.info("registered_hipporag_destination", worker_id=self.worker_id)
+
+        except Exception as e:
+            logger.warning("failed_to_register_hipporag_destination", worker_id=self.worker_id, error=str(e))
 
     async def _initialize_llm(self) -> None:
         """Initialize LLM provider if configured."""

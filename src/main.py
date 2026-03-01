@@ -1081,7 +1081,16 @@ def _add_routes(app: FastAPI) -> None:
         request: Request,
         db: AsyncSession = Depends(get_db),
     ) -> dict[str, Any]:
-        """Upload file(s) for processing."""
+        """Upload file(s) for processing with optional destinations.
+        
+        Form Data Parameters:
+            files: File(s) to upload
+            destinations (optional): JSON array of destination configurations
+                Example: [{"type": "cognee_local", "config": {"dataset_id": "default"}}]
+            priority (optional): Job priority (low, normal, high)
+            mode (optional): Processing mode (sync, async)
+        """
+        import json
         import shutil
         from pathlib import Path
 
@@ -1110,15 +1119,51 @@ def _add_routes(app: FastAPI) -> None:
 
         # Extract files from form data
         files: list[UploadFile] = []
+        destinations_json: str | None = None
+        priority: str = "normal"
+        mode: str = "async"
+        
         for key, value in form_data.multi_items():
             if hasattr(value, "filename") and value.filename:
                 files.append(value)  # type: ignore[arg-type]
+            elif key == "destinations":
+                destinations_json = str(value)
+            elif key == "priority":
+                priority = str(value)
+            elif key == "mode":
+                mode = str(value)
 
         if not files:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"error": {"code": "NO_FILES", "message": "No files provided"}},
             )
+
+        # Parse destinations if provided
+        destinations: list[dict[str, Any]] = []
+        if destinations_json:
+            try:
+                destinations = json.loads(destinations_json)
+                if not isinstance(destinations, list):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={
+                            "error": {
+                                "code": "INVALID_DESTINATIONS",
+                                "message": "destinations must be a JSON array",
+                            }
+                        },
+                    )
+            except json.JSONDecodeError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "error": {
+                            "code": "INVALID_DESTINATIONS",
+                            "message": f"destinations must be valid JSON: {e!s}",
+                        }
+                    },
+                )
 
         # Create staging directory
         staging_dir = Path("/tmp/pipeline/uploads")
@@ -1142,6 +1187,11 @@ def _add_routes(app: FastAPI) -> None:
                 # Get file size
                 file_size = file_path.stat().st_size
 
+                # Build pipeline config with destinations
+                pipeline_config: dict[str, Any] = {}
+                if destinations:
+                    pipeline_config["destinations"] = destinations
+
                 # Create job for this file
                 job = await repo.create(
                     source_type="upload",
@@ -1149,9 +1199,10 @@ def _add_routes(app: FastAPI) -> None:
                     file_name=upload_file.filename,
                     file_size=file_size,
                     mime_type=upload_file.content_type or "application/octet-stream",
-                    priority="normal",
-                    mode="async",
+                    priority=priority,
+                    mode=mode,
                     metadata={"original_filename": upload_file.filename},
+                    pipeline_config=pipeline_config if pipeline_config else None,
                 )
 
                 uploaded_jobs.append(
@@ -1159,6 +1210,7 @@ def _add_routes(app: FastAPI) -> None:
                         "job_id": job.id,
                         "file_name": upload_file.filename,
                         "file_size": file_size,
+                        "destinations": destinations,
                     }
                 )
 
@@ -1184,12 +1236,14 @@ def _add_routes(app: FastAPI) -> None:
                 job_id=uploaded_jobs[0]["job_id"],  # type: ignore[arg-type]
                 file_name=uploaded_jobs[0]["file_name"],  # type: ignore[arg-type]
                 file_size=uploaded_jobs[0]["file_size"],  # type: ignore[arg-type]
+                destinations=uploaded_jobs[0].get("destinations", []),  # type: ignore[arg-type]
             )
         else:
             response_data = UploadMultipleResponse(
                 message=f"{len(uploaded_jobs)} files uploaded successfully",
                 job_ids=[j["job_id"] for j in uploaded_jobs],  # type: ignore[misc]
                 files=[j["file_name"] for j in uploaded_jobs],  # type: ignore[misc]
+                destinations=uploaded_jobs[0].get("destinations", []) if uploaded_jobs else [],  # type: ignore[misc]
             )
 
         return ApiResponse.create(

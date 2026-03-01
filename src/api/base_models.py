@@ -457,6 +457,10 @@ class UploadResponse(BaseModel):
     job_id: UUID = Field(...)
     file_name: str = Field(...)
     file_size: int = Field(...)
+    destinations: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Destinations configured for this upload"
+    )
 
 
 class UploadMultipleResponse(BaseModel):
@@ -466,6 +470,10 @@ class UploadMultipleResponse(BaseModel):
     message: str = Field(...)
     job_ids: list[UUID] = Field(default_factory=list)
     files: list[str] = Field(default_factory=list)
+    destinations: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Destinations configured for these uploads"
+    )
 
 
 # ============================================================================

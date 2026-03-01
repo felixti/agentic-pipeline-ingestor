@@ -701,11 +701,22 @@ class CogneeLocalDestination(DestinationPlugin):
                 )
             elif isinstance(item, dict):
                 # Dictionary result with potential metadata
+                # Try multiple possible field names for source document
+                source_document = (
+                    item.get("source_document") or
+                    item.get("document_id") or
+                    item.get("file_name") or
+                    item.get("source") or
+                    item.get("document_name") or
+                    item.get("metadata", {}).get("file_name") or
+                    item.get("metadata", {}).get("source_document") or
+                    "unknown"
+                )
                 result = SearchResult(
                     chunk_id=item.get("id", f"result_{i}"),
                     content=item.get("text", item.get("content", str(item))),
                     score=item.get("score", 1.0 - (i * 0.1)),
-                    source_document=item.get("document_id", "unknown"),
+                    source_document=source_document,
                     entities=item.get("entities", []),
                     metadata=item.get("metadata", {}),
                 )
@@ -725,8 +736,11 @@ class CogneeLocalDestination(DestinationPlugin):
                     chunk_id = item.id
                 if hasattr(item, "score"):
                     score = item.score
-                if hasattr(item, "document_id"):
-                    source = item.document_id
+                # Try multiple possible attribute names for source document
+                for attr in ["source_document", "document_id", "file_name", "source", "document_name"]:
+                    if hasattr(item, attr) and getattr(item, attr):
+                        source = getattr(item, attr)
+                        break
 
                 result = SearchResult(
                     chunk_id=chunk_id,

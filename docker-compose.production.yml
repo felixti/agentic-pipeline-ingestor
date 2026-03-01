@@ -56,6 +56,15 @@ services:
       - COGNEE_LLM_PROVIDER=${COGNEE_LLM_PROVIDER:-litellm}
       - COGNEE_LLM_MODEL=${COGNEE_LLM_MODEL:-azure/gpt-4.1}
       - COGNEE_EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-azure/text-embedding-3-small}
+      - COGNEE_HOME=/data/cognee
+      - COGNEE_VECTOR_PROVIDER=pgvector
+      # Cognee PostgreSQL Configuration (using existing pipeline database)
+      - DB_PROVIDER=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USERNAME=${POSTGRES_USER:-postgres}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_NAME=${POSTGRES_DB:-pipeline}
       
       # HippoRAG (File-based multi-hop reasoning)
       - HIPPO_SAVE_DIR=${HIPPO_SAVE_DIR:-/data/hipporag}
@@ -73,6 +82,7 @@ services:
     volumes:
       - pipeline-uploads:/tmp/pipeline
       - hipporag-data:/data/hipporag
+      - cognee-data:/data/cognee
     networks:
       - pipeline-network
     restart: unless-stopped
@@ -118,6 +128,15 @@ services:
       - COGNEE_LLM_PROVIDER=${COGNEE_LLM_PROVIDER:-litellm}
       - COGNEE_LLM_MODEL=${COGNEE_LLM_MODEL:-azure/gpt-4.1}
       - COGNEE_EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-azure/text-embedding-3-small}
+      - COGNEE_HOME=/data/cognee
+      - COGNEE_VECTOR_PROVIDER=pgvector
+      # Cognee PostgreSQL Configuration (using existing pipeline database)
+      - DB_PROVIDER=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USERNAME=${POSTGRES_USER:-postgres}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_NAME=${POSTGRES_DB:-pipeline}
       
       # HippoRAG (File-based multi-hop reasoning)
       - HIPPO_SAVE_DIR=${HIPPO_SAVE_DIR:-/data/hipporag}
@@ -131,6 +150,7 @@ services:
     volumes:
       - pipeline-uploads:/tmp/pipeline
       - hipporag-data:/data/hipporag
+      - cognee-data:/data/cognee
     networks:
       - pipeline-network
     restart: unless-stopped

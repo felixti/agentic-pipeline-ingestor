@@ -41,7 +41,7 @@ RUN pip install --upgrade pip && \
     docling azure-ai-vision-imageanalysis \
     orjson pyyaml click tenacity typing-extensions psutil greenlet \
     numpy scipy scikit-learn sentence-transformers \
-    neo4j>=5.15.0 cognee
+    neo4j>=5.15.0 cognee pgvector
 
 # ============================================================================
 # Stage 2: Runtime

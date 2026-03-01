@@ -714,13 +714,15 @@ class OutputStage(PipelineStage):
 
     name = "output"
 
-    def __init__(self, router: DestinationRouter | None = None):
+    def __init__(self, router: DestinationRouter | None = None, plugin_registry: Any = None):
         """Initialize output stage.
         
         Args:
             router: Destination router for routing data
+            plugin_registry: Plugin registry for accessing destinations
         """
         self.router = router
+        self.plugin_registry = plugin_registry
 
     async def execute(self, context: JobContext) -> JobContext:
         """Execute output stage - route data to destinations.
@@ -779,7 +781,7 @@ class OutputStage(PipelineStage):
 
             # Route to destinations using router or create one
             if self.router is None:
-                self.router = DestinationRouter()
+                self.router = DestinationRouter(plugin_registry=self.plugin_registry)
 
             result = await self.router.route_to_multiple(
                 data=data,
@@ -847,7 +849,12 @@ class Pipeline:
             elif stage_class == ParseStage:
                 self.stages.append(ParseStage(plugin_registry))
             elif stage_class == OutputStage:
-                self.stages.append(OutputStage(destination_router))
+                # Create router with plugin registry if not provided
+                if destination_router is None and plugin_registry is not None:
+                    router = DestinationRouter(plugin_registry=plugin_registry)
+                else:
+                    router = destination_router
+                self.stages.append(OutputStage(router, plugin_registry))
             else:
                 self.stages.append(stage_class())
 

@@ -314,6 +314,8 @@ volumes:
     driver: local
   hipporag-data:
     driver: local
+  cognee-data:
+    driver: local
 
 # ============================================================================
 # Networks

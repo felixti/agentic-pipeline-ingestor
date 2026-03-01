@@ -230,7 +230,7 @@ class PipelineConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: UUID | None = Field(default=None)
-    name: str = Field(..., description="Unique pipeline name")
+    name: str = Field(default="default-pipeline", description="Unique pipeline name")
     description: str | None = Field(default=None)
     content_detection: ContentDetectionConfig = Field(default_factory=ContentDetectionConfig)
     parser: ParserConfig = Field(default_factory=ParserConfig)

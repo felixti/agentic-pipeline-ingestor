@@ -17,33 +17,61 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     libpq-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies
+# Upgrade pip first
+RUN pip install --upgrade pip setuptools wheel
+
+# Install Python dependencies in layers (heavy ones first)
 COPY pyproject.toml /app/
 WORKDIR /app
 
-# Install dependencies from pyproject.toml
-RUN pip install --upgrade pip && \
-    pip install \
+# Install heavy ML packages separately to leverage caching
+# NOTE: vllm is excluded as it requires GPU and takes 30+ min to build from source
+RUN pip install \
+    torch --index-url https://download.pytorch.org/whl/cpu \
+    numpy scipy scikit-learn \
+    sentence-transformers \
+    --no-cache-dir
+
+# Install document processing
+RUN pip install \
+    pymupdf pillow pdf2image pytesseract python-magic \
+    python-docx openpyxl python-pptx pdfplumber \
+    --no-cache-dir
+
+# Install graph databases
+RUN pip install \
+    neo4j>=5.15.0 \
+    --no-cache-dir
+
+# Install Cognee (without optional heavy dependencies)
+RUN pip install \
+    cognee>=0.5.3 \
+    --no-cache-dir
+
+# Install HippoRAG
+RUN pip install \
+    hipporag>=0.1.0 \
+    --no-cache-dir
+
+# Install remaining dependencies (lightweight)
+RUN pip install \
     fastapi uvicorn python-multipart starlette pydantic pydantic-settings email-validator \
     sqlalchemy alembic asyncpg psycopg2-binary redis hiredis \
     litellm openai httpx aiohttp \
     prometheus-client structlog python-jose passlib python-dotenv cryptography \
     opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp \
     opentelemetry-instrumentation-fastapi opentelemetry-instrumentation-sqlalchemy \
-    pymupdf pillow pdf2image pytesseract python-magic \
-    python-docx openpyxl python-pptx pdfplumber pytest pytest-asyncio \
     docling azure-ai-vision-imageanalysis \
     orjson pyyaml click tenacity typing-extensions psutil greenlet \
-    numpy scipy scikit-learn sentence-transformers \
-    neo4j>=5.15.0 \
-    cognee>=0.5.3 \
-    hipporag>=0.1.0
+    pytest pytest-asyncio \
+    --no-cache-dir
 
 # ============================================================================
 # Stage 2: Runtime
@@ -65,6 +93,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     tesseract-ocr \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

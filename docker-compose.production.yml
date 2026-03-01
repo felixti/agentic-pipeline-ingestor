@@ -131,12 +131,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: >
-      sh -c "
-        mkdir -p /data/cognee/data /data/cognee/system /data/hipporag &&
-        chown -R pipeline:pipeline /data/cognee /data/hipporag &&
-        exec python -m src.worker.main
-      "
+    command: python -m src.worker.main
     environment:
       - DEBUG=${DEBUG:-false}
       - ENV=${ENV:-production}

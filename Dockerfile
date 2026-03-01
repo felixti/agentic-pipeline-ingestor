@@ -81,8 +81,8 @@ COPY --chown=pipeline:pipeline config/ ./config/
 COPY --chown=pipeline:pipeline pyproject.toml ./
 
 # Create necessary directories
-RUN mkdir -p /tmp/pipeline /var/log/pipeline && \
-    chown -R pipeline:pipeline /tmp/pipeline /var/log/pipeline $APP_HOME
+RUN mkdir -p /tmp/pipeline /var/log/pipeline /data/cognee/data /data/cognee/system /data/hipporag && \
+    chown -R pipeline:pipeline /tmp/pipeline /var/log/pipeline /data $APP_HOME
 
 # Switch to non-root user
 USER pipeline

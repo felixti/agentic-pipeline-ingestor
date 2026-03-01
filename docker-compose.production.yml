@@ -41,6 +41,7 @@ services:
       # LLM Configuration
       - AZURE_OPENAI_API_BASE=${AZURE_OPENAI_API_BASE:-}
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION:-2024-02-01}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
@@ -56,6 +57,11 @@ services:
       - COGNEE_LLM_PROVIDER=${COGNEE_LLM_PROVIDER:-litellm}
       - COGNEE_LLM_MODEL=${COGNEE_LLM_MODEL:-azure/gpt-4.1}
       - COGNEE_EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-azure/text-embedding-3-small}
+      
+      # LiteLLM Azure Configuration (required by Cognee)
+      - AZURE_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - AZURE_API_BASE=${AZURE_OPENAI_API_BASE:-}
+      - AZURE_API_VERSION=${AZURE_OPENAI_API_VERSION:-2024-02-01}
       
       # Cognee Storage Directories
       - DATA_ROOT_DIRECTORY=/data/cognee/data
@@ -132,6 +138,7 @@ services:
       # LLM Configuration
       - AZURE_OPENAI_API_BASE=${AZURE_OPENAI_API_BASE:-}
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION:-2024-02-01}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
@@ -147,6 +154,11 @@ services:
       - COGNEE_LLM_PROVIDER=${COGNEE_LLM_PROVIDER:-litellm}
       - COGNEE_LLM_MODEL=${COGNEE_LLM_MODEL:-azure/gpt-4.1}
       - COGNEE_EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-azure/text-embedding-3-small}
+      
+      # LiteLLM Azure Configuration (required by Cognee)
+      - AZURE_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - AZURE_API_BASE=${AZURE_OPENAI_API_BASE:-}
+      - AZURE_API_VERSION=${AZURE_OPENAI_API_VERSION:-2024-02-01}
       
       # Cognee Storage Directories
       - DATA_ROOT_DIRECTORY=/data/cognee/data

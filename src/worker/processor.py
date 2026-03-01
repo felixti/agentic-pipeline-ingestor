@@ -101,13 +101,17 @@ class JobProcessor:
             })
             self.registry.register_parser(azure_ocr)
 
-            logger.info("registered_parser_plugins", worker_id=self.worker_id)
+            logger.info("registered_parsers", worker_id=self.worker_id)
 
         except Exception as e:
-            logger.warning("failed_to_register_parser_plugins", worker_id=self.worker_id, error=str(e))
+            logger.warning("failed_to_register_parsers", worker_id=self.worker_id, error=str(e))
 
         # Register built-in destinations
-        # Register Cognee Local (Neo4j + pgvector) - preferred for local deployments
+        await self._initialize_destinations()
+
+    async def _initialize_destinations(self) -> None:
+        """Initialize destination plugins."""
+        # Register Cognee Local Destination
         try:
             from src.plugins.destinations.cognee_local import CogneeLocalDestination
 
@@ -125,7 +129,7 @@ class JobProcessor:
         except Exception as e:
             logger.warning("failed_to_register_cognee_local_destination", worker_id=self.worker_id, error=str(e))
 
-        # Register HippoRAG destination
+        # Register HippoRAG Destination
         try:
             from src.plugins.destinations.hipporag import HippoRAGDestination
 
@@ -169,6 +173,14 @@ class JobProcessor:
         # Start heartbeat task
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(job_id))
 
+        job_status = None
+        job_started_at = None
+        job_completed_at = None
+        job_source_type = None
+        job_file_name = None
+        job_file_size = None
+        job_mime_type = None
+
         try:
             logger.info("processing_job", worker_id=self.worker_id, job_id=str(job_id))
 
@@ -199,15 +211,20 @@ class JobProcessor:
                             "success": False,
                         }
 
-                    # Store results if completed (use new session to avoid transaction issues)
-                    if job.status == JobStatus.COMPLETED:
-                        await self._store_results(job, context)
-
+                    # Extract job data before closing session to avoid lazy-loading issues
+                    job_status = job.status
+                    job_started_at = job.started_at
+                    job_completed_at = job.completed_at
+                    job_source_type = job.source_type
+                    job_file_name = job.file_name
+                    job_file_size = job.file_size
+                    job_mime_type = job.mime_type
+                    
                     result = {
                         "job_id": str(job_id),
-                        "status": job.status,
+                        "status": job_status,
                         "stages_completed": list(context.stage_results.keys()),
-                        "success": job.status == JobStatus.COMPLETED,
+                        "success": job_status == JobStatus.COMPLETED,
                     }
 
                     # Add quality score if available
@@ -223,7 +240,20 @@ class JobProcessor:
                         success=result["success"],
                     )
 
-                    return result
+            # Store results outside the session context to avoid transaction issues
+            if job_status == JobStatus.COMPLETED:
+                await self._store_results_safe(
+                    job_id=job_id,
+                    job_started_at=job_started_at,
+                    job_completed_at=job_completed_at,
+                    job_source_type=job_source_type,
+                    job_file_name=job_file_name,
+                    job_file_size=job_file_size,
+                    job_mime_type=job_mime_type,
+                    context=context,
+                )
+
+            return result
 
         except Exception as e:
             logger.error(
@@ -231,34 +261,10 @@ class JobProcessor:
                 worker_id=self.worker_id,
                 job_id=str(job_id),
                 error=str(e),
+                error_type=type(e).__name__,
+                exc_info=True,
             )
-
-            # Update job status to failed
-            try:
-                engine = self._get_db_engine()
-                async_session = async_sessionmaker(
-                    engine, 
-                    expire_on_commit=False,
-                    class_=AsyncSession,
-                )
-                
-                async with async_session() as session:
-                    async with session.begin():
-                        repo = JobRepository(session)
-                        await repo.update_status(
-                            job_id,
-                            JobStatus.FAILED,
-                            error_message=str(e),
-                            error_code="PROCESSING_ERROR",
-                        )
-            except Exception as update_error:
-                logger.error(
-                    "failed_to_update_job_status",
-                    worker_id=self.worker_id,
-                    job_id=str(job_id),
-                    error=str(update_error),
-                )
-
+            
             return {
                 "job_id": str(job_id),
                 "status": "failed",
@@ -276,15 +282,27 @@ class JobProcessor:
                 except asyncio.CancelledError:
                     pass
 
-    async def _store_results(
+    async def _store_results_safe(
         self,
-        job: JobModel,
+        job_id: UUID,
+        job_started_at: Any,
+        job_completed_at: Any,
+        job_source_type: str,
+        job_file_name: str,
+        job_file_size: int | None,
+        job_mime_type: str | None,
         context: Any,
     ) -> None:
         """Store job processing results.
         
         Args:
-            job: Job model
+            job_id: Job ID
+            job_started_at: Job start timestamp
+            job_completed_at: Job completion timestamp
+            job_source_type: Source type of the job
+            job_file_name: File name
+            job_file_size: File size in bytes
+            job_mime_type: MIME type
             context: Pipeline context
         """
         # Create new session for storing results (separate from processing transaction)
@@ -295,6 +313,9 @@ class JobProcessor:
             class_=AsyncSession,
         )
         
+        extracted_text = None
+        quality_score = None
+        
         try:
             async with async_session() as session:
                 async with session.begin():
@@ -302,13 +323,11 @@ class JobProcessor:
                     
                     # Calculate processing time
                     processing_time_ms = None
-                    if job.started_at and job.completed_at:
-                        processing_time_ms = int((job.completed_at - job.started_at).total_seconds() * 1000)
+                    if job_started_at and job_completed_at:
+                        processing_time_ms = int((job_completed_at - job_started_at).total_seconds() * 1000)
                     
                     # Extract output data from context
                     output_data = {}
-                    extracted_text = None
-                    quality_score = None
                     
                     # Get parse result
                     parse_result = context.get_stage_result("parse")
@@ -330,17 +349,17 @@ class JobProcessor:
                     
                     # Build metadata
                     result_metadata = {
-                        "job_id": str(job.id),
-                        "source_type": job.source_type,
-                        "file_name": job.file_name,
-                        "file_size": job.file_size,
-                        "mime_type": job.mime_type,
+                        "job_id": str(job_id),
+                        "source_type": job_source_type,
+                        "file_name": job_file_name,
+                        "file_size": job_file_size,
+                        "mime_type": job_mime_type,
                         "stages_completed": list(context.stage_results.keys()),
                     }
                     
                     # Save result within the transaction
                     await repo.save(
-                        job_id=str(job.id),
+                        job_id=str(job_id),
                         extracted_text=extracted_text,
                         output_data=output_data,
                         result_metadata=result_metadata,
@@ -351,7 +370,7 @@ class JobProcessor:
             logger.info(
                 "stored_job_results",
                 worker_id=self.worker_id,
-                job_id=str(job.id),
+                job_id=str(job_id),
                 has_text=bool(extracted_text),
                 quality_score=quality_score,
             )
@@ -360,7 +379,7 @@ class JobProcessor:
             logger.error(
                 "failed_to_store_results",
                 worker_id=self.worker_id,
-                job_id=str(job.id),
+                job_id=str(job_id),
                 error=str(e),
             )
 
@@ -376,10 +395,11 @@ class JobProcessor:
                 
                 if self._current_job != job_id:
                     break
-                
+                    
+                # Update job heartbeat in database
                 engine = self._get_db_engine()
                 async_session = async_sessionmaker(
-                    engine, 
+                    engine,
                     expire_on_commit=False,
                     class_=AsyncSession,
                 )
@@ -388,128 +408,40 @@ class JobProcessor:
                     async with session.begin():
                         repo = JobRepository(session)
                         await repo.update_heartbeat(job_id)
-                        logger.debug("sent_heartbeat", worker_id=self.worker_id, job_id=str(job_id))
-                    
+                        
+                logger.debug("job_heartbeat_sent", worker_id=self.worker_id, job_id=str(job_id))
+                
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.warning("heartbeat_failed", worker_id=self.worker_id, job_id=str(job_id), error=str(e))
+                await asyncio.sleep(5)  # Short delay before retry
 
-    async def process_job_with_retry(
-        self,
-        job_id: UUID,
-        max_retries: int = 3,
-    ) -> dict[str, Any]:
-        """Process a job with automatic retry.
-        
-        Args:
-            job_id: Job ID
-            max_retries: Maximum retry attempts
-            
-        Returns:
-            Processing result
-        """
-        last_error: Exception | None = None
+    async def start(self) -> None:
+        """Start the processor."""
+        self._running = True
+        logger.info("job_processor_started", worker_id=self.worker_id)
 
-        for attempt in range(max_retries + 1):
-            try:
-                result = await self.process_job(job_id)
-
-                if result.get("success"):
-                    return result
-
-                # Check if we should retry
-                if attempt < max_retries:
-                    engine = self._get_db_engine()
-                    async_session = async_sessionmaker(
-                        engine, 
-                        expire_on_commit=False,
-                        class_=AsyncSession,
-                    )
-                    
-                    async with async_session() as session:
-                        async with session.begin():
-                            repo = JobRepository(session)
-                            job = await repo.get_by_id(job_id)
-                            if job and job.retry_count < job.max_retries:
-                                logger.info(
-                                    "retrying_job",
-                                    worker_id=self.worker_id,
-                                    job_id=str(job_id),
-                                    attempt=attempt + 1,
-                                )
-                                # Update job for retry
-                                job.retry_count = job.retry_count + 1  # type: ignore[assignment]
-                                job.status = JobStatus.PENDING  # type: ignore[assignment]
-                                job.error_message = None  # type: ignore[assignment]
-                                job.error_code = None  # type: ignore[assignment]
-                                # Session will be committed by the context manager
-                            else:
-                                # No more retries allowed
-                                return result
-                    
-                    # Wait outside the session context
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
-                    continue
-
-                return result
-
-            except Exception as e:
-                last_error = e
-                logger.error(
-                    "job_attempt_failed",
-                    worker_id=self.worker_id,
-                    job_id=str(job_id),
-                    attempt=attempt,
-                    error=str(e),
-                )
-
-                if attempt < max_retries:
-                    await asyncio.sleep(2 ** attempt)
-
-        # All retries exhausted
-        return {
-            "job_id": str(job_id),
-            "status": "failed",
-            "error": f"All retries failed: {last_error}",
-            "success": False,
-        }
-
-    async def shutdown(self) -> None:
-        """Shutdown the processor and cleanup resources."""
-        logger.info("shutting_down_job_processor", worker_id=self.worker_id)
-
+    async def stop(self) -> None:
+        """Stop the processor."""
         self._running = False
-
-        # Cancel heartbeat task
+        
+        # Cancel any ongoing heartbeat
         if self._heartbeat_task and not self._heartbeat_task.done():
             self._heartbeat_task.cancel()
             try:
                 await self._heartbeat_task
             except asyncio.CancelledError:
                 pass
-
-        # Shutdown plugins
-        for plugin in self.registry._parsers.values():
-            try:
-                await plugin.shutdown()
-            except Exception as e:
-                logger.warning("error_shutting_down_parser", worker_id=self.worker_id, error=str(e))
-
-        for plugin in self.registry._destinations.values():
-            try:
-                await plugin.shutdown()
-            except Exception as e:
-                logger.warning("error_shutting_down_destination", worker_id=self.worker_id, error=str(e))
-
-        logger.info("job_processor_shutdown_complete", worker_id=self.worker_id)
+                
+        logger.info("job_processor_stopped", worker_id=self.worker_id)
 
     @property
-    def is_processing(self) -> bool:
-        """Check if processor is currently processing a job."""
-        return self._current_job is not None
+    def is_running(self) -> bool:
+        """Check if processor is running."""
+        return self._running
 
     @property
-    def current_job_id(self) -> UUID | None:
-        """Get the ID of the currently processing job."""
+    def current_job(self) -> UUID | None:
+        """Get currently processing job ID."""
         return self._current_job

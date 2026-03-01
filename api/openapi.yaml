@@ -113,25 +113,74 @@ paths:
       tags:
       - Jobs
       summary: Create Job
-      description: Submit a new ingestion job.
+      description: |
+        Submit a new ingestion job.
+        
+        Jobs can be configured with destinations to route processed data to Cognee, HippoRAG, or other outputs.
       operationId: create_job_api_v1_jobs_post
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: true
-              title: Job Data
+              $ref: '#/components/schemas/JobCreateRequest'
+            examples:
+              basic:
+                summary: Basic job without destinations
+                value:
+                  source_type: upload
+                  source_uri: /uploads/document.pdf
+                  file_name: document.pdf
+                  priority: normal
+              cognee_destination:
+                summary: Job with Cognee destination (GraphRAG)
+                value:
+                  source_type: upload
+                  source_uri: /uploads/research.pdf
+                  file_name: research.pdf
+                  destinations:
+                    - type: cognee_local
+                      config:
+                        dataset_id: research-papers
+                        extract_entities: true
+                        extract_relationships: true
+              hipporag_destination:
+                summary: Job with HippoRAG destination (Multi-hop)
+                value:
+                  source_type: upload
+                  source_uri: /uploads/faq.pdf
+                  file_name: faq.pdf
+                  destinations:
+                    - type: hipporag
+                      config:
+                        save_dir: /data/hipporag
+              multiple_destinations:
+                summary: Job with both Cognee and HippoRAG
+                value:
+                  source_type: upload
+                  source_uri: /uploads/knowledge.pdf
+                  file_name: knowledge.pdf
+                  destinations:
+                    - type: cognee_local
+                      config:
+                        dataset_id: knowledge-base
+                        extract_entities: true
+                    - type: hipporag
+                      config:
+                        save_dir: /data/hipporag/knowledge
       responses:
         '202':
-          description: Successful Response
+          description: Job created successfully
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
-                title: Response Create Job Api V1 Jobs Post
+                $ref: '#/components/schemas/JobResponse'
+        '400':
+          description: Bad Request - Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
           content:
@@ -3076,3 +3125,155 @@ components:
       type: object
       title: ChunkNotFoundResponse
       description: Error response when reference chunk not found.
+    
+    # ============================================================================
+    # Job Creation and Destination Schemas
+    # ============================================================================
+    JobCreateRequest:
+      type: object
+      required:
+        - source_type
+        - source_uri
+      properties:
+        source_type:
+          type: string
+          description: Type of source (upload, url, s3, azure_blob)
+          example: upload
+        source_uri:
+          type: string
+          description: URI of the source file
+          example: /uploads/document.pdf
+        file_name:
+          type: string
+          description: Name of the file
+          example: document.pdf
+        file_size:
+          type: integer
+          description: Size of the file in bytes
+          example: 1048576
+        mime_type:
+          type: string
+          description: MIME type of the file
+          example: application/pdf
+        priority:
+          type: string
+          enum: [low, normal, high]
+          default: normal
+          description: Job processing priority
+        mode:
+          type: string
+          enum: [sync, async]
+          default: async
+          description: Processing mode
+        pipeline_id:
+          type: string
+          format: uuid
+          description: Optional pipeline configuration ID
+        destinations:
+          type: array
+          description: List of destinations to route processed data to
+          items:
+            $ref: '#/components/schemas/DestinationConfig'
+        external_id:
+          type: string
+          description: External reference ID
+        metadata:
+          type: object
+          description: Additional metadata
+          additionalProperties: true
+    
+    JobResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Job ID
+        status:
+          type: string
+          enum: [created, queued, processing, completed, failed, cancelled]
+          description: Current job status
+        source_type:
+          type: string
+          description: Source type
+        source_uri:
+          type: string
+          description: Source URI
+        file_name:
+          type: string
+          description: File name
+        priority:
+          type: string
+          description: Job priority
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        message:
+          type: string
+          description: Status message
+    
+    DestinationConfig:
+      type: object
+      required:
+        - type
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique destination ID (optional)
+        type:
+          type: string
+          enum: [cognee, cognee_local, hipporag, webhook, s3, azure_blob, neo4j, vector_store]
+          description: Destination type
+          example: cognee_local
+        name:
+          type: string
+          description: Human-readable name
+        config:
+          type: object
+          description: Destination-specific configuration
+          additionalProperties: true
+        filters:
+          type: array
+          description: Optional filters for selective routing
+          items:
+            $ref: '#/components/schemas/DestinationFilter'
+        enabled:
+          type: boolean
+          default: true
+          description: Whether destination is enabled
+    
+    DestinationFilter:
+      type: object
+      required:
+        - field
+        - operator
+        - value
+      properties:
+        field:
+          type: string
+          description: Field to filter on
+        operator:
+          type: string
+          enum: [eq, ne, gt, gte, lt, lte, contains, regex]
+          description: Filter operator
+        value:
+          type: string
+          description: Value to match
+    
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Error code
+            message:
+              type: string
+              description: Error message
+            details:
+              type: object
+              description: Additional error details

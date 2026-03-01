@@ -536,6 +536,20 @@ def _add_routes(app: FastAPI) -> None:
                 )
             pipeline_config = pipeline.config
 
+        # Merge destinations into pipeline config if provided
+        # This ensures destinations are passed to the OutputStage
+        destinations = job_data.get("destinations")
+        if destinations:
+            if pipeline_config is None:
+                pipeline_config = {}
+            if isinstance(pipeline_config, dict):
+                pipeline_config["destinations"] = destinations
+            else:
+                # If pipeline_config is not a dict, store destinations in metadata
+                metadata = job_data.get("metadata", {})
+                metadata["destinations"] = destinations
+                job_data["metadata"] = metadata
+
         # Create job via repository
         repo = JobRepository(db)
         job = await repo.create(

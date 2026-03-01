@@ -130,6 +130,56 @@ async def _get_connection(dataset_id: str) -> Connection:
     return await destination.connect({"dataset_id": dataset_id})
 
 
+async def _get_entities_from_graph(query: str, dataset_id: str) -> list[str]:
+    """Extract entities from the knowledge graph that match the query.
+    
+    This queries Neo4j directly to find entities (nodes) that are
+    mentioned in the query or related to the query topics.
+    
+    Args:
+        query: Search query text
+        dataset_id: Dataset identifier
+        
+    Returns:
+        List of entity names found in the graph
+    """
+    try:
+        from src.infrastructure.neo4j.client import get_neo4j_client
+        
+        # Get Neo4j client
+        neo4j_client = await get_neo4j_client()
+        
+        # Query for nodes that might match the query
+        # This looks for nodes whose name or description contains query terms
+        query_words = [w.lower() for w in query.split() if len(w) > 3]
+        
+        if not query_words:
+            return []
+        
+        # Build a query to find matching entities
+        cypher_query = """
+        MATCH (n)
+        WHERE n.name IS NOT NULL
+        AND any(word IN $query_words WHERE toLower(n.name) CONTAINS word)
+        RETURN DISTINCT n.name as entity_name
+        LIMIT 10
+        """
+        
+        result = await neo4j_client.run_query(cypher_query, {"query_words": query_words})
+        
+        entities = [record["entity_name"] for record in result if record.get("entity_name")]
+        
+        return entities
+        
+    except Exception as e:
+        logger.warning(
+            "failed_to_fetch_entities_from_graph",
+            error=str(e),
+            query=query[:50],
+        )
+        return []
+
+
 def _convert_search_results(
     cognee_results: list[Any],
 ) -> list[CogneeSearchResult]:
@@ -247,6 +297,41 @@ async def cognee_search(
 
         # Convert results
         results = _convert_search_results(cognee_results)
+        
+        # Fetch entities from the graph related to the query
+        entities = await _get_entities_from_graph(
+            query=search_request.query,
+            dataset_id=search_request.dataset_id,
+        )
+        
+        # Add entities to results if any were found
+        if entities and results:
+            # Add entities to the first result (the main answer)
+            results[0].entities = entities
+        
+        # Try to determine source document from the dataset
+        if results and results[0].source_document == "unknown":
+            # Query to find the source document
+            try:
+                from src.infrastructure.neo4j.client import get_neo4j_client
+                neo4j_client = await get_neo4j_client()
+                
+                # Look for document nodes in the graph
+                source_query = """
+                MATCH (d:Document) 
+                RETURN d.name as doc_name 
+                LIMIT 1
+                """
+                source_result = await neo4j_client.run_query(source_query, {})
+                
+                if source_result and source_result[0].get("doc_name"):
+                    for result in results:
+                        if result.source_document == "unknown":
+                            result.source_document = source_result[0]["doc_name"]
+                            break
+            except Exception:
+                # If we can't get source, leave as unknown
+                pass
 
         # Calculate query time
         query_time_ms = (time.perf_counter() - start_time) * 1000

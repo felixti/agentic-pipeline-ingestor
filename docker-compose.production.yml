@@ -49,22 +49,37 @@ services:
       - AZURE_AI_VISION_ENDPOINT=${AZURE_AI_VISION_ENDPOINT:-}
       - AZURE_AI_VISION_API_KEY=${AZURE_AI_VISION_API_KEY:-}
       
-      # Cognee Local (Neo4j + pgvector)
-      - NEO4J_URI=${NEO4J_URI:-bolt://neo4j:7687}
-      - NEO4J_USER=${NEO4J_USER:-neo4j}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-cognee-graph-db}
+      # Cognee Configuration
+      # See: https://docs.cognee.ai/setup-configuration/overview
+      
+      # Cognee LLM & Embeddings
       - COGNEE_LLM_PROVIDER=${COGNEE_LLM_PROVIDER:-litellm}
       - COGNEE_LLM_MODEL=${COGNEE_LLM_MODEL:-azure/gpt-4.1}
       - COGNEE_EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-azure/text-embedding-3-small}
-      - COGNEE_HOME=/data/cognee
-      - COGNEE_VECTOR_PROVIDER=pgvector
-      # Cognee PostgreSQL Configuration (using existing pipeline database)
+      
+      # Cognee Storage Directories
+      - DATA_ROOT_DIRECTORY=/data/cognee/data
+      - SYSTEM_ROOT_DIRECTORY=/data/cognee/system
+      
+      # Cognee Relational Database (PostgreSQL for metadata & structured data)
+      # https://docs.cognee.ai/setup-configuration/relational-databases
       - DB_PROVIDER=postgres
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USERNAME=${POSTGRES_USER:-postgres}
       - DB_PASSWORD=${POSTGRES_PASSWORD}
       - DB_NAME=${POSTGRES_DB:-pipeline}
+      
+      # Cognee Vector Store (PGVector for embeddings)
+      # https://docs.cognee.ai/setup-configuration/vector-stores
+      - VECTOR_DB_PROVIDER=pgvector
+      
+      # Cognee Graph Store (Neo4j for knowledge graphs)
+      # https://docs.cognee.ai/setup-configuration/graph-stores
+      - GRAPH_DATABASE_PROVIDER=neo4j
+      - GRAPH_DATABASE_URL=${NEO4J_URI:-bolt://neo4j:7687}
+      - GRAPH_DATABASE_USERNAME=${NEO4J_USER:-neo4j}
+      - GRAPH_DATABASE_PASSWORD=${NEO4J_PASSWORD:-cognee-graph-db}
       
       # HippoRAG (File-based multi-hop reasoning)
       - HIPPO_SAVE_DIR=${HIPPO_SAVE_DIR:-/data/hipporag}
@@ -121,22 +136,37 @@ services:
       - AZURE_AI_VISION_ENDPOINT=${AZURE_AI_VISION_ENDPOINT:-}
       - AZURE_AI_VISION_API_KEY=${AZURE_AI_VISION_API_KEY:-}
       
-      # Cognee Local (Neo4j + pgvector)
-      - NEO4J_URI=${NEO4J_URI:-bolt://neo4j:7687}
-      - NEO4J_USER=${NEO4J_USER:-neo4j}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-cognee-graph-db}
+      # Cognee Configuration
+      # See: https://docs.cognee.ai/setup-configuration/overview
+      
+      # Cognee LLM & Embeddings
       - COGNEE_LLM_PROVIDER=${COGNEE_LLM_PROVIDER:-litellm}
       - COGNEE_LLM_MODEL=${COGNEE_LLM_MODEL:-azure/gpt-4.1}
       - COGNEE_EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-azure/text-embedding-3-small}
-      - COGNEE_HOME=/data/cognee
-      - COGNEE_VECTOR_PROVIDER=pgvector
-      # Cognee PostgreSQL Configuration (using existing pipeline database)
+      
+      # Cognee Storage Directories
+      - DATA_ROOT_DIRECTORY=/data/cognee/data
+      - SYSTEM_ROOT_DIRECTORY=/data/cognee/system
+      
+      # Cognee Relational Database (PostgreSQL for metadata & structured data)
+      # https://docs.cognee.ai/setup-configuration/relational-databases
       - DB_PROVIDER=postgres
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USERNAME=${POSTGRES_USER:-postgres}
       - DB_PASSWORD=${POSTGRES_PASSWORD}
       - DB_NAME=${POSTGRES_DB:-pipeline}
+      
+      # Cognee Vector Store (PGVector for embeddings)
+      # https://docs.cognee.ai/setup-configuration/vector-stores
+      - VECTOR_DB_PROVIDER=pgvector
+      
+      # Cognee Graph Store (Neo4j for knowledge graphs)
+      # https://docs.cognee.ai/setup-configuration/graph-stores
+      - GRAPH_DATABASE_PROVIDER=neo4j
+      - GRAPH_DATABASE_URL=${NEO4J_URI:-bolt://neo4j:7687}
+      - GRAPH_DATABASE_USERNAME=${NEO4J_USER:-neo4j}
+      - GRAPH_DATABASE_PASSWORD=${NEO4J_PASSWORD:-cognee-graph-db}
       
       # HippoRAG (File-based multi-hop reasoning)
       - HIPPO_SAVE_DIR=${HIPPO_SAVE_DIR:-/data/hipporag}

@@ -242,6 +242,10 @@ class PipelineConfig(BaseModel):
             "ingest", "detect", "parse", "enrich", "quality", "transform", "output"
         ]
     )
+    destinations: list[DestinationConfig] = Field(
+        default_factory=list,
+        description="Destinations for processed data routing"
+    )
     created_at: datetime | None = Field(default=None)
     updated_at: datetime | None = Field(default=None)
 

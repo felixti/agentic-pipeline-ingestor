@@ -86,6 +86,7 @@ class CogneeSearchResponse(BaseModel):
         search_type: Type of search that was performed
         dataset_id: Dataset identifier that was searched
         query_time_ms: Time taken to execute the query in milliseconds
+        message: Optional message (e.g., when knowledge graph is empty)
     """
 
     model_config = ConfigDict(
@@ -104,6 +105,7 @@ class CogneeSearchResponse(BaseModel):
                 "search_type": "hybrid",
                 "dataset_id": "default",
                 "query_time_ms": 145.5,
+                "message": None,
             }
         },
     )
@@ -112,6 +114,7 @@ class CogneeSearchResponse(BaseModel):
     search_type: str = Field(..., description="Type of search that was performed")
     dataset_id: str = Field(..., description="Dataset identifier that was searched")
     query_time_ms: float = Field(..., description="Time taken to execute the query in milliseconds")
+    message: str | None = Field(default=None, description="Optional message (e.g., when knowledge graph is empty)")
 
 
 # ============================================================================

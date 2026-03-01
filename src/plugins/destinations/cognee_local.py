@@ -646,12 +646,28 @@ class CogneeLocalDestination(DestinationPlugin):
             return results
 
         except Exception as e:
+            error_msg = str(e)
+            error_type = type(e).__name__
+
+            # Check if this is a "no data" error from Cognee
+            # Cognee raises SearchPreconditionError when no documents have been added
+            if "SearchPreconditionError" in error_type or "prerequisites not met" in error_msg.lower() or "no database" in error_msg.lower():
+                logger.warning(
+                    "cognee_search_no_data",
+                    search_type=search_type,
+                    query=query[:100],
+                    dataset_id=dataset_id,
+                    message="No documents in knowledge graph. Process documents with cognee_local destination first.",
+                )
+                # Return empty results instead of raising error
+                return []
+
             logger.error(
                 "cognee_search_failed",
                 search_type=search_type,
                 query=query[:100],
-                error=str(e),
-                error_type=type(e).__name__,
+                error=error_msg,
+                error_type=error_type,
             )
             raise RuntimeError(f"Search failed: {e}") from e
 

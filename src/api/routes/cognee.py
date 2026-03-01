@@ -251,6 +251,15 @@ async def cognee_search(
         # Calculate query time
         query_time_ms = (time.perf_counter() - start_time) * 1000
 
+        # Check if knowledge graph is empty and provide helpful message
+        message = None
+        if len(results) == 0:
+            message = (
+                f"No results found in dataset '{search_request.dataset_id}'. "
+                "The knowledge graph may be empty. "
+                "Process documents with destinations=[{\"type\": \"cognee_local\"}] to add data."
+            )
+
         logger.info(
             "cognee_search_completed",
             request_id=request_id,
@@ -263,6 +272,7 @@ async def cognee_search(
             search_type=search_request.search_type,
             dataset_id=search_request.dataset_id,
             query_time_ms=round(query_time_ms, 2),
+            message=message,
         )
 
     except HTTPException:

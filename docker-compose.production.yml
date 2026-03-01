@@ -172,6 +172,10 @@ services:
       - GRAPH_DATABASE_USERNAME=${NEO4J_USER:-neo4j}
       - GRAPH_DATABASE_PASSWORD=${NEO4J_PASSWORD:-cognee-graph-db}
       
+      # Disable multi-user access control to avoid dataset handler conflicts
+      # https://docs.cognee.ai/setup-configuration/overview
+      - ENABLE_BACKEND_ACCESS_CONTROL=false
+      
       # HippoRAG (File-based multi-hop reasoning)
       - HIPPO_SAVE_DIR=${HIPPO_SAVE_DIR:-/data/hipporag}
       - HIPPO_LLM_MODEL=${HIPPO_LLM_MODEL:-azure/gpt-4.1}

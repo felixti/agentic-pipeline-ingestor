@@ -95,6 +95,19 @@ paths:
           content:
             application/json:
               schema: {}
+  /api/v1/openapi.graphrag.yaml:
+    get:
+      tags:
+      - System
+      summary: Get GraphRAG OpenAPI Extension
+      description: Get GraphRAG (Cognee + HippoRAG) OpenAPI extension as YAML.
+      operationId: get_openapi_graphrag_yaml_api_v1_openapi_graphrag_yaml_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
   /api/v1/jobs:
     post:
       tags:

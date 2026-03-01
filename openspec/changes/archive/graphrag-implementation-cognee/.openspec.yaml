@@ -1,0 +1,23 @@
+change:
+  name: graphrag-implementation-cognee
+  description: Integrate local Cognee GraphRAG as replacement for API-based GraphRAG
+  status: approved
+  priority: high
+  
+artifacts:
+  proposal: proposal.md
+  design: design.md
+  tasks: tasks.md
+  implementation_plan: IMPLEMENTATION_PLAN.md
+  
+specs:
+  - specs/cognee-integration/spec.md
+  - specs/cognee-destination/spec.md
+  - specs/neo4j-infrastructure/spec.md
+  
+metadata:
+  created: 2026-02-28
+  author: ralph-loop
+  review_status: ready
+  estimated_effort: 3 sprints
+  target_completion: 2026-03-21

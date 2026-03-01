@@ -1,0 +1,186 @@
+### Cognee GraphRAG API (PRODUCTION)
+# ⚠️  WARNING: These requests target the PRODUCTION environment
+# Production URL: https://ag-dt-ppl-api.felixtek.cloud/api/v1
+# Use with caution - modifications affect live data
+#
+# Cognee provides local knowledge graph capabilities using Neo4j + pgvector
+# Features: Entity extraction, graph search, hybrid retrieval, and knowledge graph statistics
+#
+# Prerequisites:
+# - Documents must be processed with destination_type: "cognee_local"
+# - Neo4j must be running and accessible
+# - Environment variables: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
+
+@baseUrl = https://ag-dt-ppl-api.felixtek.cloud/api/v1
+@apiKey = your-production-api-key
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 1. GRAPH SEARCH
+# ═══════════════════════════════════════════════════════════════════════════════
+
+### Cognee Search - Hybrid Mode (Recommended)
+# Combines vector similarity with graph traversal for comprehensive results
+POST {{baseUrl}}/cognee/search
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "query": "What are the main components of neural network architecture?",
+  "search_type": "hybrid",
+  "dataset_id": "default",
+  "top_k": 10,
+  "filters": {
+    "source_type": "pdf"
+  }
+}
+
+### Cognee Search - Vector Mode
+# Pure vector similarity search using pgvector embeddings
+POST {{baseUrl}}/cognee/search
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "query": "machine learning applications in healthcare",
+  "search_type": "vector",
+  "dataset_id": "default",
+  "top_k": 10
+}
+
+### Cognee Search - Graph Mode
+# Graph traversal search following entity relationships
+POST {{baseUrl}}/cognee/search
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "query": "Find all documents related to Kubernetes and Docker",
+  "search_type": "graph",
+  "dataset_id": "default",
+  "top_k": 15
+}
+
+### Cognee Search - Summary Mode
+# Get a synthesized summary answer from the knowledge graph
+POST {{baseUrl}}/cognee/search
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "query": "Summarize the key findings about transformer models",
+  "search_type": "summary",
+  "dataset_id": "default",
+  "top_k": 5
+}
+
+### Cognee Search - Raw Chunks Mode
+# Retrieve raw text chunks without LLM processing
+POST {{baseUrl}}/cognee/search
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "query": "API authentication methods",
+  "search_type": "chunks",
+  "dataset_id": "default",
+  "top_k": 20
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 2. ENTITY EXTRACTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+### Extract Entities from Text
+# Extract named entities and their relationships from provided text
+POST {{baseUrl}}/cognee/extract-entities
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "text": "Google Cloud Platform provides machine learning services through Vertex AI. Kubernetes orchestrates containerized applications across clusters.",
+  "language": "en"
+}
+
+### Extract Entities - Technical Documentation
+POST {{baseUrl}}/cognee/extract-entities
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "text": "The neural network uses backpropagation for training. Convolutional layers extract features from images, while fully connected layers perform classification.",
+  "language": "en"
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3. KNOWLEDGE GRAPH STATISTICS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+### Get Knowledge Graph Statistics
+# Retrieve statistics about the knowledge graph structure
+GET {{baseUrl}}/cognee/stats?dataset_id=default
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+### Get Statistics for Specific Dataset
+GET {{baseUrl}}/cognee/stats?dataset_id=research-papers
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4. ADVANCED SEARCH EXAMPLES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+### Multi-hop Query - Finding Related Concepts
+POST {{baseUrl}}/cognee/search
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "query": "How does Docker relate to microservices architecture and container orchestration?",
+  "search_type": "graph",
+  "dataset_id": "default",
+  "top_k": 15
+}
+
+### Filtered Search by Job ID
+POST {{baseUrl}}/cognee/search
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "query": "data processing pipelines",
+  "search_type": "hybrid",
+  "dataset_id": "default",
+  "top_k": 10,
+  "filters": {
+    "job_id": "550e8400-e29b-41d4-a716-446655440001"
+  }
+}
+
+### Complex Business Query
+POST {{baseUrl}}/cognee/search
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "query": "What are the revenue implications of cloud migration strategies for enterprise companies?",
+  "search_type": "summary",
+  "dataset_id": "business-reports",
+  "top_k": 8
+}
+
+###

@@ -56,7 +56,7 @@ class QueryRewriter:
 ```yaml
 query_rewriting:
   enabled: true
-  model: "gpt-4o-mini"  # Fast, cost-effective
+  model: "gpt-4.1"  # Fast, cost-effective
   system_prompt: |
     You must respond with a JSON object containing exactly these fields:
     - "search_rag": boolean - True if query contains "@knowledgebase"

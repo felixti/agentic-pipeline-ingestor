@@ -125,7 +125,7 @@ class AgenticChunkerConfig:
         max_selection_time_ms: Maximum time for strategy selection
     """
 
-    selection_model: str = "gpt-4o-mini"
+    selection_model: str = "gpt-4.1"
     max_selection_time_ms: float = 100.0
 
 
@@ -1181,7 +1181,7 @@ class ChunkingService:
 
         # Agentic chunker
         agentic_config = AgenticChunkerConfig(
-            selection_model=self.config.agentic.get("selection_model", "gpt-4o-mini"),
+            selection_model=self.config.agentic.get("selection_model", "gpt-4.1"),
         )
         self._strategies["agentic"] = AgenticChunker(agentic_config)
 

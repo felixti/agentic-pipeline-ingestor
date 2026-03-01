@@ -1,0 +1,409 @@
+openapi: 3.1.0
+info:
+  title: Agentic Data Pipeline Ingestor - GraphRAG Extensions
+  description: Cognee and HippoRAG GraphRAG endpoints for the pipeline
+  version: 1.0.0
+
+paths:
+  /api/v1/cognee/search:
+    post:
+      tags:
+        - Cognee GraphRAG
+      summary: Search Cognee knowledge graph
+      description: |
+        Search the Cognee knowledge graph using vector, graph, or hybrid search.
+        
+        Cognee is a local GraphRAG implementation using Neo4j for graph storage
+        and PostgreSQL/pgvector for vector embeddings.
+        
+        Search Types:
+        - vector: Semantic search using pgvector embeddings
+        - graph: Graph traversal using Neo4j relationships  
+        - hybrid: Combined vector + graph search (recommended)
+      operationId: cognee_search_api_v1_cognee_search_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CogneeSearchRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CogneeSearchResponse'
+        '422':
+          description: Validation Error
+
+  /api/v1/cognee/extract-entities:
+    post:
+      tags:
+        - Cognee GraphRAG
+      summary: Extract entities from text
+      description: Extract entities and relationships from text using Cognee LLM provider
+      operationId: cognee_extract_entities_api_v1_cognee_extract_entities_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CogneeExtractEntitiesRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CogneeExtractEntitiesResponse'
+        '422':
+          description: Validation Error
+
+  /api/v1/cognee/stats:
+    get:
+      tags:
+        - Cognee GraphRAG
+      summary: Get Cognee graph statistics
+      description: Retrieve statistics about the Cognee knowledge graph
+      operationId: cognee_stats_api_v1_cognee_stats_get
+      parameters:
+        - name: dataset_id
+          in: query
+          required: false
+          schema:
+            type: string
+            default: default
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CogneeStatsResponse'
+
+  /api/v1/hipporag/retrieve:
+    post:
+      tags:
+        - HippoRAG Multi-Hop
+      summary: Multi-hop retrieval
+      description: |
+        Perform multi-hop retrieval using HippoRAG Personalized PageRank algorithm.
+        
+        HippoRAG uses a neurobiological memory model for single-step multi-hop
+        reasoning without iterative LLM calls.
+        
+        Best for:
+        - Complex multi-hop questions (2+ reasoning steps)
+        - Research synthesis across documents
+        - Legal/medical case analysis
+        
+        Advantages:
+        - Single-step multi-hop (no iterative LLM calls)
+        - +20% better multi-hop QA accuracy vs traditional RAG
+        - 10-30x cheaper than IRCoT
+      operationId: hipporag_retrieve_api_v1_hipporag_retrieve_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HippoRAGRetrieveRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HippoRAGRetrieveResponse'
+        '422':
+          description: Validation Error
+
+  /api/v1/hipporag/qa:
+    post:
+      tags:
+        - HippoRAG Multi-Hop
+      summary: Full RAG QA with multi-hop retrieval
+      description: Complete RAG pipeline with HippoRAG multi-hop retrieval and answer generation
+      operationId: hipporag_qa_api_v1_hipporag_qa_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HippoRAGQARequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HippoRAGQAResponse'
+        '422':
+          description: Validation Error
+
+  /api/v1/hipporag/extract-triples:
+    post:
+      tags:
+        - HippoRAG Multi-Hop
+      summary: Extract OpenIE triples
+      description: Extract subject-predicate-object triples from text using OpenIE
+      operationId: hipporag_extract_triples_api_v1_hipporag_extract_triples_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HippoRAGExtractTriplesRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HippoRAGExtractTriplesResponse'
+        '422':
+          description: Validation Error
+
+components:
+  schemas:
+    CogneeSearchRequest:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Search query text
+          example: "machine learning applications"
+        search_type:
+          type: string
+          enum: [vector, graph, hybrid]
+          default: hybrid
+          description: Type of search to perform
+        top_k:
+          type: integer
+          default: 10
+          minimum: 1
+          maximum: 100
+          description: Maximum number of results to return
+        dataset_id:
+          type: string
+          default: default
+          description: Cognee dataset to search
+      required:
+        - query
+
+    CogneeSearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CogneeSearchResult'
+        search_type:
+          type: string
+        dataset_id:
+          type: string
+        query_time_ms:
+          type: number
+
+    CogneeSearchResult:
+      type: object
+      properties:
+        chunk_id:
+          type: string
+        content:
+          type: string
+        score:
+          type: number
+        source_document:
+          type: string
+        entities:
+          type: array
+          items:
+            type: string
+
+    CogneeExtractEntitiesRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          description: Text to extract entities from
+        dataset_id:
+          type: string
+          default: default
+      required:
+        - text
+
+    CogneeExtractEntitiesResponse:
+      type: object
+      properties:
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/CogneeEntity'
+        relationships:
+          type: array
+          items:
+            $ref: '#/components/schemas/CogneeRelationship'
+
+    CogneeEntity:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          example: "PERSON"
+        description:
+          type: string
+
+    CogneeRelationship:
+      type: object
+      properties:
+        source:
+          type: string
+        target:
+          type: string
+        type:
+          type: string
+          example: "FOUNDED"
+
+    CogneeStatsResponse:
+      type: object
+      properties:
+        dataset_id:
+          type: string
+        document_count:
+          type: integer
+        chunk_count:
+          type: integer
+        entity_count:
+          type: integer
+        relationship_count:
+          type: integer
+        graph_density:
+          type: number
+        last_updated:
+          type: string
+          format: date-time
+
+    HippoRAGRetrieveRequest:
+      type: object
+      properties:
+        queries:
+          type: array
+          items:
+            type: string
+          description: List of query strings
+          example: ["What company did Steve Jobs found after Apple?"]
+        num_to_retrieve:
+          type: integer
+          default: 10
+          minimum: 1
+          maximum: 50
+          description: Number of passages to retrieve per query
+      required:
+        - queries
+
+    HippoRAGRetrieveResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/HippoRAGRetrievalResult'
+        query_time_ms:
+          type: number
+
+    HippoRAGRetrievalResult:
+      type: object
+      properties:
+        query:
+          type: string
+        passages:
+          type: array
+          items:
+            type: string
+        scores:
+          type: array
+          items:
+            type: number
+        source_documents:
+          type: array
+          items:
+            type: string
+        entities:
+          type: array
+          items:
+            type: string
+
+    HippoRAGQARequest:
+      type: object
+      properties:
+        queries:
+          type: array
+          items:
+            type: string
+          description: List of questions
+          example: ["What county is Erik Hort birthplace part of?"]
+        num_to_retrieve:
+          type: integer
+          default: 10
+          description: Number of passages for context
+      required:
+        - queries
+
+    HippoRAGQAResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/HippoRAGQAResult'
+        total_tokens:
+          type: integer
+        query_time_ms:
+          type: number
+
+    HippoRAGQAResult:
+      type: object
+      properties:
+        query:
+          type: string
+        answer:
+          type: string
+        sources:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: number
+        retrieval_results:
+          $ref: '#/components/schemas/HippoRAGRetrievalResult'
+
+    HippoRAGExtractTriplesRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          description: Text to extract triples from
+      required:
+        - text
+
+    HippoRAGExtractTriplesResponse:
+      type: object
+      properties:
+        triples:
+          type: array
+          items:
+            $ref: '#/components/schemas/HippoRAGTriple'
+
+    HippoRAGTriple:
+      type: object
+      properties:
+        subject:
+          type: string
+        predicate:
+          type: string
+        object:
+          type: string

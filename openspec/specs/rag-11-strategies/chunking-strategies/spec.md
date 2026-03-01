@@ -162,7 +162,7 @@ chunking:
       tokenizer: "cl100k_base"  # tiktoken
     
     agentic:
-      selection_model: "gpt-4o-mini"
+      selection_model: "gpt-4.1"
       decision_prompt: |
         Analyze this document and select the best chunking strategy:
         - "hierarchical" for structured docs with clear sections

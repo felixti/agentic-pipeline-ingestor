@@ -1,0 +1,44 @@
+# LLM Vision/OCR Configuration
+# Models with vision capabilities for OCR tasks
+
+llm:
+  router:
+    # Vision model group for OCR tasks
+    - model_name: "vision-ocr"
+      litellm_params:
+        model: "openrouter/anthropic/claude-3-sonnet"
+        api_key: "${OPENROUTER_API_KEY}"
+        api_base: "https://openrouter.ai/api/v1"
+        tpm: 20000
+        rpm: 30
+        timeout: 60
+      
+      fallback_models:
+        - model: "openrouter/openai/gpt-4o"
+          api_key: "${OPENROUTER_API_KEY}"
+          api_base: "https://openrouter.ai/api/v1"
+          tpm: 20000
+          rpm: 30
+          timeout: 60
+          
+        - model: "openrouter/anthropic/claude-3-haiku"
+          api_key: "${OPENROUTER_API_KEY}"
+          api_base: "https://openrouter.ai/api/v1"
+          tpm: 30000
+          rpm: 60
+          timeout: 45
+
+  retry:
+    num_retries: 3
+    timeout: 60
+    backoff_factor: 2
+    
+  defaults:
+    temperature: 0.1  # Low temp for precise OCR
+    max_tokens: 4000  # Higher for longer documents
+
+  providers:
+    openrouter:
+      headers:
+        HTTP-Referer: "https://pipeline.example.com"
+        X-Title: "Agentic Pipeline Ingestor"

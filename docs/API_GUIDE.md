@@ -21,7 +21,9 @@
 7. [Pipeline Configuration Endpoints](#pipeline-configuration-endpoints)
 8. [Authentication Endpoints](#authentication-endpoints)
 9. [RAG Endpoints](#rag-endpoints)
-10. [DLQ (Dead Letter Queue) Endpoints](#dlq-dead-letter-queue-endpoints)
+10. [Cognee GraphRAG Endpoints](#cognee-graphrag-endpoints)
+11. [HippoRAG Multi-Hop Endpoints](#hipporag-multi-hop-endpoints)
+12. [DLQ (Dead Letter Queue) Endpoints](#dlq-dead-letter-queue-endpoints)
 11. [Bulk Operations Endpoints](#bulk-operations-endpoints)
 12. [System & Health Endpoints](#system--health-endpoints)
 13. [Common Workflows](#common-workflows)
@@ -1860,6 +1862,12 @@ curl -X POST "http://localhost:8000/api/v1/auth/oauth2/callback?redirect_uri=htt
 
 These endpoints provide Retrieval-Augmented Generation capabilities, allowing you to query your document corpus with natural language and receive AI-generated answers based on retrieved context.
 
+> **Note**: This pipeline now supports two advanced GraphRAG implementations:
+> - **[Cognee GraphRAG](#cognee-graphrag-endpoints)**: Local knowledge graph with Neo4j + pgvector
+> - **[HippoRAG](#hipporag-multi-hop-endpoints)**: Single-step multi-hop reasoning with neurobiological memory model
+>
+> Use Cognee for general production workloads and HippoRAG for complex multi-hop reasoning queries.
+
 ### Execute RAG Query
 
 Execute a RAG query with a specified strategy preset.
@@ -2247,6 +2255,297 @@ curl -X POST "http://localhost:8000/api/v1/rag/evaluate" \
 ```
 
 **Rate Limit:** 5 requests per 60 seconds
+
+---
+
+### Cognee GraphRAG Endpoints
+
+These endpoints provide access to the local Cognee GraphRAG implementation using Neo4j for knowledge graph storage and pgvector for embeddings.
+
+#### Cognee Search
+
+Search the Cognee knowledge graph using vector, graph, or hybrid search.
+
+**Endpoint:** `POST /cognee/search`
+
+**Authentication:** Required
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `query` | string | Yes | Search query text |
+| `search_type` | string | No | `vector`, `graph`, `hybrid` (default: `hybrid`) |
+| `top_k` | integer | No | Maximum results (1-100, default: 10) |
+| `dataset_id` | string | No | Dataset to search (default: `default`) |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/cognee/search" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "machine learning applications in healthcare",
+    "search_type": "hybrid",
+    "top_k": 10,
+    "dataset_id": "medical-research"
+  }'
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "results": [
+    {
+      "chunk_id": "chunk-uuid-1",
+      "content": "Machine learning is transforming healthcare by...",
+      "score": 0.92,
+      "source_document": "doc-uuid-1",
+      "entities": ["machine learning", "healthcare"],
+      "relationships": [
+        {"source": "ML", "target": "healthcare", "type": "transforms"}
+      ]
+    }
+  ],
+  "search_type": "hybrid",
+  "dataset_id": "medical-research",
+  "query_time_ms": 45.2
+}
+```
+
+**Rate Limit:** 30 requests per 60 seconds
+
+---
+
+#### Cognee Entity Extraction
+
+Extract entities from text using the Cognee LLM provider.
+
+**Endpoint:** `POST /cognee/extract-entities`
+
+**Authentication:** Required
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `text` | string | Yes | Text to extract entities from |
+| `dataset_id` | string | No | Dataset context (default: `default`) |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/cognee/extract-entities" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Steve Jobs founded Apple in 1976.",
+    "dataset_id": "tech-history"
+  }'
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "entities": [
+    {"name": "Steve Jobs", "type": "PERSON", "description": "Co-founder of Apple"},
+    {"name": "Apple", "type": "ORGANIZATION", "description": "Technology company"},
+    {"name": "1976", "type": "DATE", "description": "Year Apple was founded"}
+  ],
+  "relationships": [
+    {"source": "Steve Jobs", "target": "Apple", "type": "FOUNDED"}
+  ]
+}
+```
+
+---
+
+#### Cognee Graph Statistics
+
+Get statistics about the Cognee knowledge graph.
+
+**Endpoint:** `GET /cognee/stats`
+
+**Authentication:** Required
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `dataset_id` | string | `default` | Dataset to get stats for |
+
+**cURL Example:**
+
+```bash
+curl "http://localhost:8000/api/v1/cognee/stats?dataset_id=medical-research" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "dataset_id": "medical-research",
+  "document_count": 150,
+  "chunk_count": 3250,
+  "entity_count": 890,
+  "relationship_count": 1240,
+  "graph_density": 0.15,
+  "last_updated": "2026-02-28T10:30:00.000000"
+}
+```
+
+---
+
+### HippoRAG Multi-Hop Endpoints
+
+These endpoints provide access to HippoRAG for single-step multi-hop reasoning using neurobiological memory model and Personalized PageRank.
+
+#### HippoRAG Multi-Hop Retrieval
+
+Perform multi-hop retrieval using Personalized PageRank.
+
+**Endpoint:** `POST /hipporag/retrieve`
+
+**Authentication:** Required
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `queries` | array[string] | Yes | List of query strings |
+| `num_to_retrieve` | integer | No | Number of passages per query (default: 10) |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/hipporag/retrieve" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "queries": ["What company did Steve Jobs found after Apple?"],
+    "num_to_retrieve": 10
+  }'
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "results": [
+    {
+      "query": "What company did Steve Jobs found after Apple?",
+      "passages": [
+        "After leaving Apple in 1985, Steve Jobs founded NeXT Computer...",
+        "NeXT was founded by Steve Jobs after his departure from Apple..."
+      ],
+      "scores": [0.95, 0.89],
+      "source_documents": ["doc-uuid-1", "doc-uuid-2"],
+      "entities": ["Steve Jobs", "Apple", "NeXT"]
+    }
+  ],
+  "query_time_ms": 125.5
+}
+```
+
+**Rate Limit:** 20 requests per 60 seconds
+
+---
+
+#### HippoRAG RAG QA
+
+Full RAG pipeline with multi-hop retrieval and answer generation.
+
+**Endpoint:** `POST /hipporag/qa`
+
+**Authentication:** Required
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `queries` | array[string] | Yes | List of questions |
+| `num_to_retrieve` | integer | No | Number of passages for context (default: 10) |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/hipporag/qa" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "queries": ["What county is Erik Hort's birthplace a part of?"],
+    "num_to_retrieve": 10
+  }'
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "results": [
+    {
+      "query": "What county is Erik Hort's birthplace a part of?",
+      "answer": "Rockland County",
+      "sources": [
+        "Erik Hort was born in Montebello, New York.",
+        "Montebello is a village in the town of Ramapo.",
+        "Ramapo is located in Rockland County, New York."
+      ],
+      "confidence": 0.94,
+      "retrieval_results": {
+        "passages": [...],
+        "scores": [0.95, 0.92, 0.88]
+      }
+    }
+  ],
+  "total_tokens": 450,
+  "query_time_ms": 385.2
+}
+```
+
+**Rate Limit:** 20 requests per 60 seconds
+
+---
+
+#### HippoRAG Extract Triples
+
+Extract OpenIE triples from text.
+
+**Endpoint:** `POST /hipporag/extract-triples`
+
+**Authentication:** Required
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `text` | string | Yes | Text to extract triples from |
+
+**cURL Example:**
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/hipporag/extract-triples" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Steve Jobs founded Apple in 1976. Apple is headquartered in Cupertino."
+  }'
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "triples": [
+    {"subject": "Steve Jobs", "predicate": "founded", "object": "Apple"},
+    {"subject": "Apple", "predicate": "headquartered_in", "object": "Cupertino"}
+  ]
+}
+```
 
 ---
 

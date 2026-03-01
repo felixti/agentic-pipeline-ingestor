@@ -1,0 +1,22 @@
+change:
+  name: graphrag-implementation-hipporag
+  description: Integrate HippoRAG for advanced multi-hop reasoning and neurobiological memory model
+  status: approved
+  priority: medium
+  
+artifacts:
+  proposal: proposal.md
+  design: design.md
+  tasks: tasks.md
+  implementation_plan: IMPLEMENTATION_PLAN.md
+  
+specs:
+  - specs/hipporag-integration/spec.md
+  - specs/hipporag-destination/spec.md
+  
+metadata:
+  created: 2026-02-28
+  author: ralph-loop
+  review_status: ready
+  estimated_effort: 2 sprints
+  target_completion: 2026-03-14

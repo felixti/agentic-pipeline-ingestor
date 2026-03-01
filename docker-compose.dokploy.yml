@@ -51,6 +51,19 @@ services:
       - AZURE_AI_VISION_ENDPOINT=${AZURE_AI_VISION_ENDPOINT:-}
       - AZURE_AI_VISION_API_KEY=${AZURE_AI_VISION_API_KEY:-}
       
+      # Cognee Local (Neo4j + pgvector)
+      - NEO4J_URI=${NEO4J_URI}
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - COGNEE_LLM_PROVIDER=${COGNEE_LLM_PROVIDER:-litellm}
+      - COGNEE_LLM_MODEL=${COGNEE_LLM_MODEL:-azure/gpt-4.1}
+      - COGNEE_EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-azure/text-embedding-3-small}
+      
+      # HippoRAG (File-based multi-hop reasoning)
+      - HIPPO_SAVE_DIR=${HIPPO_SAVE_DIR:-/data/hipporag}
+      - HIPPO_LLM_MODEL=${HIPPO_LLM_MODEL:-azure/gpt-4.1}
+      - HIPPO_EMBEDDING_MODEL=${HIPPO_EMBEDDING_MODEL:-azure/text-embedding-3-small}
+      
       # Processing
       - PROCESSING_MAX_FILE_SIZE_MB=100
       - PROCESSING_MAX_PAGES_PER_DOCUMENT=1000
@@ -61,6 +74,7 @@ services:
       
     volumes:
       - pipeline-uploads:/tmp/pipeline
+      - hipporag-data:/data/hipporag
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
@@ -97,19 +111,61 @@ services:
       - AZURE_AI_VISION_ENDPOINT=${AZURE_AI_VISION_ENDPOINT:-}
       - AZURE_AI_VISION_API_KEY=${AZURE_AI_VISION_API_KEY:-}
       
+      # Cognee Local (Neo4j + pgvector)
+      - NEO4J_URI=${NEO4J_URI}
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - COGNEE_LLM_PROVIDER=${COGNEE_LLM_PROVIDER:-litellm}
+      - COGNEE_LLM_MODEL=${COGNEE_LLM_MODEL:-azure/gpt-4.1}
+      - COGNEE_EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-azure/text-embedding-3-small}
+      
+      # HippoRAG (File-based multi-hop reasoning)
+      - HIPPO_SAVE_DIR=${HIPPO_SAVE_DIR:-/data/hipporag}
+      - HIPPO_LLM_MODEL=${HIPPO_LLM_MODEL:-azure/gpt-4.1}
+      - HIPPO_EMBEDDING_MODEL=${HIPPO_EMBEDDING_MODEL:-azure/text-embedding-3-small}
+      
       # Worker Configuration
       - WORKER_POLL_INTERVAL=5.0
       - WORKER_MAX_CONCURRENT=3
       
     volumes:
       - pipeline-uploads:/tmp/pipeline
+      - hipporag-data:/data/hipporag
     restart: unless-stopped
     deploy:
       replicas: 2
+
+  # ============================================================================
+  # Neo4j Graph Database (for Cognee)
+  # ============================================================================
+  neo4j:
+    image: neo4j:5.15-community
+    ports:
+      - "7687:7687"  # Bolt protocol
+      - "7474:7474"  # HTTP/Browser
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD}
+      - NEO4J_dbms_memory_heap_max__size=2G
+      - NEO4J_dbms_memory_pagecache_size=1G
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "${NEO4J_USER:-neo4j}", "-p", "${NEO4J_PASSWORD}", "RETURN 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
 # ============================================================================
 # Volumes
 # ============================================================================
 volumes:
   pipeline-uploads:
+    driver: local
+  neo4j-data:
+    driver: local
+  neo4j-logs:
+    driver: local
+  hipporag-data:
     driver: local

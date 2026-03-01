@@ -1,5 +1,8 @@
-### RAG Search API - All Search Types
-# Complete collection of all RAG search endpoints.
+### RAG Search API - All Search Types (including GraphRAG)
+# Complete collection of all RAG search endpoints:
+# - Semantic, Text, Hybrid, Similar (standard RAG)
+# - Cognee GraphRAG (knowledge graph search)
+# - HippoRAG Multi-Hop (PPR-based reasoning)
 # Base URL: http://localhost:8000/api/v1
 
 @baseUrl = http://localhost:8000/api/v1
@@ -162,7 +165,122 @@ X-API-Key: {{apiKey}}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 5. UTILITY: Get Chunks for Testing
+# 5. COGNEE GRAPHRAG SEARCH
+# ═══════════════════════════════════════════════════════════════════════════════
+# Cognee provides knowledge graph search with Neo4j + pgvector
+# Prerequisites: Documents processed with destination_type: "cognee_local"
+
+### Cognee: Hybrid Search (Recommended)
+# Combines vector similarity with graph traversal
+POST {{baseUrl}}/cognee/search
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "query": "What are the main components of neural network architecture?",
+  "search_type": "hybrid",
+  "dataset_id": "default",
+  "top_k": 10
+}
+
+### Cognee: Graph Traversal Search
+# Follow entity relationships in the knowledge graph
+POST {{baseUrl}}/cognee/search
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "query": "Find all documents related to Kubernetes and Docker",
+  "search_type": "graph",
+  "dataset_id": "default",
+  "top_k": 15
+}
+
+### Cognee: Summary Search
+# Get synthesized summary from knowledge graph
+POST {{baseUrl}}/cognee/search
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "query": "Summarize the key findings about transformer models",
+  "search_type": "summary",
+  "dataset_id": "default",
+  "top_k": 5
+}
+
+### Cognee: Extract Entities
+# Extract named entities from text
+POST {{baseUrl}}/cognee/extract-entities
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "text": "Google Cloud Platform provides machine learning services through Vertex AI. Kubernetes orchestrates containerized applications.",
+  "language": "en"
+}
+
+### Cognee: Knowledge Graph Stats
+# Get statistics about the knowledge graph
+GET {{baseUrl}}/cognee/stats?dataset_id=default
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 6. HIPPO-RAG MULTI-HOP SEARCH
+# ═══════════════════════════════════════════════════════════════════════════════
+# HippoRAG provides multi-hop reasoning using Personalized PageRank
+# Best for: Complex queries requiring multiple inference steps
+# Prerequisites: Documents indexed with destination_type: "hipporag"
+
+### HippoRAG: Multi-hop Retrieval
+# Retrieve documents using PPR-based multi-hop algorithm
+POST {{baseUrl}}/hipporag/retrieve
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "queries": ["What machine learning frameworks are used for natural language processing?"],
+  "dataset_id": "default",
+  "num_to_retrieve": 10,
+  "include_metadata": true
+}
+
+### HippoRAG: Full RAG QA
+# Multi-hop retrieval + answer generation
+POST {{baseUrl}}/hipporag/qa
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "queries": ["How does Docker containerization relate to Kubernetes orchestration?"],
+  "dataset_id": "default",
+  "num_to_retrieve": 15,
+  "generate_answer": true
+}
+
+### HippoRAG: Extract Triples
+# Extract subject-predicate-object triples using OpenIE
+POST {{baseUrl}}/hipporag/extract-triples
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "text": "Google developed TensorFlow for machine learning. TensorFlow supports deep learning models.",
+  "language": "en"
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 7. UTILITY: Get Chunks for Testing
 # ═══════════════════════════════════════════════════════════════════════════════
 
 ### List Job Chunks (to get a valid chunk_id)

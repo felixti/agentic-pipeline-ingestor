@@ -688,7 +688,7 @@ class ChunkingSettings(BaseSettings):
 
     agentic: dict[str, Any] = Field(
         default={
-            "selection_model": "gpt-4o-mini",
+            "selection_model": "gpt-4.1",
             "decision_prompt": (
                 "Analyze this document and select the best chunking strategy:\n"
                 '- "hierarchical" for structured docs with clear sections\n'

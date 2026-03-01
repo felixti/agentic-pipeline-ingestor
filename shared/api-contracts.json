@@ -151,6 +151,149 @@
       }
     }
   },
+  "cognee_graph_search_endpoints": {
+    "graph_search": {
+      "path": "/api/v1/cognee/search",
+      "method": "POST",
+      "description": "Search the Cognee knowledge graph using vector, graph, or hybrid search",
+      "request_body": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "Search query text"
+        },
+        "search_type": {
+          "type": "string",
+          "enum": ["vector", "graph", "hybrid"],
+          "default": "hybrid",
+          "description": "Type of search to perform"
+        },
+        "top_k": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 10,
+          "description": "Maximum number of results"
+        },
+        "dataset_id": {
+          "type": "string",
+          "description": "Optional dataset ID to search within"
+        },
+        "filters": {
+          "type": "object",
+          "description": "Optional metadata filters"
+        }
+      },
+      "response_model": "CogneeSearchResultsResponse",
+      "responses": {
+        "200": {"description": "Search results with entities and relationships"},
+        "400": {"description": "Invalid search parameters"},
+        "500": {"description": "Search failed"}
+      }
+    },
+    "extract_entities": {
+      "path": "/api/v1/cognee/extract-entities",
+      "method": "POST",
+      "description": "Extract entities from text using LLM",
+      "request_body": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000,
+          "description": "Text to extract entities from"
+        }
+      },
+      "response_model": "EntityExtractionResponse",
+      "responses": {
+        "200": {"description": "Extracted entities"},
+        "400": {"description": "Invalid text input"}
+      }
+    }
+  },
+  "hipporag_endpoints": {
+    "multi_hop_retrieve": {
+      "path": "/api/v1/hipporag/retrieve",
+      "method": "POST",
+      "description": "Multi-hop retrieval using Personalized PageRank for complex queries",
+      "request_body": {
+        "queries": {
+          "type": "array",
+          "items": {"type": "string"},
+          "minItems": 1,
+          "maxItems": 100,
+          "description": "List of query strings"
+        },
+        "num_to_retrieve": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 10,
+          "description": "Number of passages to retrieve per query"
+        }
+      },
+      "response_model": "HippoRAGRetrieveResponse",
+      "responses": {
+        "200": {"description": "Retrieval results with passages and scores"},
+        "400": {"description": "Invalid query parameters"},
+        "500": {"description": "Retrieval failed"}
+      }
+    },
+    "rag_qa": {
+      "path": "/api/v1/hipporag/qa",
+      "method": "POST",
+      "description": "Full RAG pipeline: multi-hop retrieval + answer generation",
+      "request_body": {
+        "queries": {
+          "type": "array",
+          "items": {"type": "string"},
+          "minItems": 1,
+          "maxItems": 50,
+          "description": "List of questions to answer"
+        },
+        "num_to_retrieve": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 10,
+          "description": "Number of passages to retrieve for context"
+        }
+      },
+      "response_model": "HippoRAGQAResponse",
+      "responses": {
+        "200": {"description": "QA results with answers and sources"},
+        "400": {"description": "Invalid query parameters"},
+        "500": {"description": "QA processing failed"}
+      }
+    },
+    "extract_triples": {
+      "path": "/api/v1/hipporag/extract-triples",
+      "method": "POST",
+      "description": "Extract OpenIE triples from text using LLM",
+      "request_body": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000,
+          "description": "Text to extract triples from"
+        }
+      },
+      "response_model": "HippoRAGTripleExtractionResponse",
+      "responses": {
+        "200": {"description": "Extracted subject-predicate-object triples"},
+        "400": {"description": "Invalid text input"}
+      }
+    },
+    "get_graph_stats": {
+      "path": "/api/v1/hipporag/stats",
+      "method": "GET",
+      "description": "Get knowledge graph statistics",
+      "response_model": "HippoRAGGraphStatsResponse",
+      "responses": {
+        "200": {"description": "Graph statistics"}
+      }
+    }
+  },
   "search_endpoints": {
     "semantic_search": {
       "path": "/api/v1/search/semantic",
@@ -323,6 +466,179 @@
         "400": {"description": "Invalid UUID format or chunk has no embedding"},
         "404": {"description": "Reference chunk not found"}
       }
+    }
+  },
+  "cognee_models": {
+    "CogneeSearchResult": {
+      "type": "object",
+      "properties": {
+        "chunk_id": {"type": "string", "description": "Unique chunk identifier"},
+        "content": {"type": "string", "description": "Text content of the chunk"},
+        "score": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Relevance score"},
+        "source_document": {"type": "string", "description": "Parent document ID"},
+        "entities": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Entity names mentioned in chunk"
+        },
+        "relationships": {
+          "type": "array",
+          "items": {"$ref": "#/cognee_models/EntityRelationship"},
+          "description": "Relationships between entities"
+        },
+        "metadata": {"type": "object", "description": "Additional result metadata"}
+      },
+      "required": ["chunk_id", "content", "score", "source_document"]
+    },
+    "EntityRelationship": {
+      "type": "object",
+      "properties": {
+        "source": {"type": "string", "description": "Source entity name"},
+        "target": {"type": "string", "description": "Target entity name"},
+        "type": {"type": "string", "description": "Relationship type"},
+        "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+      },
+      "required": ["source", "target", "type"]
+    },
+    "CogneeSearchResultsResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {"$ref": "#/cognee_models/CogneeSearchResult"}
+        },
+        "total": {"type": "integer", "minimum": 0},
+        "query_time_ms": {"type": "number"},
+        "search_type": {"type": "string", "enum": ["vector", "graph", "hybrid"]},
+        "query": {"type": "string"}
+      },
+      "required": ["results", "total", "query_time_ms", "search_type", "query"]
+    },
+    "ExtractedEntity": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string", "description": "Entity name"},
+        "type": {"type": "string", "description": "Entity type (PERSON, ORGANIZATION, etc.)"},
+        "description": {"type": "string", "description": "Brief entity description"}
+      },
+      "required": ["name", "type"]
+    },
+    "EntityExtractionResponse": {
+      "type": "object",
+      "properties": {
+        "entities": {
+          "type": "array",
+          "items": {"$ref": "#/cognee_models/ExtractedEntity"}
+        },
+        "count": {"type": "integer"},
+        "processing_time_ms": {"type": "number"}
+      },
+      "required": ["entities", "count"]
+    }
+  },
+  "hipporag_models": {
+    "HippoRAGTriple": {
+      "type": "object",
+      "properties": {
+        "subject": {"type": "string", "description": "Subject entity"},
+        "predicate": {"type": "string", "description": "Relationship predicate"},
+        "object": {"type": "string", "description": "Object entity"}
+      },
+      "required": ["subject", "predicate", "object"]
+    },
+    "HippoRAGRetrievalResult": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string", "description": "Original query"},
+        "passages": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Retrieved passage texts"
+        },
+        "scores": {
+          "type": "array",
+          "items": {"type": "number"},
+          "description": "Relevance scores for passages"
+        },
+        "source_documents": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Source document IDs"
+        },
+        "entities": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Entities extracted from query"
+        }
+      },
+      "required": ["query"]
+    },
+    "HippoRAGQAResult": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string", "description": "Original question"},
+        "answer": {"type": "string", "description": "Generated answer"},
+        "sources": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Source passages used"
+        },
+        "retrieval_results": {"$ref": "#/hipporag_models/HippoRAGRetrievalResult"},
+        "confidence": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Answer confidence score"
+        }
+      },
+      "required": ["query", "answer"]
+    },
+    "HippoRAGRetrieveResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {"$ref": "#/hipporag_models/HippoRAGRetrievalResult"}
+        },
+        "total_queries": {"type": "integer"},
+        "query_time_ms": {"type": "number"}
+      },
+      "required": ["results", "total_queries"]
+    },
+    "HippoRAGQAResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {"$ref": "#/hipporag_models/HippoRAGQAResult"}
+        },
+        "total_queries": {"type": "integer"},
+        "processing_time_ms": {"type": "number"}
+      },
+      "required": ["results", "total_queries"]
+    },
+    "HippoRAGTripleExtractionResponse": {
+      "type": "object",
+      "properties": {
+        "triples": {
+          "type": "array",
+          "items": {"$ref": "#/hipporag_models/HippoRAGTriple"}
+        },
+        "count": {"type": "integer"},
+        "processing_time_ms": {"type": "number"}
+      },
+      "required": ["triples", "count"]
+    },
+    "HippoRAGGraphStatsResponse": {
+      "type": "object",
+      "properties": {
+        "entities": {"type": "integer", "description": "Number of entities in graph"},
+        "triples": {"type": "integer", "description": "Number of triples in graph"},
+        "passages": {"type": "integer", "description": "Number of indexed passages"},
+        "storage_size_mb": {"type": "number", "description": "Storage size in MB"},
+        "timestamp": {"type": "string", "format": "date-time"}
+      },
+      "required": ["entities", "triples", "passages"]
     }
   },
   "models": {
@@ -545,6 +861,8 @@
     }
   },
   "rate_limits": {
+    "graph_search": {"requests": 60, "window_seconds": 60},
+    "extract_entities": {"requests": 30, "window_seconds": 60},
     "list_chunks": {"requests": 120, "window_seconds": 60},
     "get_chunk": {"requests": 120, "window_seconds": 60},
     "semantic_search": {"requests": 60, "window_seconds": 60},
@@ -824,6 +1142,10 @@
     "list_strategies": {"requests": 120, "window_seconds": 60},
     "evaluate_strategy": {"requests": 10, "window_seconds": 60},
     "get_rag_metrics": {"requests": 60, "window_seconds": 60},
-    "run_benchmark": {"requests": 5, "window_seconds": 300}
+    "run_benchmark": {"requests": 5, "window_seconds": 300},
+    "hipporag_multi_hop_retrieve": {"requests": 30, "window_seconds": 60},
+    "hipporag_rag_qa": {"requests": 20, "window_seconds": 60},
+    "hipporag_extract_triples": {"requests": 30, "window_seconds": 60},
+    "hipporag_get_graph_stats": {"requests": 120, "window_seconds": 60}
   }
 }

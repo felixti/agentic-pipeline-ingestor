@@ -462,6 +462,165 @@ graphrag_config = {
 
 ---
 
+### 10a. Cognee GraphRAG (Local Knowledge Graph)
+
+**What it is**: Open-source local GraphRAG using Cognee library with Neo4j for graph storage and pgvector for embeddings.
+
+**When to use**:
+- ✅ Production workloads requiring knowledge graphs
+- ✅ Multi-modal data (text, images, audio)
+- ✅ When you need enterprise-ready graph storage
+- ✅ Complex reasoning with entity relationships
+- ✅ Hybrid search (vector + graph)
+
+**Key Features**:
+- **Local Processing**: No external API calls - uses local Cognee library
+- **Neo4j Storage**: Enterprise-grade graph database
+- **pgvector Integration**: PostgreSQL vector storage for embeddings
+- **Multi-modal**: Supports text, images, and audio
+- **LLM via litellm**: Uses existing litellm provider (Azure/OpenRouter)
+
+**Architecture**:
+```
+Documents → cognee.add() → cognee.cognify() → Knowledge Graph (Neo4j)
+                                      ↓
+                              Embeddings (pgvector)
+```
+
+**Configuration**:
+```python
+# Environment variables
+NEO4J_URI=bolt://neo4j:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=cognee-graph-db
+COGNEE_LLM_PROVIDER=litellm
+COGNEE_LLM_MODEL=azure/gpt-4.1
+COGNEE_EMBEDDING_MODEL=azure/text-embedding-3-small
+
+# Plugin configuration
+cognee_config = {
+    "dataset_id": "my-dataset",
+    "graph_name": "knowledge-graph",
+    "extract_entities": True,
+    "extract_relationships": True,
+    "store_vectors": True
+}
+```
+
+**API Usage**:
+```bash
+# Search with Cognee
+curl -X POST "http://localhost:8000/api/v1/cognee/search" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "machine learning applications",
+    "search_type": "hybrid",
+    "top_k": 10,
+    "dataset_id": "my-dataset"
+  }'
+```
+
+**Search Types**:
+- `vector`: Semantic search using pgvector
+- `graph`: Graph traversal using Neo4j
+- `hybrid`: Combined vector + graph (recommended)
+
+---
+
+### 10b. HippoRAG (Multi-Hop Reasoning)
+
+**What it is**: Neurobiological memory model for single-step multi-hop retrieval using Personalized PageRank (PPR).
+
+**When to use**:
+- ✅ Complex multi-hop questions requiring 2+ reasoning steps
+- ✅ Research synthesis across multiple documents
+- ✅ Legal/medical case analysis
+- ✅ When you need +20% better multi-hop QA accuracy
+- ✅ "Connecting the dots" scenarios
+
+**Key Features**:
+- **Single-Step Multi-Hop**: Answers complex questions in one retrieval (no iterative LLM calls)
+- **OpenIE Triple Extraction**: Extracts subject-predicate-object triples
+- **Personalized PageRank**: Graph algorithm for multi-hop traversal
+- **File-Based Storage**: No database required - uses persistent volumes
+- **+20% Multi-Hop Accuracy**: Outperforms iterative RAG on complex questions
+
+**How It Works**:
+```
+Offline Indexing:
+Documents → OpenIE (LLM) → Triples → Knowledge Graph
+        ↓                              ↓
+        └──→ Embeddings ───────────────┘
+
+Online Retrieval:
+Query → NER (LLM) → Query Nodes → PPR → Ranked Passages
+```
+
+**Example Multi-Hop Query**:
+```
+Query: "What county is Erik Hort's birthplace a part of?"
+
+Traditional RAG (2 steps):
+1. Search "Erik Hort birthplace" → Montebello
+2. Search "Montebello county" → Rockland County
+
+HippoRAG (1 step):
+1. Query nodes: [Erik Hort]
+2. PPR traverses: Erik Hort → birthplace → Montebello → part_of → Rockland County
+3. Single retrieval returns answer
+```
+
+**Configuration**:
+```python
+# Environment variables
+HIPPO_SAVE_DIR=/data/hipporag
+HIPPO_LLM_MODEL=azure/gpt-4.1
+HIPPO_EMBEDDING_MODEL=azure/text-embedding-3-small
+HIPPO_RETRIEVAL_K=10
+
+# Plugin configuration
+hipporag_config = {
+    "save_dir": "/data/hipporag",
+    "llm_model": "azure/gpt-4.1",
+    "embedding_model": "azure/text-embedding-3-small"
+}
+```
+
+**API Usage**:
+```bash
+# Multi-hop retrieval
+curl -X POST "http://localhost:8000/api/v1/hipporag/retrieve" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "queries": ["What company did Steve Jobs found after Apple?"],
+    "num_to_retrieve": 10
+  }'
+
+# Full RAG QA
+curl -X POST "http://localhost:8000/api/v1/hipporag/qa" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "queries": ["What county is Erik Hort's birthplace a part of?"],
+    "num_to_retrieve": 10
+  }'
+```
+
+**Comparison: Cognee vs HippoRAG**:
+
+| Feature | Cognee | HippoRAG |
+|---------|--------|----------|
+| Multi-hop QA | Good | **+20% better** |
+| Speed | Fast | **Single-step** |
+| Storage | Neo4j + PostgreSQL | File-based |
+| Multi-modal | **Yes** | No |
+| Enterprise | **Production-ready** | Research |
+| Best For | General production | Complex reasoning |
+
+---
+
 ### 11. Multi-Hop Retrieval
 
 **What it is**: Performs multiple retrieval steps to answer complex questions requiring information from multiple sources.

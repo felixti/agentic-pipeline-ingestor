@@ -181,7 +181,7 @@ def fixed_config():
 def agentic_config():
     """Create agentic chunker config."""
     return AgenticChunkerConfig(
-        selection_model="gpt-4o-mini",
+        selection_model="gpt-4.1",
     )
 
 
@@ -798,7 +798,7 @@ class TestChunkingConfiguration:
         """Test agentic config default values."""
         config = AgenticChunkerConfig()
         
-        assert config.selection_model == "gpt-4o-mini"
+        assert config.selection_model == "gpt-4.1"
         assert config.max_selection_time_ms == 100.0
 
 

@@ -1,0 +1,165 @@
+### HippoRAG Multi-Hop RAG API (LOCAL DEVELOPMENT)
+# Local development URL: http://localhost:8000/api/v1
+#
+# HippoRAG provides multi-hop reasoning using Personalized PageRank (PPR) algorithm
+# Best for: Complex reasoning queries requiring multiple inference steps
+# Research shows: +20% improvement on multi-hop QA benchmarks
+#
+# Prerequisites:
+# - Documents must be indexed with destination_type: "hipporag"
+# - Sufficient storage at HIPPO_SAVE_DIR (/data/hipporag)
+# - LLM configured for triple extraction and QA
+
+@baseUrl = http://localhost:8000/api/v1
+@apiKey = your-api-key
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 1. MULTI-HOP RETRIEVAL
+# ═══════════════════════════════════════════════════════════════════════════════
+
+### HippoRAG Retrieve - Single Query
+# Multi-hop retrieval using Personalized PageRank for complex queries
+POST {{baseUrl}}/hipporag/retrieve
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "queries": ["What machine learning frameworks are used for natural language processing?"],
+  "dataset_id": "default",
+  "num_to_retrieve": 10,
+  "include_metadata": true
+}
+
+### HippoRAG Retrieve - Multiple Related Queries
+# Submit multiple queries for complex multi-hop reasoning
+POST {{baseUrl}}/hipporag/retrieve
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "queries": [
+    "What is Kubernetes used for?",
+    "How does container orchestration work?",
+    "What are the benefits of microservices?"
+  ],
+  "dataset_id": "default",
+  "num_to_retrieve": 15,
+  "include_metadata": true
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 2. FULL RAG QA PIPELINE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+### HippoRAG QA - Simple Question
+# Full RAG pipeline: retrieval + answer generation
+POST {{baseUrl}}/hipporag/qa
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "queries": ["What are the advantages of using vector databases?"],
+  "dataset_id": "default",
+  "num_to_retrieve": 10,
+  "generate_answer": true
+}
+
+### HippoRAG QA - Complex Multi-hop Question
+POST {{baseUrl}}/hipporag/qa
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "queries": [
+    "How does Docker containerization relate to Kubernetes orchestration in microservices deployment?"
+  ],
+  "dataset_id": "default",
+  "num_to_retrieve": 15,
+  "generate_answer": true
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3. TRIPLE EXTRACTION (OpenIE)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+### Extract Triples from Text
+# Extract subject-predicate-object triples using Open Information Extraction
+POST {{baseUrl}}/hipporag/extract-triples
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "text": "Google developed TensorFlow for machine learning. TensorFlow supports deep learning models. Deep learning is a subset of artificial intelligence.",
+  "language": "en"
+}
+
+### Extract Triples - Technical Content
+POST {{baseUrl}}/hipporag/extract-triples
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "text": "Kubernetes manages containerized applications. Docker creates containers. Containers package applications with dependencies.",
+  "language": "en"
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4. ADVANCED MULTI-HOP EXAMPLES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+### Multi-hop Query - Causal Reasoning
+POST {{baseUrl}}/hipporag/qa
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "queries": [
+    "Why do companies adopt cloud-native architectures and what are the cost implications?"
+  ],
+  "dataset_id": "business-docs",
+  "num_to_retrieve": 15,
+  "generate_answer": true
+}
+
+### Comparison: HippoRAG vs Standard Hybrid Search
+
+### HippoRAG Multi-hop (for complex reasoning)
+POST {{baseUrl}}/hipporag/qa
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "queries": [
+    "What connects neural networks to computer vision applications through convolutional layers?"
+  ],
+  "dataset_id": "default",
+  "num_to_retrieve": 10,
+  "generate_answer": true
+}
+
+### Standard Hybrid Search (for direct matches)
+POST {{baseUrl}}/search/hybrid
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+Accept: application/json
+
+{
+  "query": "neural networks computer vision convolutional layers",
+  "top_k": 10,
+  "vector_weight": 0.7,
+  "text_weight": 0.3
+}
+
+###

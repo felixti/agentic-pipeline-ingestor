@@ -82,7 +82,7 @@ agentic_rag:
   enabled: true
   
   # Classification model
-  classifier_model: "gpt-4o-mini"
+  classifier_model: "gpt-4.1"
   
   # Quality thresholds
   quality_threshold: 0.7
@@ -110,7 +110,7 @@ agentic_rag:
     
     auto:
       # Dynamically selected per query
-      selection_model: "gpt-4o-mini"
+      selection_model: "gpt-4.1"
   
   # Self-correction
   self_correction:

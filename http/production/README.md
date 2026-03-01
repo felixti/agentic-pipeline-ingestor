@@ -19,6 +19,8 @@ These files target the **PRODUCTION** environment:
 | `semantic.http` | Semantic/vector similarity search examples |
 | `similar.http` | Find semantically similar chunks |
 | `text.http` | Text/BM25 search with fuzzy matching and highlighting |
+| `cognee.graphrag.http` | **Cognee GraphRAG**: Entity extraction, graph search, hybrid retrieval, KG stats |
+| `hipporag.graphrag.http` | **HippoRAG Multi-Hop**: PPR-based retrieval, RAG QA, triple extraction |
 
 ## Usage
 
@@ -49,8 +51,26 @@ Each file defines these variables at the top:
 
 For local development testing, use the files in the parent `http/` directory which target `http://localhost:8000/api/v1`.
 
+## GraphRAG APIs
+
+Two specialized GraphRAG approaches are available:
+
+### Cognee GraphRAG (`cognee.graphrag.http`)
+- **Best for**: Production knowledge graphs, entity relationships, hybrid search
+- **Storage**: Neo4j (graph) + PostgreSQL/pgvector (embeddings)
+- **Features**: Entity extraction, graph traversal, vector similarity, summaries
+- **Prerequisites**: Documents processed with `destination_type: "cognee_local"`
+
+### HippoRAG Multi-Hop (`hipporag.graphrag.http`)
+- **Best for**: Complex reasoning, multi-hop QA, research queries
+- **Storage**: File-based (HIPPO_SAVE_DIR)
+- **Features**: Personalized PageRank, single-step multi-hop retrieval
+- **Performance**: +20% on multi-hop benchmarks vs standard RAG
+- **Prerequisites**: Documents indexed with `destination_type: "hipporag"`
+
 ## API Documentation
 
-- OpenAPI Spec: `https://ag-dt-ppl-api.felixtek.cloud/api/v1/openapi.yaml`
-- Swagger UI: `https://ag-dt-ppl-api.felixtek.cloud/docs`
-- ReDoc: `https://ag-dt-ppl-api.felixtek.cloud/redoc`
+- **Main OpenAPI Spec**: `https://ag-dt-ppl-api.felixtek.cloud/api/v1/openapi.yaml`
+- **GraphRAPI Spec**: `https://ag-dt-ppl-api.felixtek.cloud/api/v1/openapi.graphrag.yaml`
+- **Swagger UI**: `https://ag-dt-ppl-api.felixtek.cloud/docs`
+- **ReDoc**: `https://ag-dt-ppl-api.felixtek.cloud/redoc`

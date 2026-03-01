@@ -2,6 +2,13 @@
 
 Complete examples for using the vector store search endpoints.
 
+> **Note**: This pipeline now includes advanced GraphRAG capabilities:
+> - **Standard Vector Store**: PostgreSQL/pgvector (this guide)
+> - **[Cognee GraphRAG](usage/cognee-local.md)**: Knowledge graphs with Neo4j + pgvector
+> - **[HippoRAG](usage/hipporag.md)**: Multi-hop reasoning with file-based storage
+>
+> Use the standard vector store for simple similarity search, Cognee for entity-rich knowledge graphs, and HippoRAG for complex multi-hop questions.
+
 ## Base URL
 
 ```

@@ -13,7 +13,7 @@ class JobContext(BaseModel):
     
     job_id: UUID = Field(..., description="Job ID")
     file_path: str = Field(..., description="Path to input file")
-    file_type: str = Field(..., description="Detected file MIME type")
+    file_type: str | None = Field(default=None, description="Detected file MIME type")
     
     # Content detection (NEW)
     content_detection_result: ContentAnalysisResult | None = Field(
@@ -62,7 +62,7 @@ class JobContext(BaseModel):
     )
     
     # Metadata
-    created_at: str = Field(..., description="Creation timestamp")
+    created_at: str | None = Field(default=None, description="Creation timestamp")
     priority: int = Field(default=5, description="Job priority (1-10)")
     
     class Config:

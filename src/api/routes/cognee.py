@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from src.api.models.cognee import (
     CogneeEntity,
@@ -27,7 +27,6 @@ from src.api.models.cognee import (
     CogneeSearchResult,
     CogneeStatsResponse,
 )
-from src.auth.dependencies import get_current_user
 from src.observability.logging import get_logger
 from src.plugins.base import Connection
 from src.plugins.destinations.cognee_local import CogneeLocalDestination
@@ -201,14 +200,11 @@ def _convert_search_results(
 
     Results include the matched chunks, relevance scores, source documents,
     and any entities found in the content.
-
-    **Authentication Required**
     """,
 )
 async def cognee_search(
     request: Request,
     search_request: CogneeSearchRequest,
-    current_user: dict = Depends(get_current_user),
 ) -> CogneeSearchResponse:
     """Search the Cognee knowledge graph.
 
@@ -310,14 +306,11 @@ async def cognee_search(
     - Analyzing unstructured text
     - Preparing content for knowledge graph ingestion
     - Understanding entity relationships in documents
-
-    **Authentication Required**
     """,
 )
 async def cognee_extract_entities(
     request: Request,
     extract_request: CogneeExtractEntitiesRequest,
-    current_user: dict = Depends(get_current_user),
 ) -> CogneeExtractEntitiesResponse:
     """Extract entities and relationships from text.
 
@@ -426,14 +419,11 @@ async def cognee_extract_entities(
     - **relationship_count**: Total relationships in the graph
     - **graph_density**: Graph density metric (0-1)
     - **last_updated**: Timestamp of last update
-
-    **Authentication Required**
     """,
 )
 async def cognee_stats(
     request: Request,
     dataset_id: str = "default",
-    current_user: dict = Depends(get_current_user),
 ) -> CogneeStatsResponse:
     """Get Cognee graph statistics.
 

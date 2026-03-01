@@ -14,7 +14,7 @@ import uuid
 from threading import Lock
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from src.api.models.hipporag import (
     HippoRAGExtractTriplesRequest,
@@ -27,7 +27,6 @@ from src.api.models.hipporag import (
     HippoRAGRetrieveResponse,
     HippoRAGTriple,
 )
-from src.auth.dependencies import get_current_user
 from src.observability.logging import get_logger
 from src.plugins.destinations.hipporag import HippoRAGDestination, QAResult, RetrievalResult
 
@@ -181,14 +180,11 @@ def _convert_qa_result(result: QAResult) -> HippoRAGQAResult:
     - Finding connected information across multiple documents
     - Multi-hop reasoning without explicit chain-of-thought
     - Discovering implicit relationships in the knowledge graph
-
-    **Authentication Required**
     """,
 )
 async def hipporag_retrieve(
     request: Request,
     retrieve_request: HippoRAGRetrieveRequest,
-    current_user: dict = Depends(get_current_user),
 ) -> HippoRAGRetrieveResponse:
     """Perform multi-hop retrieval using HippoRAG.
 
@@ -279,14 +275,11 @@ async def hipporag_retrieve(
     
     This combines the power of HippoRAG's knowledge graph traversal
     with LLM-based answer generation for comprehensive question answering.
-
-    **Authentication Required**
     """,
 )
 async def hipporag_qa(
     request: Request,
     qa_request: HippoRAGQARequest,
-    current_user: dict = Depends(get_current_user),
 ) -> HippoRAGQAResponse:
     """Execute RAG QA with HippoRAG multi-hop retrieval.
 
@@ -390,14 +383,11 @@ async def hipporag_qa(
     - Building knowledge graphs from unstructured text
     - Understanding entity relationships
     - Preparing content for HippoRAG indexing
-
-    **Authentication Required**
     """,
 )
 async def hipporag_extract_triples(
     request: Request,
     extract_request: HippoRAGExtractTriplesRequest,
-    current_user: dict = Depends(get_current_user),
 ) -> HippoRAGExtractTriplesResponse:
     """Extract knowledge graph triples from text.
 

@@ -698,6 +698,8 @@ class CogneeLocalDestination(DestinationPlugin):
                     keys=list(item.keys()),
                     has_metadata="metadata" in item,
                     metadata_keys=list(item.get("metadata", {}).keys()) if "metadata" in item else [],
+                    has_entities=any(k in item for k in ["entities", "extracted_entities", "nodes", "concepts"]),
+                    has_source=any(k in item for k in ["source_document", "document_id", "file_name", "source"]),
                 )
             elif not isinstance(item, str):
                 logger.debug(

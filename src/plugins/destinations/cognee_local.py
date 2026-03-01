@@ -727,12 +727,22 @@ class CogneeLocalDestination(DestinationPlugin):
                     item.get("metadata", {}).get("source_document") or
                     "unknown"
                 )
+                # Try multiple possible field names for entities
+                entities = (
+                    item.get("entities") or
+                    item.get("extracted_entities") or
+                    item.get("nodes") or
+                    item.get("concepts") or
+                    item.get("mentioned_entities") or
+                    item.get("metadata", {}).get("entities") or
+                    []
+                )
                 result = SearchResult(
                     chunk_id=item.get("id", f"result_{i}"),
                     content=item.get("text", item.get("content", str(item))),
                     score=item.get("score", 1.0 - (i * 0.1)),
                     source_document=source_document,
-                    entities=item.get("entities", []),
+                    entities=entities,
                     metadata=item.get("metadata", {}),
                 )
             else:
@@ -755,6 +765,11 @@ class CogneeLocalDestination(DestinationPlugin):
                 for attr in ["source_document", "document_id", "file_name", "source", "document_name"]:
                     if hasattr(item, attr) and getattr(item, attr):
                         source = getattr(item, attr)
+                        break
+                # Try multiple possible attribute names for entities
+                for attr in ["entities", "extracted_entities", "nodes", "concepts", "mentioned_entities"]:
+                    if hasattr(item, attr) and getattr(item, attr):
+                        entities = getattr(item, attr)
                         break
 
                 result = SearchResult(

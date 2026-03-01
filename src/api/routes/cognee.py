@@ -165,7 +165,7 @@ async def _get_entities_from_graph(query: str, dataset_id: str) -> list[str]:
         LIMIT 10
         """
         
-        result = await neo4j_client.run_query(cypher_query, {"query_words": query_words})
+        result = await neo4j_client.execute_query(cypher_query, {"query_words": query_words})
         
         entities = [record["entity_name"] for record in result if record.get("entity_name")]
         
@@ -322,7 +322,7 @@ async def cognee_search(
                 RETURN d.name as doc_name 
                 LIMIT 1
                 """
-                source_result = await neo4j_client.run_query(source_query, {})
+                source_result = await neo4j_client.execute_query(source_query, {})
                 
                 if source_result and source_result[0].get("doc_name"):
                     for result in results:

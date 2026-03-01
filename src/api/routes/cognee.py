@@ -316,9 +316,9 @@ async def cognee_search(
                 from src.infrastructure.neo4j.client import get_neo4j_client
                 neo4j_client = await get_neo4j_client()
                 
-                # Look for document nodes in the graph
+                # Look for document nodes in the graph (Cognee uses TextDocument label)
                 source_query = """
-                MATCH (d:Document) 
+                MATCH (d:TextDocument) 
                 RETURN d.name as doc_name 
                 LIMIT 1
                 """

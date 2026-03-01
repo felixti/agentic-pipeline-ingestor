@@ -20,7 +20,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_db
-from src.api.routes import chunks, health, rag, search
+from src.api.routes import chunks, cognee, health, hipporag, rag, search
 from src.config import settings
 from src.db.models import get_async_engine, init_db, init_engine
 from src.observability.logging import get_logger, setup_logging
@@ -189,6 +189,12 @@ def create_app() -> FastAPI:
 
     # Include RAG router
     app.include_router(rag.router, prefix="/api/v1")
+
+    # Include Cognee GraphRAG router
+    app.include_router(cognee.router, prefix="/api/v1")
+
+    # Include HippoRAG router
+    app.include_router(hipporag.router, prefix="/api/v1")
 
     return app
 
@@ -472,6 +478,19 @@ def _add_routes(app: FastAPI) -> None:
         else:
             return PlainTextResponse(
                 content="# OpenAPI spec not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+    @app.get("/api/v1/openapi.graphrag.yaml", tags=["System"])
+    async def get_openapi_graphrag_yaml() -> PlainTextResponse:
+        """Get GraphRAG OpenAPI specification as YAML."""
+        openapi_path = Path(__file__).parent.parent / "api" / "openapi.graphrag.yaml"
+        if openapi_path.exists():
+            content = openapi_path.read_text()
+            return PlainTextResponse(content=content, media_type="text/yaml")
+        else:
+            return PlainTextResponse(
+                content="# GraphRAG OpenAPI spec not found",
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 

@@ -773,6 +773,240 @@ class CogneeLocalDestination(DestinationPlugin):
                 "error": str(e),
             }
 
+    async def extract_entities(
+        self,
+        conn: Connection,
+        text: str,
+    ) -> dict[str, Any]:
+        """Extract entities and relationships from text.
+        
+        Uses Cognee's entity extraction capabilities to identify
+        entities and their relationships from the provided text.
+        
+        Args:
+            conn: Connection handle from connect()
+            text: Text content to extract entities from
+            
+        Returns:
+            Dictionary with 'entities' and 'relationships' lists
+            
+        Raises:
+            RuntimeError: If extraction fails
+        """
+        if not self._is_initialized or not self._cognee_module:
+            raise RuntimeError("CogneeLocalDestination not initialized")
+
+        dataset_id = conn.config.get("dataset_id", "default")
+        start_time = time.time()
+
+        try:
+            logger.info(
+                "cognee_extract_entities_started",
+                dataset_id=dataset_id,
+                text_length=len(text),
+            )
+
+            # Try to use Cognee's entity extraction if available
+            # For now, we use a simple implementation that can be enhanced
+            # when Cognee provides direct entity extraction APIs
+            entities: list[dict[str, Any]] = []
+            relationships: list[dict[str, Any]] = []
+
+            # Check if cognee has entity extraction capability
+            if hasattr(self._cognee_module, 'extract_entities'):
+                cognee_result = await self._cognee_module.extract_entities(
+                    text=text,
+                    dataset_name=dataset_id,
+                )
+                entities = cognee_result.get('entities', [])
+                relationships = cognee_result.get('relationships', [])
+            else:
+                # Fallback: simple entity extraction using common patterns
+                # This is a placeholder until Cognee provides full entity extraction
+                entities, relationships = self._simple_entity_extraction(text)
+
+            processing_time = int((time.time() - start_time) * 1000)
+
+            logger.info(
+                "cognee_extract_entities_completed",
+                dataset_id=dataset_id,
+                entity_count=len(entities),
+                relationship_count=len(relationships),
+                duration_ms=processing_time,
+            )
+
+            return {
+                "entities": entities,
+                "relationships": relationships,
+                "dataset_id": dataset_id,
+                "processing_time_ms": processing_time,
+            }
+
+        except Exception as e:
+            logger.error(
+                "cognee_extract_entities_failed",
+                dataset_id=dataset_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise RuntimeError(f"Entity extraction failed: {e}") from e
+
+    def _simple_entity_extraction(
+        self,
+        text: str,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Simple entity extraction fallback implementation.
+        
+        This is a basic implementation that looks for capitalized words
+        as potential entities. In production, this should use a proper
+        NER model or Cognee's native extraction.
+        
+        Args:
+            text: Text to extract entities from
+            
+        Returns:
+            Tuple of (entities list, relationships list)
+        """
+        import re
+
+        entities: list[dict[str, Any]] = []
+        relationships: list[dict[str, Any]] = []
+
+        # Simple pattern: look for capitalized words/phrases
+        # This is a naive implementation for demonstration
+        pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b'
+        matches = re.findall(pattern, text)
+
+        # Deduplicate and create entity objects
+        seen = set()
+        for match in matches:
+            if match not in seen and len(match) > 2:
+                seen.add(match)
+                entities.append({
+                    "name": match,
+                    "type": "UNKNOWN",
+                    "description": f"Entity found in text",
+                })
+
+        return entities, relationships
+
+    async def get_stats(
+        self,
+        conn: Connection,
+    ) -> dict[str, Any]:
+        """Get comprehensive graph statistics.
+        
+        Args:
+            conn: Connection handle from connect()
+            
+        Returns:
+            Dictionary with dataset statistics including:
+            - document_count: Number of documents
+            - chunk_count: Number of chunks
+            - entity_count: Number of entities in graph
+            - relationship_count: Number of relationships
+            - graph_density: Graph density metric
+            - last_updated: Last update timestamp
+        """
+        if not self._is_initialized:
+            raise RuntimeError("CogneeLocalDestination not initialized")
+
+        dataset_id = conn.config.get("dataset_id", "default")
+
+        try:
+            logger.info(
+                "cognee_get_stats_started",
+                dataset_id=dataset_id,
+            )
+
+            # Get basic stats from Neo4j
+            document_count = 0
+            entity_count = 0
+            relationship_count = 0
+            chunk_count = 0
+
+            if self._neo4j_client:
+                # Document count
+                doc_result = await self._neo4j_client.execute_query(
+                    """
+                    MATCH (d:Document {dataset_id: $dataset_id})
+                    RETURN count(d) as document_count
+                    """,
+                    {"dataset_id": dataset_id}
+                )
+                document_count = doc_result[0].get("document_count", 0) if doc_result else 0
+
+                # Entity count (nodes that are not documents or chunks)
+                entity_result = await self._neo4j_client.execute_query(
+                    """
+                    MATCH (e)
+                    WHERE e.dataset_id = $dataset_id
+                    AND NOT e:Document AND NOT e:Chunk
+                    RETURN count(e) as entity_count
+                    """,
+                    {"dataset_id": dataset_id}
+                )
+                entity_count = entity_result[0].get("entity_count", 0) if entity_result else 0
+
+                # Relationship count
+                rel_result = await self._neo4j_client.execute_query(
+                    """
+                    MATCH ()-[r]->()
+                    WHERE r.dataset_id = $dataset_id
+                    RETURN count(r) as relationship_count
+                    """,
+                    {"dataset_id": dataset_id}
+                )
+                relationship_count = rel_result[0].get("relationship_count", 0) if rel_result else 0
+
+                # Chunk count
+                chunk_result = await self._neo4j_client.execute_query(
+                    """
+                    MATCH (c:Chunk {dataset_id: $dataset_id})
+                    RETURN count(c) as chunk_count
+                    """,
+                    {"dataset_id": dataset_id}
+                )
+                chunk_count = chunk_result[0].get("chunk_count", 0) if chunk_result else 0
+
+            # Calculate graph density
+            graph_density = 0.0
+            if entity_count > 0:
+                max_edges = entity_count * (entity_count - 1)
+                if max_edges > 0:
+                    graph_density = relationship_count / max_edges
+
+            from datetime import datetime, timezone
+
+            result = {
+                "dataset_id": dataset_id,
+                "document_count": document_count,
+                "chunk_count": chunk_count,
+                "entity_count": entity_count,
+                "relationship_count": relationship_count,
+                "graph_density": round(min(1.0, max(0.0, graph_density)), 4),
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+            }
+
+            logger.info(
+                "cognee_get_stats_completed",
+                dataset_id=dataset_id,
+                document_count=document_count,
+                entity_count=entity_count,
+                relationship_count=relationship_count,
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(
+                "cognee_get_stats_failed",
+                dataset_id=dataset_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise RuntimeError(f"Failed to get stats: {e}") from e
+
     async def validate_config(self, config: dict[str, Any]) -> ValidationResult:
         """Validate destination configuration.
         

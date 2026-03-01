@@ -1,0 +1,16 @@
+change_id: implement-cognee-hippo-api-endpoints
+title: Implement Cognee and HippoRAG API Endpoints
+description: |
+  Implement the FastAPI routes for Cognee and HippoRAG GraphRAG endpoints
+  as defined in api/openapi.graphrag.yaml spec.
+status: in_progress
+created: 2026-03-01
+author: ralph-loop
+artifacts:
+  proposal: proposal.md
+  design: design.md
+  tasks: tasks.md
+  implementation_plan: IMPLEMENTATION_PLAN.md
+specs:
+  - cognee-endpoints/spec.md
+  - hipporag-endpoints/spec.md

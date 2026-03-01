@@ -40,7 +40,8 @@ RUN pip install --upgrade pip && \
     python-docx openpyxl python-pptx pdfplumber pytest pytest-asyncio \
     docling azure-ai-vision-imageanalysis \
     orjson pyyaml click tenacity typing-extensions psutil greenlet \
-    numpy scipy scikit-learn sentence-transformers
+    numpy scipy scikit-learn sentence-transformers \
+    neo4j>=5.15.0 cognee
 
 # ============================================================================
 # Stage 2: Runtime

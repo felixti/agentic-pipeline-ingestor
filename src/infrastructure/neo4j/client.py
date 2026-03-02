@@ -2,6 +2,10 @@
 
 This module provides a high-level async client for Neo4j operations,
 using the official neo4j Python driver's async API.
+
+Retry Logic:
+    All query operations include automatic retry with exponential backoff
+    for transient errors like deadlocks and connection issues.
 """
 
 import os
@@ -10,6 +14,7 @@ from typing import Any
 from neo4j import AsyncGraphDatabase
 from neo4j.exceptions import AuthError, ServiceUnavailable
 
+from src.infrastructure.neo4j.retry import neo4j_retry
 from src.observability.logging import get_logger
 
 logger = get_logger(__name__)
@@ -144,13 +149,14 @@ class Neo4jClient:
             self._driver = None
             logger.info("neo4j_disconnected")
 
+    @neo4j_retry(max_attempts=4, min_wait=1.0, max_wait=10.0)
     async def execute_query(
         self,
         query: str,
         params: dict[str, Any] | None = None,
         database: str = "neo4j",
     ) -> list[dict[str, Any]]:
-        """Execute a Cypher query.
+        """Execute a Cypher query with automatic retry on transient errors.
         
         Args:
             query: Cypher query string
@@ -162,13 +168,17 @@ class Neo4jClient:
         
         Raises:
             RuntimeError: If the client is not connected
-            Exception: If query execution fails
+            Exception: If query execution fails after all retries
         
         Example:
             >>> result = await client.execute_query(
             ...     "MATCH (n:Person {name: $name}) RETURN n",
             ...     {"name": "Alice"}
             ... )
+        
+        Note:
+            This method automatically retries on transient errors like deadlocks
+            with exponential backoff (1s, 2s, 4s, 8s max 10s).
         """
         if not self._driver:
             raise RuntimeError("Neo4j client not connected. Call connect() first.")
@@ -195,16 +205,18 @@ class Neo4jClient:
                 "neo4j_query_failed",
                 query=query[:100],
                 error=str(e),
+                error_type=type(e).__name__,
             )
             raise
 
+    @neo4j_retry(max_attempts=4, min_wait=1.0, max_wait=10.0)
     async def execute_write(
         self,
         query: str,
         params: dict[str, Any] | None = None,
         database: str = "neo4j",
     ) -> list[dict[str, Any]]:
-        """Execute a write Cypher query within a transaction.
+        """Execute a write Cypher query within a transaction with automatic retry.
         
         Args:
             query: Cypher query string
@@ -216,13 +228,17 @@ class Neo4jClient:
         
         Raises:
             RuntimeError: If the client is not connected
-            Exception: If query execution fails
+            Exception: If query execution fails after all retries
         
         Example:
             >>> result = await client.execute_write(
             ...     "CREATE (n:Person {name: $name}) RETURN n",
             ...     {"name": "Alice"}
             ... )
+        
+        Note:
+            This method automatically retries on transient errors like deadlocks
+            with exponential backoff (1s, 2s, 4s, 8s max 10s).
         """
         if not self._driver:
             raise RuntimeError("Neo4j client not connected. Call connect() first.")
@@ -251,6 +267,7 @@ class Neo4jClient:
                 "neo4j_write_failed",
                 query=query[:100],
                 error=str(e),
+                error_type=type(e).__name__,
             )
             raise
 

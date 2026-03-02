@@ -8,7 +8,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import DocumentChunkModel
+from src.db.models import DocumentChunkModel, JobModel
+from src.observability.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class DocumentChunkRepository:
@@ -27,6 +30,24 @@ class DocumentChunkRepository:
         """
         self.session = session
 
+    async def _verify_job_exists(self, job_id: UUID) -> bool:
+        """Verify that the referenced job exists.
+        
+        Args:
+            job_id: Job ID to verify
+            
+        Returns:
+            True if job exists, False otherwise
+        """
+        result = await self.session.execute(
+            select(JobModel).where(JobModel.id == job_id)
+        )
+        job = result.scalar_one_or_none()
+        if job is None:
+            logger.error("job_not_found_for_chunks", job_id=str(job_id))
+            return False
+        return True
+
     async def create(self, chunk: DocumentChunkModel) -> DocumentChunkModel:
         """Create a new document chunk.
 
@@ -38,9 +59,16 @@ class DocumentChunkRepository:
 
         Raises:
             SQLAlchemyError: If database operation fails
+            ValueError: If referenced job does not exist
         """
+        # Verify job exists before creating chunk
+        if not await self._verify_job_exists(chunk.job_id):
+            raise ValueError(
+                f"Cannot create chunk: Job {chunk.job_id} does not exist"
+            )
+        
         self.session.add(chunk)
-        await self.session.commit()
+        await self.session.flush()  # Flush to get ID without committing
         await self.session.refresh(chunk)
         return chunk
 
@@ -120,15 +148,23 @@ class DocumentChunkRepository:
 
         Raises:
             SQLAlchemyError: If database operation fails
+            ValueError: If referenced job does not exist
         """
         if not chunks:
             return []
+
+        # Verify job exists (all chunks should belong to same job)
+        job_id = chunks[0].job_id
+        if not await self._verify_job_exists(job_id):
+            raise ValueError(
+                f"Cannot create chunks: Job {job_id} does not exist"
+            )
 
         # Add all chunks to session
         for chunk in chunks:
             self.session.add(chunk)
 
-        await self.session.commit()
+        await self.session.flush()  # Flush to get IDs without committing
 
         # Refresh all chunks to get IDs and defaults
         for chunk in chunks:
@@ -161,7 +197,7 @@ class DocumentChunkRepository:
         # Validate dimensions using the model's validation
         chunk.set_embedding(embedding)
 
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(chunk)
 
         return True
@@ -178,7 +214,7 @@ class DocumentChunkRepository:
         result = await self.session.execute(
             delete(DocumentChunkModel).where(DocumentChunkModel.job_id == job_id)
         )
-        await self.session.commit()
+        await self.session.flush()
 
         return result.rowcount or 0
 
@@ -258,7 +294,7 @@ class DocumentChunkRepository:
             return False
 
         await self.session.delete(chunk)
-        await self.session.commit()
+        await self.session.flush()
 
         return True
 
@@ -282,12 +318,22 @@ class DocumentChunkRepository:
 
         Raises:
             SQLAlchemyError: If database operation fails
+            ValueError: If referenced job does not exist
         """
         from datetime import datetime
         from uuid import uuid4
 
         if not chunks:
             return [], 0, 0
+
+        # Get job_id from first chunk
+        job_id = chunks[0].job_id
+
+        # Verify job exists before attempting upsert
+        if not await self._verify_job_exists(job_id):
+            raise ValueError(
+                f"Cannot upsert chunks: Job {job_id} does not exist"
+            )
 
         # Prepare data for bulk upsert
         # Convert embedding list to PostgreSQL vector format
@@ -337,19 +383,36 @@ class DocumentChunkRepository:
             set_=update_dict,
         )
 
-        result = await self.session.execute(upsert_stmt)
-        await self.session.commit()
+        try:
+            result = await self.session.execute(upsert_stmt)
+            await self.session.flush()
 
-        # PostgreSQL doesn't give us separate insert/update counts easily
-        # We return the chunks and estimate counts based on rowcount
-        # rowcount reflects the total number of rows affected (inserted + updated)
-        total_affected = result.rowcount or 0
+            # PostgreSQL doesn't give us separate insert/update counts easily
+            # We return the chunks and estimate counts based on rowcount
+            # rowcount reflects the total number of rows affected (inserted + updated)
+            total_affected = result.rowcount or 0
 
-        # Heuristic: if we have the same number of chunks as affected rows,
-        # and we know some may have been updates, we estimate:
-        # - Assume roughly half are updates in a retry scenario
-        # - But we can't know for sure without an extra query
-        estimated_inserted = total_affected
-        estimated_updated = 0
+            # Heuristic: if we have the same number of chunks as affected rows,
+            # and we know some may have been updates, we estimate:
+            # - Assume roughly half are updates in a retry scenario
+            # - But we can't know for sure without an extra query
+            estimated_inserted = total_affected
+            estimated_updated = 0
 
-        return chunks, estimated_inserted, estimated_updated
+            logger.info(
+                "chunks_upserted",
+                job_id=str(job_id),
+                chunk_count=len(chunks),
+                total_affected=total_affected,
+            )
+
+            return chunks, estimated_inserted, estimated_updated
+
+        except SQLAlchemyError as e:
+            logger.error(
+                "upsert_chunks_failed",
+                job_id=str(job_id),
+                error=str(e),
+                chunk_count=len(chunks),
+            )
+            raise

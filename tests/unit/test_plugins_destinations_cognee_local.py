@@ -716,3 +716,307 @@ class TestCogneeLocalMockDestination:
         assert dest._storage["documents"] == {}
         assert dest._storage["chunks"] == {}
         assert dest._storage["datasets"] == {}
+
+
+
+# ============================================================================
+# Retry Logic Tests
+# ============================================================================
+
+@pytest.mark.unit
+class TestCogneeLocalRetryLogic:
+    """Tests for CogneeLocal retry and locking logic."""
+
+    @pytest.mark.asyncio
+    async def test_cognee_add_with_retry_success(self, mock_neo4j_client, mock_cognee_module):
+        """Test that cognee.add is retried on transient errors."""
+        dest = CogneeLocalDestination()
+        dest._cognee_module = mock_cognee_module
+
+        with patch(
+            "src.plugins.destinations.cognee_local.get_neo4j_client",
+            return_value=mock_neo4j_client,
+        ):
+            await dest.initialize({})
+            
+            # Call the retry method directly
+            await dest._cognee_add_with_retry(
+                content="Test content",
+                dataset_name="test_dataset",
+            )
+            
+            # Verify cognee.add was called
+            mock_cognee_module.add.assert_called_once_with(
+                "Test content",
+                dataset_name="test_dataset",
+            )
+
+    @pytest.mark.asyncio
+    async def test_cognee_add_with_retry_transient_error(self, mock_neo4j_client, mock_cognee_module):
+        """Test that transient errors trigger retry."""
+        dest = CogneeLocalDestination()
+        dest._cognee_module = mock_cognee_module
+
+        # Make add fail with transient error first, then succeed
+        call_count = 0
+        async def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise Exception("Neo.TransientError.Transaction.DeadlockDetected")
+            return None
+
+        mock_cognee_module.add = AsyncMock(side_effect=side_effect)
+
+        with patch(
+            "src.plugins.destinations.cognee_local.get_neo4j_client",
+            return_value=mock_neo4j_client,
+        ):
+            await dest.initialize({})
+            
+            # Should succeed after retry
+            await dest._cognee_add_with_retry(
+                content="Test content",
+                dataset_name="test_dataset",
+            )
+            
+            # Verify cognee.add was called twice (1 failure + 1 success)
+            assert mock_cognee_module.add.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_cognify_with_retry_success(self, mock_neo4j_client, mock_cognee_module):
+        """Test that cognify is retried on transient errors."""
+        dest = CogneeLocalDestination()
+        dest._cognee_module = mock_cognee_module
+
+        with patch(
+            "src.plugins.destinations.cognee_local.get_neo4j_client",
+            return_value=mock_neo4j_client,
+        ):
+            await dest.initialize({})
+            
+            # Call the retry method directly
+            result = await dest._cognify_with_retry(dataset_id="test_dataset")
+            
+            # Verify result
+            assert result["success"] is True
+            assert result["dataset_id"] == "test_dataset"
+            assert "processing_time_ms" in result
+            
+            # Verify cognify was called
+            mock_cognee_module.cognify.assert_called_once_with(datasets=["test_dataset"])
+
+    @pytest.mark.asyncio
+    async def test_cognify_with_retry_transient_error(self, mock_neo4j_client, mock_cognee_module):
+        """Test that cognify retries on transient errors."""
+        dest = CogneeLocalDestination()
+        dest._cognee_module = mock_cognee_module
+
+        # Make cognify fail with transient error first, then succeed
+        call_count = 0
+        async def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise Exception("ForsetiClient can't acquire ExclusiveLock")
+            return None
+
+        mock_cognee_module.cognify = AsyncMock(side_effect=side_effect)
+
+        with patch(
+            "src.plugins.destinations.cognee_local.get_neo4j_client",
+            return_value=mock_neo4j_client,
+        ):
+            await dest.initialize({})
+            
+            # Should succeed after retry
+            result = await dest._cognify_with_retry(dataset_id="test_dataset")
+            
+            # Verify result
+            assert result["success"] is True
+            # Verify cognify was called twice (1 failure + 1 success)
+            assert mock_cognee_module.cognify.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_cognify_with_retry_non_transient_error(self, mock_neo4j_client, mock_cognee_module):
+        """Test that non-transient errors don't trigger retry."""
+        dest = CogneeLocalDestination()
+        dest._cognee_module = mock_cognee_module
+
+        # Make cognify fail with non-transient error
+        mock_cognee_module.cognify = AsyncMock(
+            side_effect=ValueError("Invalid configuration")
+        )
+
+        with patch(
+            "src.plugins.destinations.cognee_local.get_neo4j_client",
+            return_value=mock_neo4j_client,
+        ):
+            await dest.initialize({})
+            
+            # Should fail immediately without retry
+            with pytest.raises(ValueError, match="Invalid configuration"):
+                await dest._cognify_with_retry(dataset_id="test_dataset")
+            
+            # Verify cognify was called only once (no retries for non-transient)
+            assert mock_cognee_module.cognify.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_process_dataset_with_lock(self, mock_neo4j_client, mock_cognee_module):
+        """Test process_dataset with distributed locking enabled."""
+        dest = CogneeLocalDestination()
+        dest._cognee_module = mock_cognee_module
+        dest._use_distributed_lock = True
+
+        conn = Connection(
+            id=UUID(int=hash("test") % (2**32)),
+            plugin_id="cognee_local",
+            config={
+                "dataset_id": "test_dataset",
+                "use_distributed_lock": True,
+            },
+        )
+
+        # Mock CogneeWriteLock
+        mock_lock = AsyncMock()
+        mock_lock.__aenter__ = AsyncMock(return_value=mock_lock)
+        mock_lock.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "src.plugins.destinations.cognee_local.get_neo4j_client",
+            return_value=mock_neo4j_client,
+        ):
+            with patch(
+                "src.plugins.destinations.cognee_local.CogneeWriteLock",
+                return_value=mock_lock,
+            ):
+                with patch(
+                    "src.plugins.destinations.cognee_local._REDIS_AVAILABLE",
+                    True,
+                ):
+                    await dest.initialize({})
+                    result = await dest.process_dataset(conn)
+
+        assert result["success"] is True
+        assert result["dataset_id"] == "test_dataset"
+
+    @pytest.mark.asyncio
+    async def test_process_dataset_without_lock(self, mock_neo4j_client, mock_cognee_module):
+        """Test process_dataset with distributed locking disabled."""
+        dest = CogneeLocalDestination()
+        dest._cognee_module = mock_cognee_module
+        dest._use_distributed_lock = False
+
+        conn = Connection(
+            id=UUID(int=hash("test") % (2**32)),
+            plugin_id="cognee_local",
+            config={
+                "dataset_id": "test_dataset",
+                "use_distributed_lock": False,
+            },
+        )
+
+        with patch(
+            "src.plugins.destinations.cognee_local.get_neo4j_client",
+            return_value=mock_neo4j_client,
+        ):
+            await dest.initialize({})
+            result = await dest.process_dataset(conn)
+
+        assert result["success"] is True
+        assert result["dataset_id"] == "test_dataset"
+        # Verify cognify was called
+        mock_cognee_module.cognify.assert_called_once_with(datasets=["test_dataset"])
+
+    @pytest.mark.asyncio
+    async def test_write_with_auto_cognify_uses_lock(self, mock_neo4j_client, mock_cognee_module, sample_transformed_data):
+        """Test write with auto_cognify uses distributed lock."""
+        dest = CogneeLocalDestination()
+        dest._cognee_module = mock_cognee_module
+
+        conn = Connection(
+            id=UUID(int=hash("test") % (2**32)),
+            plugin_id="cognee_local",
+            config={
+                "dataset_id": "test",
+                "graph_name": "default",
+                "auto_cognify": True,
+                "use_distributed_lock": True,
+            },
+        )
+
+        # Mock CogneeWriteLock
+        mock_lock = AsyncMock()
+        mock_lock.__aenter__ = AsyncMock(return_value=mock_lock)
+        mock_lock.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "src.plugins.destinations.cognee_local.get_neo4j_client",
+            return_value=mock_neo4j_client,
+        ):
+            with patch(
+                "src.plugins.destinations.cognee_local.CogneeWriteLock",
+                return_value=mock_lock,
+            ):
+                with patch(
+                    "src.plugins.destinations.cognee_local._REDIS_AVAILABLE",
+                    True,
+                ):
+                    await dest.initialize({})
+                    result = await dest.write(conn, sample_transformed_data)
+
+        assert result.success is True
+        # Verify lock was used
+        mock_lock.__aenter__.assert_called_once()
+        mock_lock.__aexit__.assert_called_once()
+
+
+# ============================================================================
+# Configuration Tests
+# ============================================================================
+
+@pytest.mark.unit
+class TestCogneeLocalLockConfig:
+    """Tests for lock configuration options."""
+
+    @pytest.mark.asyncio
+    async def test_lock_config_in_metadata(self):
+        """Test that lock config is in metadata schema."""
+        dest = CogneeLocalDestination()
+        metadata = dest.metadata
+
+        assert "use_distributed_lock" in metadata.config_schema["properties"]
+        assert "lock_timeout" in metadata.config_schema["properties"]
+
+    @pytest.mark.asyncio
+    async def test_lock_config_defaults(self, mock_neo4j_client, mock_cognee_module):
+        """Test lock configuration defaults."""
+        dest = CogneeLocalDestination()
+        dest._cognee_module = mock_cognee_module
+
+        with patch(
+            "src.plugins.destinations.cognee_local.get_neo4j_client",
+            return_value=mock_neo4j_client,
+        ):
+            await dest.initialize({})
+
+        assert dest._use_distributed_lock is True  # Default
+        assert dest._lock_timeout == 300  # Default 5 minutes
+
+    @pytest.mark.asyncio
+    async def test_lock_config_custom_values(self, mock_neo4j_client, mock_cognee_module):
+        """Test custom lock configuration values."""
+        dest = CogneeLocalDestination()
+        dest._cognee_module = mock_cognee_module
+
+        with patch(
+            "src.plugins.destinations.cognee_local.get_neo4j_client",
+            return_value=mock_neo4j_client,
+        ):
+            await dest.initialize({
+                "use_distributed_lock": False,
+                "lock_timeout": 600,
+            })
+
+        assert dest._use_distributed_lock is False
+        assert dest._lock_timeout == 600

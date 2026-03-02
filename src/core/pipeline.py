@@ -198,8 +198,6 @@ class ParseStage(PipelineStage):
         primary = context.selected_parser or "docling"
         fallback = context.fallback_parser or "azure_ocr"
 
-        log.info("pipeline.using_parser", parser=primary, fallback=fallback)
-
         # Get file path from context
         file_path = context.file_path
         if not file_path:
@@ -215,48 +213,137 @@ class ParseStage(PipelineStage):
             )
             return context
 
+        # Log file information for debugging
+        import os
+        file_size = 0
+        file_exists = False
+        try:
+            file_exists = os.path.exists(file_path)
+            if file_exists:
+                file_size = os.path.getsize(file_path)
+        except Exception as e:
+            log.warning("pipeline.file_check_failed", error=str(e))
+
+        log.info(
+            "pipeline.parse_config",
+            parser=primary,
+            fallback=fallback,
+            file_path=file_path,
+            file_exists=file_exists,
+            file_size=file_size,
+            file_type=context.file_type,
+        )
+
         # Try to parse with primary parser, fallback if needed
         extracted_text = None
         parser_used = None
         parse_error = None
+        primary_result = None
+        fallback_result = None
 
         # Try primary parser
         if self.plugin_registry:
             try:
+                log.info("pipeline.getting_parser", parser=primary)
                 parser = self.plugin_registry.get_parser(primary)
                 if parser:
-                    log.info("pipeline.parsing_with", parser=primary)
-                    result = await parser.parse(file_path)
-                    if result.success and result.text:
-                        extracted_text = result.text
+                    log.info(
+                        "pipeline.parsing_with",
+                        parser=primary,
+                        file_path=file_path,
+                    )
+                    primary_result = await parser.parse(file_path)
+                    
+                    log.info(
+                        "pipeline.parse_result",
+                        parser=primary,
+                        success=primary_result.success if primary_result else None,
+                        has_text=bool(primary_result.text) if primary_result else None,
+                        text_length=len(primary_result.text) if primary_result and primary_result.text else 0,
+                        error=primary_result.error if primary_result else None,
+                    )
+                    
+                    if primary_result and primary_result.success and primary_result.text:
+                        extracted_text = primary_result.text
                         parser_used = primary
                         log.info(
                             "pipeline.parse_success",
                             parser=primary,
                             text_length=len(extracted_text),
+                            confidence=getattr(primary_result, "confidence", None),
                         )
+                    elif primary_result and not primary_result.success:
+                        parse_error = primary_result.error
+                        log.warning(
+                            "pipeline.parse_unsuccessful",
+                            parser=primary,
+                            error=parse_error,
+                        )
+                    elif primary_result and not primary_result.text:
+                        log.warning(
+                            "pipeline.parse_no_text",
+                            parser=primary,
+                            success=primary_result.success,
+                        )
+                else:
+                    log.error("pipeline.parser_not_found", parser=primary)
             except Exception as e:
                 parse_error = str(e)
-                log.warning("pipeline.parse_failed", parser=primary, error=parse_error)
+                log.error(
+                    "pipeline.parse_exception",
+                    parser=primary,
+                    error=parse_error,
+                    exc_info=True,
+                )
+        else:
+            log.error("pipeline.no_plugin_registry")
 
         # Try fallback if primary failed
         if extracted_text is None and fallback != primary:
             if self.plugin_registry:
                 try:
+                    log.info("pipeline.getting_fallback_parser", parser=fallback)
                     parser = self.plugin_registry.get_parser(fallback)
                     if parser:
-                        log.info("pipeline.parsing_with_fallback", parser=fallback)
-                        result = await parser.parse(file_path)
-                        if result.success and result.text:
-                            extracted_text = result.text
+                        log.info(
+                            "pipeline.parsing_with_fallback",
+                            parser=fallback,
+                            file_path=file_path,
+                        )
+                        fallback_result = await parser.parse(file_path)
+                        
+                        log.info(
+                            "pipeline.fallback_parse_result",
+                            parser=fallback,
+                            success=fallback_result.success if fallback_result else None,
+                            has_text=bool(fallback_result.text) if fallback_result else None,
+                            text_length=len(fallback_result.text) if fallback_result and fallback_result.text else 0,
+                        )
+                        
+                        if fallback_result and fallback_result.success and fallback_result.text:
+                            extracted_text = fallback_result.text
                             parser_used = fallback
                             log.info(
                                 "pipeline.parse_success",
                                 parser=fallback,
                                 text_length=len(extracted_text),
+                                is_fallback=True,
                             )
+                        else:
+                            log.warning(
+                                "pipeline.fallback_also_failed",
+                                parser=fallback,
+                                error=fallback_result.error if fallback_result else None,
+                            )
+                    else:
+                        log.error("pipeline.fallback_parser_not_found", parser=fallback)
                 except Exception as e:
-                    log.warning("pipeline.parse_failed", parser=fallback, error=str(e))
+                    log.error(
+                        "pipeline.fallback_parse_exception",
+                        parser=fallback,
+                        error=str(e),
+                        exc_info=True,
+                    )
 
         # Store result in context
         if extracted_text:
@@ -268,21 +355,35 @@ class ParseStage(PipelineStage):
                     "status": "completed",
                     "extracted_text": extracted_text,
                     "text_length": len(extracted_text),
+                    "primary_success": primary_result.success if primary_result else False,
+                    "fallback_used": parser_used == fallback,
                 },
             )
-            log.info("pipeline.stage_completed", text_length=len(extracted_text))
+            log.info(
+                "pipeline.stage_completed",
+                text_length=len(extracted_text),
+                parser_used=parser_used,
+            )
         else:
             # No text extracted - still completed but with no text
+            error_msg = parse_error or "No text could be extracted from document"
+            log.error(
+                "pipeline.no_text_extracted",
+                parser=primary,
+                fallback=fallback,
+                error=error_msg,
+                file_exists=file_exists,
+                file_size=file_size,
+            )
             context.set_stage_result(
                 self.name,
                 {
                     "parser_used": parser_used or primary,
                     "status": "completed",
                     "extracted_text": None,
-                    "error": parse_error,
+                    "error": error_msg,
                 },
             )
-            log.warning("pipeline.no_text_extracted", parser=primary)
 
         return context
 
@@ -574,6 +675,29 @@ class EmbedStage(PipelineStage):
         self.vs_config = get_vector_store_config()
         self._embedding_service = embedding_service
 
+    async def _verify_job_exists(self, session: Any, job_id: Any) -> bool:
+        """Verify that the job exists before creating chunks.
+        
+        Args:
+            session: Database session
+            job_id: Job ID to verify
+            
+        Returns:
+            True if job exists, False otherwise
+        """
+        from sqlalchemy import select
+        from src.db.models import JobModel
+        
+        try:
+            result = await session.execute(
+                select(JobModel).where(JobModel.id == job_id)
+            )
+            job = result.scalar_one_or_none()
+            return job is not None
+        except Exception as e:
+            logger.error("embed_stage_job_verification_failed", job_id=str(job_id), error=str(e))
+            return False
+
     async def execute(self, context: JobContext) -> JobContext:
         """Execute embed stage."""
         log = logger.bind(stage=self.name, job_id=str(context.job_id))
@@ -618,9 +742,9 @@ class EmbedStage(PipelineStage):
 
         try:
             # Import here to avoid circular dependencies
-            from sqlalchemy.ext.asyncio import AsyncSession
+            from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-            from src.db.models import DocumentChunkModel
+            from src.db.models import DocumentChunkModel, get_async_engine
             from src.db.repositories.document_chunk_repository import DocumentChunkRepository
             from src.services.embedding_service import EmbeddingService
 
@@ -660,13 +784,33 @@ class EmbedStage(PipelineStage):
 
             # Store chunks in database using upsert for idempotency
             # This handles retries gracefully - existing chunks are updated
-            from src.db.models import get_async_engine
-
             engine = get_async_engine()
-            async with AsyncSession(engine) as session:
+            session_factory = async_sessionmaker(
+                engine,
+                expire_on_commit=False,
+                class_=AsyncSession,
+            )
+            
+            async with session_factory() as session:
+                # Verify job exists before attempting to create chunks
+                job_exists = await self._verify_job_exists(session, context.job_id)
+                if not job_exists:
+                    raise ValueError(
+                        f"Job {context.job_id} does not exist. "
+                        "Cannot create chunks for non-existent job."
+                    )
+                
                 repo = DocumentChunkRepository(session)
                 upserted_chunks, inserted_count, updated_count = await repo.upsert_chunks(
                     chunk_models
+                )
+                
+                # Explicitly commit the transaction
+                await session.commit()
+                log.info(
+                    "chunks_committed_to_database",
+                    job_id=str(context.job_id),
+                    chunk_count=len(upserted_chunks),
                 )
 
             context.set_stage_result(
@@ -695,7 +839,7 @@ class EmbedStage(PipelineStage):
             )
 
         except Exception as e:
-            log.error("pipeline.embedding_failed", error=str(e))
+            log.error("pipeline.embedding_failed", error=str(e), exc_info=True)
             context.set_stage_result(
                 self.name,
                 {

@@ -199,11 +199,7 @@ class JobProcessor:
         try:
             logger.info("processing_job", worker_id=self.worker_id, job_id=str(job_id))
 
-            # Execute pipeline
-            context = await self.engine.process_job(job_id)
-
-            # Get job from database to check final status
-            # Use async_sessionmaker for proper async session management
+            # First, verify job exists before processing
             engine = self._get_db_engine()
             async_session = async_sessionmaker(
                 engine, 
@@ -212,9 +208,33 @@ class JobProcessor:
             )
             
             async with async_session() as session:
-                # Use session.begin() to properly manage the transaction
-                # This ensures greenlet context is correctly set up
-                async with session.begin():
+                repo = JobRepository(session)
+                job = await repo.get_by_id(job_id)
+                
+                if job is None:
+                    logger.error("job_not_found_before_processing", worker_id=self.worker_id, job_id=str(job_id))
+                    return {
+                        "job_id": str(job_id),
+                        "status": "failed",
+                        "error": "Job not found in database",
+                        "success": False,
+                    }
+                
+                # Store job info for later use
+                job_source_type = job.source_type
+                job_file_name = job.file_name
+                job_file_size = job.file_size
+                job_mime_type = job.mime_type
+                
+                # Commit any pending changes and close session
+                await session.commit()
+
+            # Execute pipeline (outside the verification session)
+            context = await self.engine.process_job(job_id)
+
+            # Get final job status from database
+            async with async_session() as session:
+                try:
                     repo = JobRepository(session)
                     job = await repo.get_by_id(job_id)
 
@@ -254,6 +274,13 @@ class JobProcessor:
                         status=result["status"],
                         success=result["success"],
                     )
+                    
+                    # Commit session before closing
+                    await session.commit()
+                    
+                except Exception as e:
+                    await session.rollback()
+                    raise
 
             # Store results outside the session context to avoid transaction issues
             if job_status == JobStatus.COMPLETED:
@@ -333,7 +360,7 @@ class JobProcessor:
         
         try:
             async with async_session() as session:
-                async with session.begin():
+                try:
                     repo = JobResultRepository(session)
                     
                     # Calculate processing time
@@ -381,6 +408,13 @@ class JobProcessor:
                         quality_score=quality_score,
                         processing_time_ms=processing_time_ms,
                     )
+                    
+                    # Explicitly commit the transaction
+                    await session.commit()
+                    
+                except Exception as e:
+                    await session.rollback()
+                    raise
             
             logger.info(
                 "stored_job_results",
@@ -396,6 +430,7 @@ class JobProcessor:
                 worker_id=self.worker_id,
                 job_id=str(job_id),
                 error=str(e),
+                exc_info=True,
             )
 
     async def _heartbeat_loop(self, job_id: UUID) -> None:
@@ -420,12 +455,16 @@ class JobProcessor:
                 )
                 
                 async with async_session() as session:
-                    async with session.begin():
+                    try:
                         repo = JobRepository(session)
                         await repo.update_heartbeat(job_id)
+                        # Explicitly commit the heartbeat update
+                        await session.commit()
+                        logger.debug("job_heartbeat_sent", worker_id=self.worker_id, job_id=str(job_id))
+                    except Exception as e:
+                        await session.rollback()
+                        raise
                         
-                logger.debug("job_heartbeat_sent", worker_id=self.worker_id, job_id=str(job_id))
-                
             except asyncio.CancelledError:
                 break
             except Exception as e:

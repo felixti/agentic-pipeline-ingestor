@@ -4,9 +4,11 @@ This module provides the Docling parser integration for extracting
 text and structure from PDF, DOCX, PPTX, and XLSX files.
 """
 
-import logging
+import asyncio
 from pathlib import Path
 from typing import Any
+
+import structlog
 
 from src.plugins.base import (
     HealthStatus,
@@ -17,7 +19,7 @@ from src.plugins.base import (
     SupportResult,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class DoclingParser(ParserPlugin):
@@ -90,12 +92,20 @@ class DoclingParser(ParserPlugin):
 
             self._document_converter = DocumentConverter()
             self._docling_available = True
-            logger.info("Docling parser initialized successfully")
+            logger.info("docling.parser.initialized", status="success")
 
-        except ImportError:
+        except ImportError as e:
             logger.warning(
-                "Docling not installed. Parser will use fallback methods. "
-                "Install with: pip install docling"
+                "docling.parser.import_failed",
+                error=str(e),
+                message="Docling not installed. Parser will use fallback methods.",
+            )
+            self._docling_available = False
+        except Exception as e:
+            logger.error(
+                "docling.parser.initialization_failed",
+                error=str(e),
+                exc_info=True,
             )
             self._docling_available = False
 
@@ -160,36 +170,81 @@ class DoclingParser(ParserPlugin):
 
         options = options or {}
         start_time = time.time()
+        
+        logger.info(
+            "docling.parser.parse_started",
+            file_path=file_path,
+            docling_available=self._docling_available,
+        )
 
         path = Path(file_path)
         if not path.exists():
+            logger.error("docling.parser.file_not_found", file_path=file_path)
             return ParsingResult(
                 success=False,
                 error=f"File not found: {file_path}",
             )
+        
+        file_size = path.stat().st_size
+        file_ext = path.suffix.lower()
+        logger.info(
+            "docling.parser.file_info",
+            file_path=file_path,
+            file_size=file_size,
+            file_extension=file_ext,
+        )
 
         # Check support first
         support = await self.supports(file_path)
         if not support.supported:
+            logger.warning(
+                "docling.parser.unsupported_format",
+                file_path=file_path,
+                reason=support.reason,
+            )
             return ParsingResult(
                 success=False,
                 error=support.reason,
             )
 
         try:
-            # Parse based on availability  # pragma: no branch
+            # Parse based on availability
             if self._docling_available and self._document_converter:
+                logger.info("docling.parser.using_docling", file_path=file_path)
                 parse_result = await self._parse_with_docling(file_path, options)
             else:
                 # Fallback to alternative parsing
+                logger.info("docling.parser.using_fallback", file_path=file_path)
                 parse_result = await self._parse_fallback(file_path, options)
 
             # Add processing time
             parse_result.processing_time_ms = int((time.time() - start_time) * 1000)
+            
+            # Log result
+            if parse_result.success:
+                logger.info(
+                    "docling.parser.parse_success",
+                    file_path=file_path,
+                    parser_used=parse_result.parser_used,
+                    text_length=len(parse_result.text) if parse_result.text else 0,
+                    processing_time_ms=parse_result.processing_time_ms,
+                )
+            else:
+                logger.warning(
+                    "docling.parser.parse_failed",
+                    file_path=file_path,
+                    error=parse_result.error,
+                )
+            
             return parse_result
 
         except Exception as e:
-            logger.error(f"Docling parsing failed: {e}", exc_info=True)
+            logger.error(
+                "docling.parser.parse_exception",
+                file_path=file_path,
+                error=str(e),
+                exc_info=True,
+            )
             return ParsingResult(
                 success=False,
                 error=f"Parsing failed: {e!s}",
@@ -209,17 +264,56 @@ class DoclingParser(ParserPlugin):
         Returns:
             ParsingResult
         """
+        logger.info("docling.parser.docling_start", file_path=file_path)
 
         # Convert document
         if self._document_converter is None:
+            logger.error("docling.parser.converter_not_initialized")
             return ParsingResult(
                 success=False,
                 error="Docling converter not initialized",
             )
-        result = self._document_converter.convert(file_path)
+        
+        try:
+            # Run docling conversion in thread pool to avoid blocking
+            # Docling's convert() is synchronous and CPU-intensive
+            logger.debug("docling.parser.converting", file_path=file_path)
+            result = await asyncio.to_thread(
+                self._document_converter.convert,
+                file_path
+            )
+            logger.debug("docling.parser.conversion_complete", file_path=file_path)
+        except Exception as e:
+            logger.error(
+                "docling.parser.conversion_failed",
+                file_path=file_path,
+                error=str(e),
+                exc_info=True,
+            )
+            return ParsingResult(
+                success=False,
+                error=f"Docling conversion failed: {e!s}",
+            )
 
-        # Extract text
-        full_text = result.document.export_to_markdown()
+        # Extract text with error handling
+        try:
+            full_text = result.document.export_to_markdown()
+            logger.debug(
+                "docling.parser.text_extracted",
+                file_path=file_path,
+                text_length=len(full_text) if full_text else 0,
+            )
+        except Exception as e:
+            logger.error(
+                "docling.parser.text_extraction_failed",
+                file_path=file_path,
+                error=str(e),
+                exc_info=True,
+            )
+            return ParsingResult(
+                success=False,
+                error=f"Text extraction failed: {e!s}",
+            )
 
         # Extract pages (approximate from markdown sections)
         pages = self._extract_pages(result)
@@ -232,6 +326,18 @@ class DoclingParser(ParserPlugin):
 
         # Calculate confidence based on extraction quality
         confidence = self._calculate_confidence(result, full_text)
+
+        # Check if we got meaningful text
+        if not full_text or len(full_text.strip()) < 10:
+            logger.warning(
+                "docling.parser.no_text_extracted",
+                file_path=file_path,
+                text_length=len(full_text) if full_text else 0,
+            )
+            return ParsingResult(
+                success=False,
+                error="No text extracted from document",
+            )
 
         return ParsingResult(
             success=True,
@@ -261,8 +367,18 @@ class DoclingParser(ParserPlugin):
         path = Path(file_path)
         extension = path.suffix.lower()
 
+        logger.info(
+            "docling.parser.fallback_start",
+            file_path=file_path,
+            extension=extension,
+        )
+
         if extension == ".pdf":
             return await self._parse_pdf_fallback(file_path)
+        elif extension == ".docx":
+            return await self._parse_docx_fallback(file_path)
+        elif extension == ".pptx":
+            return await self._parse_pptx_fallback(file_path)
         elif extension in (".txt", ".md", ".rst"):
             return await self._parse_text_fallback(file_path)
         else:
@@ -281,24 +397,37 @@ class DoclingParser(ParserPlugin):
         Returns:
             ParsingResult
         """
+        logger.info("docling.parser.fallback_pdf_pymupdf", file_path=file_path)
+        
         try:
             import fitz  # PyMuPDF  # type: ignore[import-untyped]
 
-            doc = fitz.open(file_path)
-            pages: list[str] = []
-            full_text = ""
+            def _extract_pdf():
+                doc = fitz.open(file_path)
+                pages: list[str] = []
+                full_text = ""
 
-            for page in doc:
-                text = page.get_text()
-                pages.append(text)
-                full_text += text + "\n"
+                for page in doc:
+                    text = page.get_text()
+                    pages.append(text)
+                    full_text += text + "\n"
 
-            metadata = dict(doc.metadata) if doc.metadata else {}
+                metadata = dict(doc.metadata) if doc.metadata else {}
+                doc.close()
+                
+                return full_text.strip(), pages, metadata
 
-            doc.close()
+            full_text, pages, metadata = await asyncio.to_thread(_extract_pdf)
 
             # Calculate simple confidence based on text extraction
             confidence = 0.8 if full_text.strip() else 0.3
+            
+            logger.info(
+                "docling.parser.fallback_pdf_success",
+                file_path=file_path,
+                text_length=len(full_text),
+                page_count=len(pages),
+            )
 
             return ParsingResult(
                 success=True,
@@ -311,9 +440,189 @@ class DoclingParser(ParserPlugin):
             )
 
         except ImportError:
+            logger.error("docling.parser.pymupdf_not_available")
             return ParsingResult(
                 success=False,
                 error="PyMuPDF not available for PDF fallback parsing",
+            )
+        except Exception as e:
+            logger.error(
+                "docling.parser.pymupdf_failed",
+                file_path=file_path,
+                error=str(e),
+                exc_info=True,
+            )
+            return ParsingResult(
+                success=False,
+                error=f"PyMuPDF parsing failed: {e!s}",
+            )
+
+    async def _parse_docx_fallback(self, file_path: str) -> ParsingResult:
+        """Parse DOCX using python-docx as fallback.
+        
+        Args:
+            file_path: Path to the DOCX file
+            
+        Returns:
+            ParsingResult
+        """
+        logger.info("docling.parser.fallback_docx", file_path=file_path)
+        
+        try:
+            from docx import Document  # type: ignore[import-untyped]
+
+            def _extract_docx():
+                doc = Document(file_path)
+                full_text = []
+                pages = []
+                
+                # Extract paragraphs
+                for para in doc.paragraphs:
+                    if para.text.strip():
+                        full_text.append(para.text)
+                
+                # Extract tables
+                for table in doc.tables:
+                    table_text = []
+                    for row in table.rows:
+                        row_text = [cell.text for cell in row.cells]
+                        table_text.append(" | ".join(row_text))
+                    if table_text:
+                        full_text.append("\n".join(table_text))
+                
+                # Try to get metadata
+                metadata = {}
+                if doc.core_properties:
+                    props = doc.core_properties
+                    if props.title:
+                        metadata["title"] = props.title
+                    if props.author:
+                        metadata["author"] = props.author
+                    if props.created:
+                        metadata["created"] = str(props.created)
+                
+                text_content = "\n\n".join(full_text)
+                # Approximate pages (rough estimate: ~500 words per page)
+                if text_content:
+                    words = text_content.split()
+                    num_pages = max(1, len(words) // 500)
+                    pages = [text_content]  # Single page for simplicity
+                
+                return text_content, pages, metadata
+
+            full_text, pages, metadata = await asyncio.to_thread(_extract_docx)
+            
+            confidence = 0.8 if full_text.strip() else 0.3
+            
+            logger.info(
+                "docling.parser.fallback_docx_success",
+                file_path=file_path,
+                text_length=len(full_text),
+            )
+
+            return ParsingResult(
+                success=True,
+                text=full_text,
+                pages=pages,
+                metadata=metadata,
+                format=".docx",
+                parser_used="docling-fallback-python-docx",
+                confidence=confidence,
+            )
+
+        except ImportError:
+            logger.error("docling.parser.python_docx_not_available")
+            return ParsingResult(
+                success=False,
+                error="python-docx not available for DOCX fallback parsing",
+            )
+        except Exception as e:
+            logger.error(
+                "docling.parser.python_docx_failed",
+                file_path=file_path,
+                error=str(e),
+                exc_info=True,
+            )
+            return ParsingResult(
+                success=False,
+                error=f"DOCX parsing failed: {e!s}",
+            )
+
+    async def _parse_pptx_fallback(self, file_path: str) -> ParsingResult:
+        """Parse PPTX using python-pptx as fallback.
+        
+        Args:
+            file_path: Path to the PPTX file
+            
+        Returns:
+            ParsingResult
+        """
+        logger.info("docling.parser.fallback_pptx", file_path=file_path)
+        
+        try:
+            from pptx import Presentation  # type: ignore[import-untyped]
+
+            def _extract_pptx():
+                prs = Presentation(file_path)
+                full_text = []
+                pages = []
+                
+                # Extract text from each slide
+                for slide_num, slide in enumerate(prs.slides, 1):
+                    slide_text = [f"--- Slide {slide_num} ---"]
+                    
+                    for shape in slide.shapes:
+                        if hasattr(shape, "text") and shape.text.strip():
+                            slide_text.append(shape.text.strip())
+                    
+                    if len(slide_text) > 1:  # More than just the header
+                        slide_content = "\n".join(slide_text)
+                        pages.append(slide_content)
+                        full_text.append(slide_content)
+                
+                metadata = {
+                    "slide_count": len(prs.slides),
+                }
+                
+                return "\n\n".join(full_text), pages, metadata
+
+            full_text, pages, metadata = await asyncio.to_thread(_extract_pptx)
+            
+            confidence = 0.75 if full_text.strip() else 0.3
+            
+            logger.info(
+                "docling.parser.fallback_pptx_success",
+                file_path=file_path,
+                text_length=len(full_text),
+                slide_count=len(pages),
+            )
+
+            return ParsingResult(
+                success=True,
+                text=full_text,
+                pages=pages,
+                metadata=metadata,
+                format=".pptx",
+                parser_used="docling-fallback-python-pptx",
+                confidence=confidence,
+            )
+
+        except ImportError:
+            logger.error("docling.parser.python_pptx_not_available")
+            return ParsingResult(
+                success=False,
+                error="python-pptx not available for PPTX fallback parsing",
+            )
+        except Exception as e:
+            logger.error(
+                "docling.parser.python_pptx_failed",
+                file_path=file_path,
+                error=str(e),
+                exc_info=True,
+            )
+            return ParsingResult(
+                success=False,
+                error=f"PPTX parsing failed: {e!s}",
             )
 
     async def _parse_text_fallback(self, file_path: str) -> ParsingResult:
@@ -325,9 +634,14 @@ class DoclingParser(ParserPlugin):
         Returns:
             ParsingResult
         """
+        logger.info("docling.parser.fallback_text", file_path=file_path)
+        
         try:
-            with open(file_path, encoding="utf-8", errors="ignore") as f:
-                content = f.read()
+            def _read_text():
+                with open(file_path, encoding="utf-8", errors="ignore") as f:
+                    return f.read()
+
+            content = await asyncio.to_thread(_read_text)
 
             return ParsingResult(
                 success=True,
@@ -339,6 +653,11 @@ class DoclingParser(ParserPlugin):
             )
 
         except Exception as e:
+            logger.error(
+                "docling.parser.text_fallback_failed",
+                file_path=file_path,
+                error=str(e),
+            )
             return ParsingResult(
                 success=False,
                 error=f"Text parsing failed: {e}",
@@ -368,11 +687,14 @@ class DoclingParser(ParserPlugin):
 
         # Fallback: split markdown by headers
         if not pages:
-            full_text = result.document.export_to_markdown()
-            # Split by page-like separators or headers
-            import re
-            pages = re.split(r"\n#{1,2}\s+", full_text)
-            pages = [p.strip() for p in pages if p.strip()]
+            try:
+                full_text = result.document.export_to_markdown()
+                # Split by page-like separators or headers
+                import re
+                pages = re.split(r"\n#{1,2}\s+", full_text)
+                pages = [p.strip() for p in pages if p.strip()]
+            except Exception as e:
+                logger.warning(f"Failed to extract pages from markdown: {e}")
 
         return pages
 

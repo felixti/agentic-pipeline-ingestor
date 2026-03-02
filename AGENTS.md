@@ -86,46 +86,46 @@ The system ingests documents from various sources (S3, Azure Blob, SharePoint), 
 
 ### 2.1 Core Technologies
 
-| Category | Technology | Version |
-|----------|------------|---------|
-| Language | Python | 3.11+ |
-| Web Framework | FastAPI | 0.104+ |
-| Data Validation | Pydantic | 2.5+ |
-| Database | PostgreSQL | 15+ |
-| Vector Database | pgvector | 0.7+ |
-| Text Search | pg_trgm | 1.6+ |
-| ORM | SQLAlchemy | 2.0+ |
-| Cache | Redis | 7+ |
-| LLM Router | litellm | 1.0+ |
+| Category        | Technology | Version |
+| --------------- | ---------- | ------- |
+| Language        | Python     | 3.11+   |
+| Web Framework   | FastAPI    | 0.104+  |
+| Data Validation | Pydantic   | 2.5+    |
+| Database        | PostgreSQL | 15+     |
+| Vector Database | pgvector   | 0.7+    |
+| Text Search     | pg_trgm    | 1.6+    |
+| ORM             | SQLAlchemy | 2.0+    |
+| Cache           | Redis      | 7+      |
+| LLM Router      | litellm    | 1.0+    |
 
 ### 2.2 Document Processing
 
-| Technology | Purpose |
-|------------|---------|
-| Docling | Primary document parser |
+| Technology      | Purpose                            |
+| --------------- | ---------------------------------- |
+| Docling         | Primary document parser            |
 | Azure AI Vision | OCR fallback for scanned documents |
-| PyMuPDF | PDF text extraction |
-| Pillow | Image processing |
-| Tesseract | OCR fallback |
+| PyMuPDF         | PDF text extraction                |
+| Pillow          | Image processing                   |
+| Tesseract       | OCR fallback                       |
 
 ### 2.3 Observability
 
-| Technology | Purpose |
-|------------|---------|
-| OpenTelemetry | Distributed tracing |
-| Prometheus | Metrics collection |
-| Grafana | Metrics visualization |
-| Jaeger | Trace visualization |
-| structlog | Structured logging |
+| Technology    | Purpose               |
+| ------------- | --------------------- |
+| OpenTelemetry | Distributed tracing   |
+| Prometheus    | Metrics collection    |
+| Grafana       | Metrics visualization |
+| Jaeger        | Trace visualization   |
+| structlog     | Structured logging    |
 
 ### 2.4 Security & Enterprise
 
-| Technology | Purpose |
-|------------|---------|
-| python-jose | JWT handling |
-| passlib | Password hashing |
-| Azure AD | Enterprise SSO |
-| OpenSearch | Audit log storage |
+| Technology  | Purpose           |
+| ----------- | ----------------- |
+| python-jose | JWT handling      |
+| passlib     | Password hashing  |
+| Azure AD    | Enterprise SSO    |
+| OpenSearch  | Audit log storage |
 
 ---
 
@@ -362,137 +362,137 @@ make format            # Format code
 
 ### Installation & Setup
 
-| Command | Description |
-|---------|-------------|
-| `make install` | Install production dependencies |
-| `make dev-install` | Install development dependencies |
+| Command            | Description                                            |
+| ------------------ | ------------------------------------------------------ |
+| `make install`     | Install production dependencies                        |
+| `make dev-install` | Install development dependencies                       |
 | `make install-all` | Install all dependencies (dev, docling, azure, cognee) |
-| `make sync` | Sync dependencies with uv.lock |
+| `make sync`        | Sync dependencies with uv.lock                         |
 
 ### Docker Operations
 
-| Command | Description |
-|---------|-------------|
-| `make build` | Build Docker images |
-| `make up` | Start all services in detached mode |
-| `make down` | Stop all services |
-| `make stop` | Stop services without removing containers |
-| `make restart` | Restart all services |
-| `make logs` | Show logs from all services |
-| `make logs-api` | Show logs from API service only |
-| `make ps` | Show running containers |
+| Command         | Description                               |
+| --------------- | ----------------------------------------- |
+| `make build`    | Build Docker images                       |
+| `make up`       | Start all services in detached mode       |
+| `make down`     | Stop all services                         |
+| `make stop`     | Stop services without removing containers |
+| `make restart`  | Restart all services                      |
+| `make logs`     | Show logs from all services               |
+| `make logs-api` | Show logs from API service only           |
+| `make ps`       | Show running containers                   |
 
 ### Testing
 
-| Command | Description |
-|---------|-------------|
-| `make test` | Run all tests |
-| `make test-unit` | Run unit tests only |
-| `make test-integration` | Run integration tests only |
-| `make test-contract` | Run contract tests only |
-| `make test-coverage` | Run tests with coverage report |
+| Command                   | Description                                   |
+| ------------------------- | --------------------------------------------- |
+| `make test`               | Run all tests                                 |
+| `make test-unit`          | Run unit tests only                           |
+| `make test-integration`   | Run integration tests only                    |
+| `make test-contract`      | Run contract tests only                       |
+| `make test-coverage`      | Run tests with coverage report                |
 | `make test-coverage-open` | Run tests and open coverage report in browser |
 
 ### E2E Testing
 
-| Command | Description |
-|---------|-------------|
-| `make e2e-up` | Start E2E test environment |
-| `make e2e-down` | Stop E2E test environment |
-| `make e2e-test` | Run E2E tests |
-| `make e2e-test-quick` | Run quick E2E smoke tests |
-| `make e2e-test-auth` | Run E2E auth tests only |
-| `make e2e-test-performance` | Run E2E performance tests |
-| `make e2e-logs` | Show E2E test logs |
+| Command                     | Description                |
+| --------------------------- | -------------------------- |
+| `make e2e-up`               | Start E2E test environment |
+| `make e2e-down`             | Stop E2E test environment  |
+| `make e2e-test`             | Run E2E tests              |
+| `make e2e-test-quick`       | Run quick E2E smoke tests  |
+| `make e2e-test-auth`        | Run E2E auth tests only    |
+| `make e2e-test-performance` | Run E2E performance tests  |
+| `make e2e-logs`             | Show E2E test logs         |
 
 ### Code Quality
 
-| Command | Description |
-|---------|-------------|
-| `make lint` | Run linter (ruff) |
-| `make lint-fix` | Run linter and fix issues |
-| `make format` | Format code with ruff |
-| `make type-check` | Run type checker (mypy) |
-| `make type-check-strict` | Run type checker in strict mode |
-| `make security` | Run security checks (bandit, safety) |
-| `make quality` | Run all quality checks (lint + type-check + security) |
-| `make format-and-lint` | Format code and run linter |
+| Command                  | Description                                           |
+| ------------------------ | ----------------------------------------------------- |
+| `make lint`              | Run linter (ruff)                                     |
+| `make lint-fix`          | Run linter and fix issues                             |
+| `make format`            | Format code with ruff                                 |
+| `make type-check`        | Run type checker (mypy)                               |
+| `make type-check-strict` | Run type checker in strict mode                       |
+| `make security`          | Run security checks (bandit, safety)                  |
+| `make quality`           | Run all quality checks (lint + type-check + security) |
+| `make format-and-lint`   | Format code and run linter                            |
 
 ### Database
 
-| Command | Description |
-|---------|-------------|
-| `make migrate` | Run database migrations |
-| `make migrate-create MESSAGE="desc"` | Create new migration |
-| `make migrate-downgrade` | Downgrade database by one revision |
-| `make migrate-history` | Show migration history |
-| `make db-reset` | Reset database (drop and recreate) |
+| Command                              | Description                        |
+| ------------------------------------ | ---------------------------------- |
+| `make migrate`                       | Run database migrations            |
+| `make migrate-create MESSAGE="desc"` | Create new migration               |
+| `make migrate-downgrade`             | Downgrade database by one revision |
+| `make migrate-history`               | Show migration history             |
+| `make db-reset`                      | Reset database (drop and recreate) |
 
 ### SDK Generation
 
-| Command | Description |
-|---------|-------------|
-| `make sdk` | Generate SDKs from OpenAPI spec |
-| `make sdk-python` | Generate Python SDK only |
-| `make sdk-typescript` | Generate TypeScript SDK only |
-| `make sdk-dry-run` | Preview SDK generation commands |
+| Command               | Description                     |
+| --------------------- | ------------------------------- |
+| `make sdk`            | Generate SDKs from OpenAPI spec |
+| `make sdk-python`     | Generate Python SDK only        |
+| `make sdk-typescript` | Generate TypeScript SDK only    |
+| `make sdk-dry-run`    | Preview SDK generation commands |
 
 ### Documentation
 
-| Command | Description |
-|---------|-------------|
-| `make docs` | Build documentation |
-| `make docs-serve` | Serve documentation locally |
-| `make docs-deploy` | Deploy documentation |
+| Command            | Description                 |
+| ------------------ | --------------------------- |
+| `make docs`        | Build documentation         |
+| `make docs-serve`  | Serve documentation locally |
+| `make docs-deploy` | Deploy documentation        |
 
 ### API Testing
 
-| Command | Description |
-|---------|-------------|
-| `make api-health` | Test health endpoints |
-| `make api-docs` | Open API documentation in browser |
-| `make api-spec` | Download OpenAPI specification |
+| Command           | Description                       |
+| ----------------- | --------------------------------- |
+| `make api-health` | Test health endpoints             |
+| `make api-docs`   | Open API documentation in browser |
+| `make api-spec`   | Download OpenAPI specification    |
 
 ### Cleanup
 
-| Command | Description |
-|---------|-------------|
-| `make clean` | Clean up build artifacts and cache |
-| `make clean-docker` | Clean up Docker resources |
-| `make clean-all` | Clean everything |
+| Command             | Description                        |
+| ------------------- | ---------------------------------- |
+| `make clean`        | Clean up build artifacts and cache |
+| `make clean-docker` | Clean up Docker resources          |
+| `make clean-all`    | Clean everything                   |
 
 ### Development Utilities
 
-| Command | Description |
-|---------|-------------|
-| `make run` | Run the application locally (without Docker) |
-| `make run-prod` | Run the application in production mode |
-| `make shell` | Open a shell in the API container |
-| `make db-shell` | Open PostgreSQL shell |
-| `make redis-cli` | Open Redis CLI |
+| Command          | Description                                  |
+| ---------------- | -------------------------------------------- |
+| `make run`       | Run the application locally (without Docker) |
+| `make run-prod`  | Run the application in production mode       |
+| `make shell`     | Open a shell in the API container            |
+| `make db-shell`  | Open PostgreSQL shell                        |
+| `make redis-cli` | Open Redis CLI                               |
 
 ### CI/CD
 
-| Command | Description |
-|---------|-------------|
-| `make ci` | Run CI checks (lint + test) |
-| `make ci-full` | Run full CI pipeline |
+| Command        | Description                 |
+| -------------- | --------------------------- |
+| `make ci`      | Run CI checks (lint + test) |
+| `make ci-full` | Run full CI pipeline        |
 
 ### Release
 
-| Command | Description |
-|---------|-------------|
-| `make version` | Show current version |
-| `make bump-patch` | Bump patch version |
-| `make bump-minor` | Bump minor version |
-| `make bump-major` | Bump major version |
+| Command           | Description          |
+| ----------------- | -------------------- |
+| `make version`    | Show current version |
+| `make bump-patch` | Bump patch version   |
+| `make bump-minor` | Bump minor version   |
+| `make bump-major` | Bump major version   |
 
 ### Information
 
-| Command | Description |
-|---------|-------------|
+| Command       | Description                       |
+| ------------- | --------------------------------- |
 | `make status` | Show project status (git, docker) |
-| `make info` | Show project information |
+| `make info`   | Show project information          |
 
 ---
 
@@ -501,6 +501,7 @@ make format            # Format code
 ### When to Use Make Commands
 
 **Always use `make` commands when:**
+
 - Starting/stopping services (`make up`, `make down`)
 - Running tests (`make test`, `make test-unit`)
 - Code quality checks (`make lint`, `make format`)
@@ -508,6 +509,7 @@ make format            # Format code
 - Any operation that involves multiple steps or Docker
 
 **Direct commands are acceptable for:**
+
 - One-off Python script execution
 - Debugging specific issues
 - Exploring the codebase
@@ -640,31 +642,31 @@ The vector store is configured via `config/vector_store.yaml`:
 ```yaml
 vector_store:
   enabled: true
-  
+
   # Embedding model configuration
   embedding:
     model: "text-embedding-3-small"
     dimensions: 1536
     batch_size: 100
-    
+
   # Search parameters
   search:
     default_top_k: 10
     max_top_k: 100
     default_min_similarity: 0.7
-    
+
   # HNSW index parameters (pgvector)
   index:
-    hnsw_m: 16              # Number of bi-directional links
-    hnsw_ef_construction: 64  # Size of dynamic candidate list
-    hnsw_ef_search: 32      # Size of search candidate list
-    
+    hnsw_m: 16 # Number of bi-directional links
+    hnsw_ef_construction: 64 # Size of dynamic candidate list
+    hnsw_ef_search: 32 # Size of search candidate list
+
   # Hybrid search weights
   hybrid:
     default_vector_weight: 0.7
     default_text_weight: 0.3
-    rrf_k: 60               # Reciprocal Rank Fusion constant
-    
+    rrf_k: 60 # Reciprocal Rank Fusion constant
+
   # Pipeline integration
   pipeline:
     auto_generate_embeddings: true
@@ -675,13 +677,13 @@ vector_store:
 
 #### Environment Variables for Vector Store
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `VECTOR_STORE_ENABLED` | Enable/disable vector store | `true` |
-| `EMBEDDING_MODEL` | Embedding model name | `text-embedding-3-small` |
-| `EMBEDDING_API_KEY` | API key for embedding provider | - |
-| `EMBEDDING_API_BASE` | Base URL for embedding provider | - |
-| `EMBEDDING_DIMENSIONS` | Embedding dimensions | `1536` |
+| Variable               | Description                     | Default                  |
+| ---------------------- | ------------------------------- | ------------------------ |
+| `VECTOR_STORE_ENABLED` | Enable/disable vector store     | `true`                   |
+| `EMBEDDING_MODEL`      | Embedding model name            | `text-embedding-3-small` |
+| `EMBEDDING_API_KEY`    | API key for embedding provider  | -                        |
+| `EMBEDDING_API_BASE`   | Base URL for embedding provider | -                        |
+| `EMBEDDING_DIMENSIONS` | Embedding dimensions            | `1536`                   |
 
 ---
 
@@ -719,14 +721,14 @@ def analyze_content(
     mime_type: str
 ) -> ContentAnalysis:
     """Analyze content type and recommend parser.
-    
+
     Args:
         file_path: Path to the file to analyze.
         mime_type: MIME type of the file.
-        
+
     Returns:
         ContentAnalysis with detected type and confidence.
-        
+
     Raises:
         FileNotFoundError: If file does not exist.
         ValueError: If mime_type is unsupported.
@@ -772,12 +774,12 @@ logger.info(
 
 ### 7.1 Test Categories
 
-| Category | Location | Purpose |
-|----------|----------|---------|
-| Unit | `tests/unit/` | Test individual functions/classes in isolation |
-| Integration | `tests/integration/` | Test API endpoints and database interactions |
-| Contract | `tests/contract/` | Validate API against OpenAPI spec using Schemathesis |
-| E2E | `tests/test_pipeline_integration.py` | Test full pipeline flow |
+| Category    | Location                             | Purpose                                              |
+| ----------- | ------------------------------------ | ---------------------------------------------------- |
+| Unit        | `tests/unit/`                        | Test individual functions/classes in isolation       |
+| Integration | `tests/integration/`                 | Test API endpoints and database interactions         |
+| Contract    | `tests/contract/`                    | Validate API against OpenAPI spec using Schemathesis |
+| E2E         | `tests/test_pipeline_integration.py` | Test full pipeline flow                              |
 
 ### 7.2 Test Markers
 
@@ -832,50 +834,50 @@ The API follows OpenAPI 3.1 specification with 50 endpoints:
 
 ### 8.1 Job Management
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/jobs` | Submit new ingestion job |
-| GET | `/api/v1/jobs` | List jobs with filtering |
-| GET | `/api/v1/jobs/{id}` | Get job details |
-| POST | `/api/v1/jobs/{id}/cancel` | Cancel running job |
-| POST | `/api/v1/jobs/{id}/retry` | Retry failed job |
-| GET | `/api/v1/jobs/{id}/result` | Get job result |
-| GET | `/api/v1/jobs/{id}/events` | Get job events (SSE) |
+| Method | Endpoint                   | Description              |
+| ------ | -------------------------- | ------------------------ |
+| POST   | `/api/v1/jobs`             | Submit new ingestion job |
+| GET    | `/api/v1/jobs`             | List jobs with filtering |
+| GET    | `/api/v1/jobs/{id}`        | Get job details          |
+| POST   | `/api/v1/jobs/{id}/cancel` | Cancel running job       |
+| POST   | `/api/v1/jobs/{id}/retry`  | Retry failed job         |
+| GET    | `/api/v1/jobs/{id}/result` | Get job result           |
+| GET    | `/api/v1/jobs/{id}/events` | Get job events (SSE)     |
 
 ### 8.2 Document Chunks (pgvector)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/jobs/{id}/chunks` | List chunks for a job |
-| GET | `/api/v1/jobs/{id}/chunks/{chunk_id}` | Get specific chunk with optional embedding |
+| Method | Endpoint                              | Description                                |
+| ------ | ------------------------------------- | ------------------------------------------ |
+| GET    | `/api/v1/jobs/{id}/chunks`            | List chunks for a job                      |
+| GET    | `/api/v1/jobs/{id}/chunks/{chunk_id}` | Get specific chunk with optional embedding |
 
 ### 8.3 Search (Vector + Text)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/search/semantic` | Semantic similarity search (vector) |
-| POST | `/api/v1/search/text` | Full-text search (BM25 + fuzzy) |
-| POST | `/api/v1/search/hybrid` | Hybrid vector + text search |
-| GET | `/api/v1/search/similar/{chunk_id}` | Find semantically similar chunks |
+| Method | Endpoint                            | Description                         |
+| ------ | ----------------------------------- | ----------------------------------- |
+| POST   | `/api/v1/search/semantic`           | Semantic similarity search (vector) |
+| POST   | `/api/v1/search/text`               | Full-text search (BM25 + fuzzy)     |
+| POST   | `/api/v1/search/hybrid`             | Hybrid vector + text search         |
+| GET    | `/api/v1/search/similar/{chunk_id}` | Find semantically similar chunks    |
 
 ### 8.4 File Upload
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/upload` | Multipart file upload |
-| POST | `/api/v1/upload/url` | Upload from URL |
-| POST | `/api/v1/upload/stream` | Streaming upload |
+| Method | Endpoint                | Description           |
+| ------ | ----------------------- | --------------------- |
+| POST   | `/api/v1/upload`        | Multipart file upload |
+| POST   | `/api/v1/upload/url`    | Upload from URL       |
+| POST   | `/api/v1/upload/stream` | Streaming upload      |
 
 ### 8.5 System & Health
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health status |
-| GET | `/health/ready` | Readiness probe |
-| GET | `/health/live` | Liveness probe |
-| GET | `/health/vector` | Vector store health (pgvector status) |
-| GET | `/metrics` | Prometheus metrics |
-| GET | `/api/v1/openapi.yaml` | OpenAPI specification |
+| Method | Endpoint               | Description                           |
+| ------ | ---------------------- | ------------------------------------- |
+| GET    | `/health`              | Health status                         |
+| GET    | `/health/ready`        | Readiness probe                       |
+| GET    | `/health/live`         | Liveness probe                        |
+| GET    | `/health/vector`       | Vector store health (pgvector status) |
+| GET    | `/metrics`             | Prometheus metrics                    |
+| GET    | `/api/v1/openapi.yaml` | OpenAPI specification                 |
 
 ---
 
@@ -892,12 +894,12 @@ The system supports multiple authentication methods:
 
 ### 9.2 RBAC Roles
 
-| Role | Permissions |
-|------|-------------|
-| admin | All operations |
-| operator | READ, CREATE, CANCEL, RETRY, CREATE_JOBS |
-| developer | READ, CREATE_JOBS, READ_SOURCES |
-| viewer | READ only |
+| Role      | Permissions                              |
+| --------- | ---------------------------------------- |
+| admin     | All operations                           |
+| operator  | READ, CREATE, CANCEL, RETRY, CREATE_JOBS |
+| developer | READ, CREATE_JOBS, READ_SOURCES          |
+| viewer    | READ only                                |
 
 ### 9.3 Security Best Practices
 
@@ -983,6 +985,7 @@ docker-compose up -d
 ```
 
 Services started:
+
 - API: http://localhost:8000
 - PostgreSQL: localhost:5432
 - Redis: localhost:6379
@@ -990,14 +993,19 @@ Services started:
 - Prometheus: localhost:9090
 - Grafana: localhost:3000
 
-### 11.2 Azure Kubernetes Service (AKS)
+### 11.2 Hosting VPS and Dokploy
 
 ```bash
-# Deploy to AKS
-kubectl apply -f azure/aks-deployment.yaml
+# Connect to VPS
+ssh root@72.61.52.191
 
-# Check status
-kubectl get pods -n pipeline-ingestor
+# Use the private key for authentication
+./.ssh/ralph_loop_key
+
+# Dokploy Deployment
+- Dokploy is the only way to deploy on this VPS
+- Follow Dokploy documentation for deployment steps
+- Do not attempt manual deployment or configuration changes outside of Dokploy
 ```
 
 ### 11.3 Health Check Endpoints
@@ -1019,13 +1027,13 @@ curl http://localhost:8000/health
 
 ### 12.1 Common Issues
 
-| Issue | Solution |
-|-------|----------|
-| `ModuleNotFoundError` | Run `pip install -e ".[dev,docling,azure]"` |
-| Database connection failed | Check `DB_URL` in `.env` |
-| Redis connection failed | Ensure Redis is running: `docker-compose up redis` |
-| LLM timeout | Check Azure/OpenRouter credentials |
-| Port 8000 in use | Change `PORT` in `.env` or kill existing process |
+| Issue                      | Solution                                           |
+| -------------------------- | -------------------------------------------------- |
+| `ModuleNotFoundError`      | Run `pip install -e ".[dev,docling,azure]"`        |
+| Database connection failed | Check `DB_URL` in `.env`                           |
+| Redis connection failed    | Ensure Redis is running: `docker-compose up redis` |
+| LLM timeout                | Check Azure/OpenRouter credentials                 |
+| Port 8000 in use           | Change `PORT` in `.env` or kill existing process   |
 
 ### 12.2 Debug Mode
 
@@ -1069,4 +1077,4 @@ OTEL_LOG_LEVEL=DEBUG
 
 ---
 
-*This file is intended for AI coding agents. Keep it updated as the project evolves.*
+_This file is intended for AI coding agents. Keep it updated as the project evolves._

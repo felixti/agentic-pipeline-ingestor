@@ -5,6 +5,8 @@ Python library (not the API) for graph-based document storage with:
 - Cognee's internal Neo4j integration for graph storage
 - Cognee's internal pgvector integration for vector storage
 - Cognee's LLM adapter (configured to use litellm)
+- Automatic retry with exponential backoff for transient Neo4j errors
+- Optional distributed locking to prevent concurrent write conflicts
 
 Usage flow:
 1. cognee.add() - Add document chunks to Cognee
@@ -21,6 +23,13 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
 from src.infrastructure.neo4j.client import close_neo4j_client, get_neo4j_client
 from src.observability.logging import get_logger
 from src.plugins.base import (
@@ -33,6 +42,14 @@ from src.plugins.base import (
     ValidationResult,
     WriteResult,
 )
+
+# Optional Redis locking - gracefully handles missing Redis
+try:
+    from src.infrastructure.redis.lock import CogneeWriteLock
+    _REDIS_AVAILABLE = True
+except ImportError:
+    _REDIS_AVAILABLE = False
+    CogneeWriteLock = None  # type: ignore
 
 logger = get_logger(__name__)
 
@@ -122,6 +139,9 @@ class CogneeLocalDestination(DestinationPlugin):
         # PostgreSQL/pgvector (used internally by Cognee)
         DB_URL: PostgreSQL connection URL
         
+        # Redis (for distributed locking)
+        REDIS_URL: Redis connection URL (default: redis://localhost:6379/0)
+        
         # LLM Configuration (for Cognee's litellm adapter)
         LLM_API_KEY: API key for LLM provider (or OPENAI_API_KEY, AZURE_OPENAI_API_KEY)
         LLM_MODEL: Model to use (default: gpt-4.1)
@@ -142,6 +162,8 @@ class CogneeLocalDestination(DestinationPlugin):
         self._is_initialized = False
         self._cognee_module: Any = None
         self._search_type_module: Any = None
+        self._use_distributed_lock: bool = True
+        self._lock_timeout: int = 300
 
     @property
     def metadata(self) -> PluginMetadata:
@@ -171,6 +193,16 @@ class CogneeLocalDestination(DestinationPlugin):
                         "type": "boolean",
                         "default": False,
                         "description": "Automatically call cognify after each write",
+                    },
+                    "use_distributed_lock": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Use Redis distributed lock for graph writes (prevents deadlocks)",
+                    },
+                    "lock_timeout": {
+                        "type": "integer",
+                        "default": 300,
+                        "description": "Distributed lock timeout in seconds (default: 300)",
                     },
                     "neo4j_uri": {
                         "type": "string",
@@ -233,6 +265,8 @@ class CogneeLocalDestination(DestinationPlugin):
         self._config = config
         self._dataset_id = config.get("dataset_id", "default")
         self._graph_name = config.get("graph_name", "default")
+        self._use_distributed_lock = config.get("use_distributed_lock", True)
+        self._lock_timeout = config.get("lock_timeout", 300)
 
         # Set up environment variables for Cognee if not already set
         # Cognee reads these internally for its Neo4j and pgvector integrations
@@ -446,6 +480,7 @@ class CogneeLocalDestination(DestinationPlugin):
             chunks_added = 0
 
             # Add each chunk to Cognee using cognee.add()
+            # This operation is idempotent and handles retries internally
             for i, chunk in enumerate(data.chunks):
                 content = chunk.get("content", "")
                 if not content:
@@ -453,7 +488,7 @@ class CogneeLocalDestination(DestinationPlugin):
 
                 # Add text to Cognee dataset
                 # This stores the raw content that will be processed by cognify()
-                await self._cognee_module.add(
+                await self._cognee_add_with_retry(
                     content,
                     dataset_name=dataset_id,
                 )
@@ -501,6 +536,40 @@ class CogneeLocalDestination(DestinationPlugin):
                 error=f"Write failed: {e!s}",
             )
 
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((Exception,)),
+        reraise=True,
+    )
+    async def _cognee_add_with_retry(self, content: str, dataset_name: str) -> None:
+        """Add content to Cognee with retry logic for transient errors.
+        
+        Args:
+            content: Content to add
+            dataset_name: Dataset name
+            
+        Raises:
+            Exception: If all retries fail
+        """
+        try:
+            await self._cognee_module.add(content, dataset_name=dataset_name)
+        except Exception as e:
+            # Check if this is a transient error worth retrying
+            error_str = str(e).lower()
+            if any(err in error_str for err in [
+                "deadlock", "lock", "timeout", "connection", "transient"
+            ]):
+                logger.warning(
+                    "cognee_add_transient_error",
+                    dataset_name=dataset_name,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                raise
+            # Non-transient error, don't retry
+            raise
+
     async def process_dataset(self, conn: Connection) -> dict[str, Any]:
         """Process dataset into knowledge graph using cognee.cognify().
         
@@ -510,6 +579,9 @@ class CogneeLocalDestination(DestinationPlugin):
         - Creates relationships between entities
         - Stores vectors in pgvector
         - Builds the graph in Neo4j
+        
+        This method uses distributed locking (if enabled) to prevent
+        concurrent graph writes that can cause deadlocks.
         
         Args:
             conn: Connection handle from connect()
@@ -524,14 +596,97 @@ class CogneeLocalDestination(DestinationPlugin):
             raise RuntimeError("CogneeLocalDestination not initialized")
 
         dataset_id = conn.config.get("dataset_id", "default")
+        use_lock = conn.config.get("use_distributed_lock", self._use_distributed_lock)
+        lock_timeout = conn.config.get("lock_timeout", self._lock_timeout)
+
         start_time = time.time()
 
         try:
             logger.info(
                 "cognee_cognify_started",
                 dataset_id=dataset_id,
+                use_distributed_lock=use_lock,
             )
 
+            # Use distributed lock if enabled to prevent concurrent writes
+            if use_lock and _REDIS_AVAILABLE and CogneeWriteLock is not None:
+                return await self._cognify_with_lock(dataset_id, lock_timeout)
+            else:
+                # Fallback to retry-only approach
+                return await self._cognify_with_retry(dataset_id)
+
+        except Exception as e:
+            logger.error(
+                "cognee_cognify_failed",
+                dataset_id=dataset_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise RuntimeError(f"Failed to process dataset: {e}") from e
+
+    async def _cognify_with_lock(
+        self,
+        dataset_id: str,
+        lock_timeout: int = 300,
+    ) -> dict[str, Any]:
+        """Execute cognify with distributed locking and retry logic.
+        
+        Args:
+            dataset_id: Dataset to process
+            lock_timeout: Lock timeout in seconds
+            
+        Returns:
+            Processing result with metadata
+        """
+        start_time = time.time()
+
+        lock = CogneeWriteLock(
+            dataset_id=dataset_id,
+            timeout=lock_timeout,
+            blocking_timeout=60.0,
+        )
+
+        async with lock:
+            # Double-check lock is acquired
+            logger.info(
+                "cognee_cognify_lock_acquired",
+                dataset_id=dataset_id,
+            )
+
+            # Execute cognify with retry logic
+            result = await self._cognify_with_retry(dataset_id)
+
+            processing_time = int((time.time() - start_time) * 1000)
+
+            logger.info(
+                "cognee_cognify_with_lock_completed",
+                dataset_id=dataset_id,
+                duration_ms=processing_time,
+            )
+
+            return result
+
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((Exception,)),
+        reraise=True,
+    )
+    async def _cognify_with_retry(self, dataset_id: str) -> dict[str, Any]:
+        """Execute cognify with retry logic for transient errors.
+        
+        Args:
+            dataset_id: Dataset to process
+            
+        Returns:
+            Processing result with metadata
+            
+        Raises:
+            Exception: If all retries fail
+        """
+        start_time = time.time()
+
+        try:
             # Process the dataset using cognee.cognify()
             # This builds the knowledge graph from added documents
             await self._cognee_module.cognify(datasets=[dataset_id])
@@ -551,13 +706,21 @@ class CogneeLocalDestination(DestinationPlugin):
             }
 
         except Exception as e:
-            logger.error(
-                "cognee_cognify_failed",
-                dataset_id=dataset_id,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            raise RuntimeError(f"Failed to process dataset: {e}") from e
+            error_str = str(e).lower()
+            # Check if this is a transient error worth retrying
+            if any(err in error_str for err in [
+                "deadlock", "lock", "timeout", "connection", "transient",
+                "forseti", "exclusive", "transaction"
+            ]):
+                logger.warning(
+                    "cognee_cognify_transient_error",
+                    dataset_id=dataset_id,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                raise
+            # Non-transient error, don't retry
+            raise
 
     async def search(
         self,

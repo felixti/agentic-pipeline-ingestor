@@ -566,6 +566,13 @@ def _add_routes(app: FastAPI) -> None:
             pipeline_config=pipeline_config,  # type: ignore[arg-type]
         )
 
+        # Ensure job is fully committed before enqueuing
+        # This prevents race conditions where the worker tries to 
+        # create chunks before the job is visible
+        await db.flush()
+        await db.commit()
+        logger.info("job_committed_to_database", job_id=str(job.id))
+
         # Enqueue job to Redis for processing
         try:
             queue = get_queue()
